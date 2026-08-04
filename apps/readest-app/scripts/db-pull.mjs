@@ -1,6 +1,7 @@
 // Regenerate `src/libs/db/schema.ts` by reflecting the live database.
 //
-// Upstream's SQL is the source of truth for the schema (ADR-003), so the Drizzle
+// Upstream's SQL is the source of truth for the schema (docs/database.md,
+// ADR-003), so the Drizzle
 // schema is a generated artifact used only for types and query building — never
 // hand-edited, and never the thing a migration is diffed against.
 //
@@ -66,6 +67,20 @@ try {
         'import { sql } from "drizzle-orm"\n\n' +
           'const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });',
       );
+  }
+
+  // Both repairs are workarounds for bugs in drizzle-kit's introspection, keyed
+  // to the exact strings it emits. `drizzle-kit` is on a caret range, so a
+  // version that changes those strings would leave the output broken —
+  // `.default(')` would fail to parse and `unknown()` would throw at Worker
+  // startup, both a long way from here. Fail now instead.
+  for (const leftover of ["unknown(", ".default(')"]) {
+    if (schema.includes(leftover)) {
+      throw new Error(
+        `drizzle-kit still emits ${leftover} after the repairs in this script. ` +
+          'Its output has changed; re-check the workarounds against the current version.',
+      );
+    }
   }
 
   writeFileSync(schemaPath, schema);

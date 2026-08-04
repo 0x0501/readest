@@ -16,10 +16,15 @@ interface CloudflareEnv {
 
 /**
  * Hyperdrive hands the Worker a local connection string that it proxies to the
- * real database, so nothing here is tied to a particular Postgres host (ADR-004).
- * Outside the Worker runtime — tests, `next dev`, drizzle-kit — connect directly.
+ * real database, so nothing here is tied to a particular Postgres host (see
+ * docs/database.md, ADR-004). Outside the Worker runtime — tests, `next dev`,
+ * drizzle-kit — connect directly.
+ *
+ * Throws rather than falling back to a default when neither is configured: a
+ * deployment that silently reads and writes the wrong backend is worse than one
+ * that refuses to start.
  */
-const getConnectionString = (): string => {
+export const getConnectionString = (): string => {
   try {
     const env = getCloudflareContext().env as Partial<CloudflareEnv> | undefined;
     if (env?.HYPERDRIVE) return env.HYPERDRIVE.connectionString;

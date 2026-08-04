@@ -1,4 +1,5 @@
 -- Ours, not upstream. Moves the user foreign keys onto Better Auth's table.
+-- The ADRs cited below are in apps/readest-app/docs/database.md.
 --
 -- Upstream declares twelve `user_id uuid REFERENCES auth.users(id) ON DELETE
 -- CASCADE` across 000/002/003/012/014. `auth.users` is a stub from local_000 that

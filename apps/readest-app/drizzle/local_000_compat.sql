@@ -1,4 +1,5 @@
 -- Ours, not upstream. Runs first, before the base schema.
+-- The ADRs cited below are in apps/readest-app/docs/database.md.
 --
 -- Upstream's SQL is written against a Supabase database: it GRANTs to the
 -- `authenticated` / `anon` / `service_role` roles, installs pgcrypto into an

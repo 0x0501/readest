@@ -91,3 +91,7 @@ docs/superpowers
 # Word Lens build-input corpora (ECDICT, WikDict, FrequencyWords, etc.) — large,
 # downloaded on demand by scripts/build-wordlens-data.mjs; cached locally, not committed.
 /data/wordlens/.sources/
+
+# Cloudflare Workers local secrets
+.dev.vars
+.dev.vars.*

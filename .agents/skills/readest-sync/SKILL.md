@@ -46,8 +46,10 @@ comm -12 <(git diff --name-only HEAD...upstream/main | sort -u) \
          <(git diff --name-only upstream/main...HEAD | sort -u)
 ```
 
-Read the second list in full before starting — it names exactly which entries of
-`references/divergences.md` you are about to need.
+Read the second list in full before starting. It is a watch list, not a prediction —
+git often merges those files cleanly because the two sides touched different regions.
+Its job is to tell you which entries of `references/divergences.md` to check
+afterwards, whether or not a conflict appeared.
 
 ## 2. Rebase
 
@@ -64,7 +66,23 @@ If the rebase turns into a fight across many commits, `git rebase --abort` and m
 instead. A merge commit is fine; a mangled rebase is not.
 
 ```bash
-pnpm install                # rebuild the lockfile
+git submodule update --init --recursive    # pointers move with the rebase
+pnpm install                               # rebuild the lockfile
+```
+
+The submodules are easy to forget and fail late. `packages/foliate-js` is the
+reader engine, and upstream moves its pointer whenever a feature needs new engine
+code — the rebase updates the recorded commit but leaves your checkout behind, so
+the first symptom is a typecheck error about a missing export from
+`foliate-js/*.js`. `git submodule status` marks a stale one with a leading `+`.
+
+Then confirm the fork's intent survived the merge, for each file the watch list
+named. These are the load-bearing ones:
+
+```bash
+grep -n "NEXT_PUBLIC_WEB_BASE_URL" apps/readest-app/src/services/constants.ts
+grep -n "PAYMENTS_ENABLED = " apps/readest-app/src/utils/access.ts
+grep -n "providers={\['github'\]}" apps/readest-app/src/app/auth/page.tsx
 ```
 
 ## 3. Adopt new upstream migrations
@@ -147,6 +165,7 @@ added or skipped, and the gate results. Deploying is the operator's call.
 
 Each of these is checkable, and each has been wrong at least once:
 
+- `git submodule status` shows no leading `+` — no stale checkout.
 - `find apps/readest-app/drizzle -xtype l` is empty — no dangling symlinks.
 - Journal entries equal rows in `drizzle.__drizzle_migrations` on a fresh database —
   every migration you adopted actually ran.

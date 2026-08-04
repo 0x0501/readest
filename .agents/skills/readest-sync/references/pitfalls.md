@@ -52,6 +52,25 @@ creates the `synced_at` column, the `idx_books_user_synced` index,
 has no rows to walk. Establish the equivalent for any new such migration, or apply
 that one file by hand with `psql -f`.
 
+## Typecheck fails on a missing export from `foliate-js`
+
+**Symptom:** `error TS2305: Module '"foliate-js/…"' has no exported member '…'`
+straight after a rebase that otherwise went clean.
+
+`packages/foliate-js` is a submodule and upstream moves its pointer whenever a
+reader feature needs new engine code. The rebase updates the recorded commit; your
+working tree keeps the old checkout, so the application compiles against an engine
+that predates the feature.
+
+```bash
+git submodule status                              # a stale one carries a leading +
+git submodule update --init --recursive
+```
+
+Worth running after every rebase rather than waiting for the error — several other
+submodules (`tauri`, `tauri-plugins`, `simplecc-wasm`, `qcms`) can move the same way
+and fail further from the cause.
+
 ## A migration is present but does nothing
 
 **Symptom:** the file exists, `pnpm db:migrate` succeeds, the change is absent.

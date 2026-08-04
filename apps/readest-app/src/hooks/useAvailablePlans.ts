@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { fetchAndTransformIAPPlans, isIAPAvailable } from '@/libs/payment/iap/client';
 import { fetchStripePlans } from '@/libs/payment/stripe/client';
 import { AvailablePlan } from '@/types/quota';
+import { PAYMENTS_ENABLED } from '@/utils/access';
 import { stubTranslation as _ } from '@/utils/misc';
 
 const IAP_PRODUCT_IDS = [
@@ -25,6 +26,8 @@ export const useAvailablePlans = ({ hasIAP, onError }: UseAvailablePlansParams) 
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    if (!PAYMENTS_ENABLED) return;
+
     const fetchPlans = async () => {
       setLoading(true);
       setError(null);

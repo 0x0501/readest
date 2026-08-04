@@ -1,0 +1,80 @@
+# Personal fork only — not part of upstream CI.
+name: Deploy web to Cloudflare Workers
+
+on:
+  push:
+    branches: [personal]
+  workflow_dispatch:
+
+# One deploy at a time; a newer push supersedes an in-flight run.
+concurrency:
+  group: deploy-personal
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # foliate-js and simplecc-wasm carry the pdfjs / opencc assets that
+          # `setup-vendors` copies into public/vendor, and js-mdict is consumed
+          # as TS source through tsconfig paths. Recursive matches what the
+          # upstream docker-image workflow does.
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # corepack activates the pnpm version pinned by `packageManager` in the
+      # root package.json, so this does not drift when upstream bumps it.
+      - run: corepack enable
+
+      - name: Fail fast on missing deployment config
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+          NEXT_PUBLIC_WEB_BASE_URL: ${{ vars.NEXT_PUBLIC_WEB_BASE_URL }}
+        # The tracked apps/readest-app/.env carries base64 defaults pointing at
+        # UPSTREAM's Supabase project, and utils/supabase.ts falls back to them
+        # when the explicit vars are unset. Without this guard a misconfigured
+        # run would deploy a site that silently talks to someone else's backend.
+        run: |
+          missing=0
+          for v in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY \
+                   NEXT_PUBLIC_API_BASE_URL NEXT_PUBLIC_WEB_BASE_URL; do
+            if [ -z "${!v}" ]; then echo "::error::$v is not set"; missing=1; fi
+          done
+          [ "$missing" -eq 0 ]
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Copy pdfjs / simplecc / jieba assets into public/vendor
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: Build and deploy
+        working-directory: apps/readest-app
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Baked into the client bundle at build time. Process env wins over
+          # the tracked .env / .env.tauri files, so these override the defaults.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+          NEXT_PUBLIC_WEB_BASE_URL: ${{ vars.NEXT_PUBLIC_WEB_BASE_URL }}
+          NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL: ${{ vars.NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL }}
+          NEXT_PUBLIC_PUBLIC_STORAGE_BASE_URL: ${{ vars.NEXT_PUBLIC_PUBLIC_STORAGE_BASE_URL }}
+          NEXT_PUBLIC_SEND_EMAIL_DOMAIN: ${{ vars.NEXT_PUBLIC_SEND_EMAIL_DOMAIN }}
+          NEXT_PUBLIC_OBJECT_STORAGE_TYPE: r2
+        # `run deploy`, not `pnpm deploy` — the latter resolves to pnpm's own
+        # built-in deploy command instead of the package script.
+        #
+        # The script seds `next build"` into `next build --webpack"` before
+        # building and restores it afterwards. Do not change the tail of the
+        # `build` script: the sed stops matching, the build silently falls back
+        # to Turbopack, and the worker grows past the 64 MiB limit.
+        run: pnpm run deploy

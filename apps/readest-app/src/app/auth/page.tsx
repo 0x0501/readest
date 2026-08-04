@@ -428,7 +428,9 @@ export default function AuthPage() {
         appearance={{ theme: ThemeSupa }}
         theme={isDarkMode ? 'dark' : 'light'}
         magicLink={true}
-        providers={['google', 'apple', 'github', 'discord']}
+        // Only providers enabled in the Supabase project belong here — a button
+        // for a provider that is not configured still renders and errors on click.
+        providers={['github']}
         redirectTo={getWebRedirectTo()}
         localization={getAuthLocalization()}
       />

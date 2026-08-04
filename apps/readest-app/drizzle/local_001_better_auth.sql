@@ -1,4 +1,5 @@
 -- Ours, not upstream. Better Auth's own tables.
+-- The ADRs cited below are in apps/readest-app/docs/database.md.
 --
 -- Generated, never hand-written. Better Auth compiles the DDL for whatever plugin
 -- set it is configured with; after upgrading `better-auth`, re-run the recipe in

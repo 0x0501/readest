@@ -3,23 +3,27 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { jwt } from 'better-auth/plugins/jwt';
 import { and, eq, isNull, sum } from 'drizzle-orm';
-import { type Db, schema, withDb } from '@/libs/db';
+import { type Db, schema } from '@/libs/db';
+import { READEST_WEB_BASE_URL } from '@/services/constants';
 
 /**
- * Emails allowed to register, comma-separated. This is the admission gate for the
- * instance, which is why email verification is not enabled — an address that is
- * not on the list never gets an account in the first place.
+ * Whether an address may register, against the comma-separated
+ * `SIGNUP_ALLOWED_EMAILS`. This is the admission gate for the instance, which is
+ * why email verification is not enabled — an address that is not on the list never
+ * gets an account in the first place. An unset or empty list admits nobody.
  */
-const allowedSignupEmails = (): string[] =>
+export const isSignupAllowed = (email: string): boolean =>
   (process.env['SIGNUP_ALLOWED_EMAILS'] ?? '')
     .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean);
+    .map((allowed) => allowed.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(email.trim().toLowerCase());
 
 /**
  * Claims the client reads straight off the token: `utils/access.ts` decodes it
  * for every premium gate, and the profile page's storage bar reads the usage
- * (ADR-006). Both were previously produced by a Postgres access-token hook.
+ * (see docs/database.md, ADR-006). Both were previously produced by a Postgres
+ * access-token hook.
  *
  * `plan` is fixed because this deployment has no billing tables and no checkout;
  * leaving it out would read as 'free' and lock features for everyone.
@@ -37,10 +41,23 @@ const definePayload =
     };
   };
 
+/** The GitHub provider, or nothing when this deployment has not configured it. */
+export const githubProvider = () => {
+  const clientId = process.env['GITHUB_CLIENT_ID'];
+  const clientSecret = process.env['GITHUB_CLIENT_SECRET'];
+  return clientId && clientSecret ? { github: { clientId, clientSecret } } : {};
+};
+
 export const createAuth = (db: Db) =>
   betterAuth({
     appName: 'Readest',
     database: drizzleAdapter(db, { provider: 'pg', schema }),
+
+    // Set explicitly rather than left to BETTER_AUTH_URL or to derivation from
+    // request headers: this is what Better Auth checks the Origin header against,
+    // so getting it wrong rejects every sign-in. It is the same per-deployment
+    // origin the share links and public asset URLs already use.
+    baseURL: READEST_WEB_BASE_URL,
 
     // Better Auth's default is a random text id. UUID keeps `public."user".id`
     // compatible with the twelve `user_id uuid` foreign keys upstream declares
@@ -49,12 +66,10 @@ export const createAuth = (db: Db) =>
 
     emailAndPassword: { enabled: true },
 
-    socialProviders: {
-      github: {
-        clientId: process.env['GITHUB_CLIENT_ID'] ?? '',
-        clientSecret: process.env['GITHUB_CLIENT_SECRET'] ?? '',
-      },
-    },
+    // GitHub is registered only when this deployment has actually configured it.
+    // Registering it regardless would offer a sign-in button that can only fail,
+    // and Better Auth warns on every request that it has no credentials.
+    socialProviders: githubProvider(),
 
     plugins: [
       // Bearer tokens for the API surface. Session cookies still authenticate the
@@ -68,8 +83,10 @@ export const createAuth = (db: Db) =>
           definePayload: definePayload(db),
         },
       }),
-      // Long-lived device tokens for KOReader and the browser extension, neither
-      // of which has a browser to run an OAuth flow in (ADR-011).
+      // Long-lived device tokens for KOReader, which is paired by pasting a token
+      // rather than by typing a password on an e-ink screen. The browser extension
+      // keeps capturing credentials from the web app instead (see docs/database.md,
+      // ADR-011).
       apiKey(),
     ],
 
@@ -77,8 +94,7 @@ export const createAuth = (db: Db) =>
       user: {
         create: {
           before: async (user) => {
-            const allowed = allowedSignupEmails();
-            if (!allowed.includes(user.email.toLowerCase())) {
+            if (!isSignupAllowed(user.email)) {
               throw new Error('This instance is invite-only.');
             }
             return { data: user };
@@ -87,7 +103,3 @@ export const createAuth = (db: Db) =>
       },
     },
   });
-
-/** Run one request against a connection that is closed when it finishes. */
-export const withAuth = <T>(fn: (auth: ReturnType<typeof createAuth>) => Promise<T>): Promise<T> =>
-  withDb((db) => fn(createAuth(db)));

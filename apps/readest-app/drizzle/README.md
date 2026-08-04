@@ -2,7 +2,10 @@
 
 Stock Postgres, reached from the Worker through a Hyperdrive binding. No Supabase,
 no PostgREST, no vendor-specific driver — swapping the provider means changing one
-connection string (ADR-004).
+connection string.
+
+This file is the operational side. The reasoning, and every `ADR-0NN` cited here
+and in the SQL, lives in [`../docs/database.md`](../docs/database.md).
 
 ## What is in here
 
@@ -67,31 +70,28 @@ Two things to check in the new file:
 
 ## After upgrading `better-auth`
 
-Its tables are generated, never hand-written. Regenerate them by compiling the DDL
-for the plugin set in `src/libs/auth/server.ts` and appending whatever is new as a
-fresh `local_*.sql`:
+Its tables are generated, never hand-written. Regenerate them and append whatever
+is new as a fresh `local_*.sql`:
 
 ```js
 // node --input-type=module, with DATABASE_URL set
 import { betterAuth } from 'better-auth';
 import { getMigrations } from 'better-auth/db/migration';
-import { jwt } from 'better-auth/plugins/jwt';
-import { apiKey } from '@better-auth/api-key';
 import pg from 'pg';
 
+// Copy `plugins` and `advanced` from src/libs/auth/server.ts — that file is the
+// authority. Anything that differs here produces DDL the adapter will not match.
 const auth = betterAuth({
   database: new pg.Pool({ connectionString: process.env.DATABASE_URL }),
-  emailAndPassword: { enabled: true },
-  plugins: [jwt(), apiKey()],
-  advanced: { database: { generateId: 'uuid' } },
+  plugins: [/* … */],
+  advanced: {/* … */},
 });
 console.log(await (await getMigrations(auth.options)).compileMigrations());
 ```
 
-The Kysely path is used because it is the only one that compiles SQL; keep its
-plugin list and `advanced.database` in step with `server.ts`, or the generated DDL
-will not match what the adapter expects. Missing this step surfaces at runtime,
-not at compile time (ADR-009).
+The Kysely path is used because it is the only one that compiles SQL. Missing this
+step surfaces at runtime, not at compile time (see `../docs/database.md`,
+ADR-009).
 
 ## Testing locally
 

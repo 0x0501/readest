@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/017_add_book_cover_version.sql

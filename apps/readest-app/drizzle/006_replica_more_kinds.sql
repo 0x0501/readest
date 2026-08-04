@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/006_replica_more_kinds.sql

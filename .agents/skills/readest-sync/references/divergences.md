@@ -43,14 +43,14 @@ of whatever upstream changed rather than discarding either side.
 | `src/services/constants.ts` | `READEST_WEB_BASE_URL` and friends read `NEXT_PUBLIC_*` env vars instead of hardcoding `readest.com` | Keep the env-var indirection; take upstream's new constants alongside |
 | `src/utils/access.ts` | `PAYMENTS_ENABLED = false` | Keep the flag false; take upstream's plan-gate logic |
 | `src/app/user/page.tsx`, `src/app/user/components/AccountActions.tsx`, `src/hooks/useAvailablePlans.ts` | Checkout UI hidden behind `PAYMENTS_ENABLED` | Keep the guard, re-wrap whatever upstream added |
-| `src/app/auth/page.tsx` | `providers={['github']}` — only what this deployment configured | Keep the narrowed list; do not restore google/apple/discord |
+| `src/app/auth/page.tsx` | `providers={['github']}` — only what this deployment configured | Keep the list at exactly the providers this deployment has credentials for |
 | `src/app/reader/components/sidebar/SearchBar.tsx` | A skipped (cloud-only) book says "Download this book to search inside it" rather than "Search failed" | Keep the extra branch; its test pins both messages |
 | `wrangler.toml` | This deployment's zone, routes, R2/KV/Hyperdrive bindings, vars | Almost always take the fork's side; upstream's is a different account |
 | `package.json` | Adds `db:migrate` and `db:pull` | Take upstream's dependency changes, keep the two scripts |
 | `.env.local.example` | Documents `DATABASE_URL`, `BETTER_AUTH_*`, `SIGNUP_ALLOWED_EMAILS`, `GITHUB_CLIENT_*` | Union of both |
 | `.gitignore` | Adds `.dev.vars` | Union of both |
 
-## Never merge by hand — regenerate
+## Regenerate rather than merge
 
 | File | Why | What to do |
 | --- | --- | --- |

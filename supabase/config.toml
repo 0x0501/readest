@@ -1,0 +1,12 @@
+# Supabase CLI project config for this fork's hosted database.
+#
+# Only the CLI's migration commands are used (`supabase link`, `supabase db push`,
+# `supabase migration list`); the local Docker stack is not, so nothing beyond
+# the project identifier needs configuring here. The linked project ref lives in
+# supabase/.temp/, which is untracked.
+#
+# `supabase/migrations` is a symlink to docker/volumes/db/migrations — upstream's
+# own migration directory — so migrations added upstream show up here as soon as
+# this branch is rebased, and `supabase db push` applies whichever ones the
+# remote's supabase_migrations.schema_migrations table has not recorded yet.
+project_id = "readest"

@@ -261,7 +261,12 @@ const SearchBar: React.FC<SearchBarProps> = ({ isVisible, bookKey, onHideSearchB
                   ? _('Enter at least two words')
                   : code === 'FUZZY_QUERY_TOO_LONG'
                     ? _('Search query is too long')
-                    : _('Search failed');
+                    : // Nothing failed here: searching needs the book's own file or a
+                      // prebuilt index, and a cloud-only book has neither until it is
+                      // downloaded. Saying "failed" sends readers looking for a bug.
+                      event.type === 'book-skipped'
+                      ? _('Download this book to search inside it')
+                      : _('Search failed');
             if (event.type === 'book-error' && !code) {
               console.error('search failed:', event.error);
             }

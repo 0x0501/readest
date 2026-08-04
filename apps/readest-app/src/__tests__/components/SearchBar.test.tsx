@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   progress: null as { section: { current: number } } | null,
   searchLibraryBooks: vi.fn(),
   viewSearch: vi.fn(),
+  setSearchError: vi.fn(),
   // Stable like the real context value; a fresh object per render would
   // re-fire the [appService, isVisible] effect and double the search.
   appService: { deleteDir: vi.fn().mockResolvedValue(undefined) },
@@ -51,7 +52,7 @@ vi.mock('@/store/sidebarStore', () => ({
     setSearchTerm: vi.fn(),
     setSearchResults: vi.fn(),
     setSearchProgress: vi.fn(),
-    setSearchError: vi.fn(),
+    setSearchError: mocks.setSearchError,
     setSearchStatus: vi.fn(),
     getSearchStatus: () => 'searching',
     getSearchNavState: () => ({ searchTerm: 'alice', searchError: null }),
@@ -74,6 +75,7 @@ describe('SearchBar', () => {
       yield { type: 'book-completed', book: { hash: 'book-hash' }, matchCount: 0 };
     });
     mocks.viewSearch.mockReset();
+    mocks.setSearchError.mockReset();
   });
 
   afterEach(() => {
@@ -109,5 +111,31 @@ describe('SearchBar', () => {
 
     expect(mocks.searchLibraryBooks).toHaveBeenCalledTimes(1);
     expect(mocks.searchLibraryBooks.mock.calls[0]![3].sectionIndex).toBe(4);
+  });
+
+  // A cloud-only book has no local file and no index, so it is skipped rather
+  // than searched. Reporting that as "Search failed" sends readers looking for a
+  // bug in a feature that is working.
+  it('tells the reader to download a book that was skipped as unavailable', async () => {
+    mocks.progress = null;
+    mocks.searchLibraryBooks.mockImplementation(async function* () {
+      yield { type: 'book-skipped', book: { hash: 'book-hash' }, reason: 'unavailable' };
+    });
+    await renderBar();
+
+    expect(mocks.setSearchError).toHaveBeenCalledWith(
+      'book-1',
+      'Download this book to search inside it',
+    );
+  });
+
+  it('still reports an uncoded book error as a failure', async () => {
+    mocks.progress = null;
+    mocks.searchLibraryBooks.mockImplementation(async function* () {
+      yield { type: 'book-error', book: { hash: 'book-hash' }, error: 'boom' };
+    });
+    await renderBar();
+
+    expect(mocks.setSearchError).toHaveBeenCalledWith('book-1', 'Search failed');
   });
 });

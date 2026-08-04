@@ -13,6 +13,20 @@ day-to-day operations; this file records why the shape is what it is.
 | Authorization | RLS policies + `auth.uid()` | Explicit `WHERE user_id` in the application |
 | Database | Supabase Postgres | Any Postgres |
 
+## One deployment constraint worth knowing
+
+`NEXT_PUBLIC_WEB_BASE_URL` is baked in at build time and becomes Better Auth's
+`baseURL`, which is what the Origin header is checked against. **It has to be the
+origin the Worker is actually served on** — the `[[routes]]` custom domain in
+`wrangler.toml`. A mismatch does not degrade gracefully: every sign-in returns 403
+`INVALID_ORIGIN` while the rest of the site works, so it looks like an auth bug
+rather than a configuration one. The deploy workflow already fails the build when
+the variable is unset; it cannot check that the value is *right*.
+
+The same applies locally: point it at the dev server's own origin, and note that a
+`wrangler dev` run against the committed `wrangler.toml` inherits the custom
+domain as its Host.
+
 ## Architecture decision records
 
 The repository had no ADR convention before this work. These follow

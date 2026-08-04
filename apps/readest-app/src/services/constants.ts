@@ -866,7 +866,12 @@ export const BOOK_IDS_SEPARATOR = '+';
 
 export const DOWNLOAD_READEST_URL = 'https://readest.com?utm_source=readest_web';
 
-export const READEST_WEB_BASE_URL = 'https://web.readest.com';
+// Self-hosted deployments serve the web app from their own domain, so share
+// links, annotation deep links and OG image URLs must point there instead of
+// readest.com. `API_BASE_URL` and `NEXT_PUBLIC_NODE_BASE_URL` are already
+// overridable in services/environment.ts; this is the host those three build on.
+export const READEST_WEB_BASE_URL =
+  process.env['NEXT_PUBLIC_WEB_BASE_URL'] ?? 'https://web.readest.com';
 export const READEST_NODE_BASE_URL = 'https://node.readest.com';
 
 export const SHARE_BASE_URL = `${READEST_WEB_BASE_URL}/s`;
@@ -875,7 +880,7 @@ export const SHARE_EXPIRATION_DAYS = [1, 3, 7] as const;
 // Send to Readest — the domain inbound capture emails are addressed to, the
 // R2 bucket holding raw inbound payloads, and the per-user cap on undrained
 // inbox items (defense against a leaked address).
-export const SEND_EMAIL_DOMAIN = 'readest.com';
+export const SEND_EMAIL_DOMAIN = process.env['NEXT_PUBLIC_SEND_EMAIL_DOMAIN'] ?? 'readest.com';
 export const SEND_INBOX_BUCKET = 'readest-send-inbox';
 export const SEND_INBOX_PENDING_LIMIT = 50;
 // Hard cap on the size of a single uploaded EPUB the browser extension can
@@ -904,10 +909,15 @@ export const READEST_NIGHTLY_UPDATER_FILE = 'https://download.readest.com/nightl
 export const READEST_UPDATER_PUBKEY =
   'dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJFMEQ1QjE2OEU1NEIzNTEKUldSUnMxU09GbHNOdmpEaWFMT1crRFpEV2VORzQ2MklxaFc0M1R0ci9xY2c1bENXS0xhM1R1L2sK';
 
-export const READEST_PUBLIC_STORAGE_BASE_URL = 'https://storage.readest.com';
+// Hosts serving the public bucket. Both point at the same bucket — they only
+// differ by key prefix (`temp/` vs `media/`) — so a self-hosted deployment can
+// set both to a single R2 custom domain.
+export const READEST_PUBLIC_STORAGE_BASE_URL =
+  process.env['NEXT_PUBLIC_PUBLIC_STORAGE_BASE_URL'] ?? 'https://storage.readest.com';
 // Custom domain serving the readest-public bucket; durable media assets
 // (e.g. published book covers) are linked through this host.
-export const READEST_PUBLIC_ASSETS_BASE_URL = 'https://assets.readest.com';
+export const READEST_PUBLIC_ASSETS_BASE_URL =
+  process.env['NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL'] ?? 'https://assets.readest.com';
 
 export const READEST_OPDS_USER_AGENT = 'Readest/1.0 (OPDS Browser)';
 

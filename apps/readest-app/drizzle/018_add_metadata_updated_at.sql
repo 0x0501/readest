@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/018_add_metadata_updated_at.sql

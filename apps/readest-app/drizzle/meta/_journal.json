@@ -1,0 +1,87 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    { "idx": 0, "version": "7", "when": 1, "tag": "local_000_compat", "breakpoints": false },
+    { "idx": 1, "version": "7", "when": 2, "tag": "000_base_schema", "breakpoints": false },
+    { "idx": 2, "version": "7", "when": 3, "tag": "001_add_rsvp_position", "breakpoints": false },
+    { "idx": 3, "version": "7", "when": 4, "tag": "002_add_book_shares", "breakpoints": false },
+    { "idx": 4, "version": "7", "when": 5, "tag": "003_add_replicas", "breakpoints": false },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 6,
+      "tag": "004_crdt_merge_replica_fn",
+      "breakpoints": false
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 7,
+      "tag": "005_replica_manifest_cursor_updated_at",
+      "breakpoints": false
+    },
+    { "idx": 7, "version": "7", "when": 8, "tag": "006_replica_more_kinds", "breakpoints": false },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 9,
+      "tag": "007_files_replica_grouping",
+      "breakpoints": false
+    },
+    { "idx": 9, "version": "7", "when": 10, "tag": "008_replica_keys_rpcs", "breakpoints": false },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 11,
+      "tag": "009_replica_opds_catalog",
+      "breakpoints": false
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 12,
+      "tag": "010_replica_keys_forget",
+      "breakpoints": false
+    },
+    { "idx": 12, "version": "7", "when": 13, "tag": "011_replica_settings", "breakpoints": false },
+    { "idx": 13, "version": "7", "when": 14, "tag": "012_send_to_readest", "breakpoints": false },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 15,
+      "tag": "013_add_book_notes_global",
+      "breakpoints": false
+    },
+    { "idx": 15, "version": "7", "when": 16, "tag": "014_add_reading_stats", "breakpoints": false },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 17,
+      "tag": "015_add_reading_status_updated_at",
+      "breakpoints": false
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 19,
+      "tag": "017_add_book_cover_version",
+      "breakpoints": false
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 20,
+      "tag": "018_add_metadata_updated_at",
+      "breakpoints": false
+    },
+    { "idx": 19, "version": "7", "when": 21, "tag": "local_001_better_auth", "breakpoints": false },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 22,
+      "tag": "local_002_repoint_user_fks",
+      "breakpoints": false
+    }
+  ]
+}

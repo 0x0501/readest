@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/002_add_book_shares.sql

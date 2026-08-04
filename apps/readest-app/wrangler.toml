@@ -14,7 +14,7 @@ custom_domain = true
 PNPM_VERSION = "10.28.1"
 
 # Server-side runtime config. Non-secret only — account IDs and keys are set
-# with `wrangler secret put`: SUPABASE_ADMIN_KEY, R2_ACCOUNT_ID,
+# with `wrangler secret put`: BETTER_AUTH_SECRET, GITHUB_CLIENT_SECRET, R2_ACCOUNT_ID,
 # R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY.
 OBJECT_STORAGE_TYPE = "r2"
 R2_REGION = "auto"
@@ -38,6 +38,13 @@ binding = "ASSETS"
 
 # Required by the r2IncrementalCache override registered in open-next.config.ts,
 # even though `dangerous.disableIncrementalCache` keeps it unused at runtime.
+# Postgres, reached through Hyperdrive so the Worker holds no direct connection
+# and the database can live anywhere. `id` comes from
+# `wrangler hyperdrive create readest-db --connection-string=…`.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "REPLACE_WITH_HYPERDRIVE_CONFIG_ID"
+
 [[r2_buckets]]
 binding = "NEXT_INC_CACHE_R2_BUCKET"
 bucket_name = "readest-next-inc-cache"

@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/011_replica_settings.sql

@@ -6,22 +6,25 @@ workers_dev = true
 preview_urls = true
 
 [[routes]]
-pattern = "web-cf.readest.com"
-zone_name = "readest.com"
-custom_domain = true
-
-[[routes]]
-pattern = "api-cf.readest.com"
-zone_name = "readest.com"
-custom_domain = true
-
-[[routes]]
-pattern = "web.readest.com"
-zone_name = "readest.com"
+pattern = "read.sumku.cc"
+zone_name = "sumku.cc"
 custom_domain = true
 
 [vars]
 PNPM_VERSION = "10.28.1"
+
+# Server-side runtime config. Non-secret only — account IDs and keys are set
+# with `wrangler secret put`: SUPABASE_ADMIN_KEY, R2_ACCOUNT_ID,
+# R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY.
+OBJECT_STORAGE_TYPE = "r2"
+R2_REGION = "auto"
+R2_BUCKET_NAME = "readest-files"
+TEMP_STORAGE_PUBLIC_BUCKET_NAME = "readest-public"
+# Quota ceilings the plan tiers would otherwise impose. 100 GiB of storage and
+# 10 M characters of translation per day — high enough not to bind in practice,
+# low enough to notice runaway R2 usage.
+STORAGE_FIXED_QUOTA = "107374182400"
+TRANSLATION_FIXED_QUOTA = "10485760"
 
 [observability]
 enabled = true
@@ -33,17 +36,12 @@ traces = { head_sampling_rate = 0.01 }
 directory = ".open-next/assets"
 binding = "ASSETS"
 
-[[kv_namespaces]]
-binding = "TRANSLATIONS_KV"
-id = "fa6e3eb1988a424bbf3c952e01650ced"
-
+# Required by the r2IncrementalCache override registered in open-next.config.ts,
+# even though `dangerous.disableIncrementalCache` keeps it unused at runtime.
 [[r2_buckets]]
 binding = "NEXT_INC_CACHE_R2_BUCKET"
 bucket_name = "readest-next-inc-cache"
 
-# Per-event metrics for the App Store / Google Play subscription webhooks and the
-# reconciliation sweep. 100% capture, independent of the head-sampled Workers
-# Logs above. Queryable via the Analytics Engine SQL API.
-[[analytics_engine_datasets]]
-binding = "IAP_WEBHOOK_AE"
-dataset = "iap_webhooks"
+# TRANSLATIONS_KV (DeepL response cache) and IAP_WEBHOOK_AE (App Store / Google
+# Play webhook metrics) are dropped: this deployment configures neither DeepL
+# nor in-app purchases, and both bindings are optional at the call site.

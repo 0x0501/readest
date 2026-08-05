@@ -1,7 +1,10 @@
 import { LocaleWithTextInfo } from '@/types/misc';
 import { franc } from 'franc-min';
 import { iso6392 } from 'iso-639-2';
-import { iso6393To1 } from 'iso-639-3';
+// The package entry re-exports the full ISO 639-3 database — iso6393.js alone is
+// 780 KB of language records — and none of it tree-shakes away. This subpath is
+// the same 184-entry map on its own, at 2.5 KB.
+import { iso6393To1 } from 'iso-639-3/iso6393-to-1.js';
 
 export const isCJKStr = (str: string) => {
   return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(str ?? '');

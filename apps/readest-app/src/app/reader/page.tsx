@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect } from 'react';
 import { useEnv } from '@/context/EnvContext';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -14,7 +15,11 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { checkForAppUpdates, checkAppReleaseNotes } from '@/helpers/updater';
 import { tauriHandleSetAlwaysOnTop } from '@/utils/window';
 import ClipSignInAlert from '@/components/ClipSignInAlert';
-import Reader from './components/Reader';
+
+// The reader renders nothing meaningful until it has the book, which lives in
+// browser storage — so server-rendering it produces an empty shell while pulling
+// foliate-js, pdf.js and jieba into the Worker, where none of them ever run.
+const Reader = dynamic(() => import('./components/Reader'), { ssr: false });
 
 // This is only used for the Tauri app in the app router
 export default function Page() {

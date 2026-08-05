@@ -65,7 +65,15 @@ const nextConfig = {
       fflate: path.resolve(__dirname, 'node_modules/fflate'),
       ...(appPlatform !== 'web' ? { '@tursodatabase/database-wasm': false } : {}),
       ...(isServer && appPlatform === 'web'
-        ? { '@readest/turso-database-wasm/webpack': false, 'jieba-wasm': false }
+        ? {
+            '@readest/turso-database-wasm/webpack': false,
+            'jieba-wasm': false,
+            // Opening a book happens in the browser — nothing under `libs/document`
+            // is reachable from an API route. Left in, webpack emits the 465 KB
+            // pdf.js async chunk once per route entry that can reach it: four
+            // byte-identical copies, 1.8 MB of a Worker that never renders a PDF.
+            'foliate-js/pdf.js': false,
+          }
         : {}),
     };
     return config;

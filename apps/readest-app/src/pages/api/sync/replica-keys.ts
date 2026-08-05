@@ -1,8 +1,10 @@
+import { sql } from 'drizzle-orm';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseClient } from '@/utils/supabase';
-import { validateUserAndToken } from '@/utils/access';
-import { runMiddleware, corsAllMethods } from '@/utils/cors';
+import { validateUserAndToken } from '@/libs/auth/verify';
+import { withDb } from '@/libs/db';
+import { withUserContext } from '@/libs/db/rpc';
+import { corsAllMethods, runMiddleware } from '@/utils/cors';
 
 const SUPPORTED_ALGS = new Set<string>(['pbkdf2-600k-sha256']);
 
@@ -30,65 +32,83 @@ const toResponseRow = (row: ReplicaKeyRpcRow): ReplicaKeyResponseRow => ({
   createdAt: row.created_at,
 });
 
+// All three RPCs scope themselves with `auth.uid()`, so each runs inside
+// `withUserContext` — the transaction sets the subject claim PostgREST used to
+// copy out of the JWT. Their bodies are unchanged (ADR-010).
 export async function GET(req: NextRequest) {
-  const { user, token } = await validateUserAndToken(req.headers.get('authorization'));
-  if (!user || !token) {
-    return errorResponse(401, 'AUTH', 'Not authenticated');
-  }
-  const supabase = createSupabaseClient(token);
+  return withDb(async (db) => {
+    const { user, token } = await validateUserAndToken(db, req.headers.get('authorization'));
+    if (!user || !token) {
+      return errorResponse(401, 'AUTH', 'Not authenticated');
+    }
 
-  const { data, error } = await supabase.rpc('replica_keys_list');
-  if (error) {
-    console.error('replica_keys_list failed', { userId: user.id, error });
-    return errorResponse(500, 'SERVER', error.message);
-  }
-  const rows = (data ?? []) as ReplicaKeyRpcRow[];
-  return NextResponse.json({ rows: rows.map(toResponseRow) }, { status: 200 });
+    try {
+      const result = await withUserContext(db, user.id, (tx) =>
+        tx.execute(sql`select * from public.replica_keys_list()`),
+      );
+      const rows = result.rows as unknown as ReplicaKeyRpcRow[];
+      return NextResponse.json({ rows: rows.map(toResponseRow) }, { status: 200 });
+    } catch (error) {
+      console.error('replica_keys_list failed', { userId: user.id, error });
+      return errorResponse(500, 'SERVER', error instanceof Error ? error.message : 'Failed');
+    }
+  });
 }
 
 export async function POST(req: NextRequest) {
-  const { user, token } = await validateUserAndToken(req.headers.get('authorization'));
-  if (!user || !token) {
-    return errorResponse(401, 'AUTH', 'Not authenticated');
-  }
+  return withDb(async (db) => {
+    const { user, token } = await validateUserAndToken(db, req.headers.get('authorization'));
+    if (!user || !token) {
+      return errorResponse(401, 'AUTH', 'Not authenticated');
+    }
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return errorResponse(400, 'VALIDATION', 'Invalid JSON body');
-  }
-  const alg =
-    typeof body === 'object' && body !== null && 'alg' in body
-      ? (body as { alg: unknown }).alg
-      : undefined;
-  if (typeof alg !== 'string' || !SUPPORTED_ALGS.has(alg)) {
-    return errorResponse(422, 'UNSUPPORTED_ALG', `Unsupported alg: ${String(alg)}`);
-  }
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return errorResponse(400, 'VALIDATION', 'Invalid JSON body');
+    }
+    const alg =
+      typeof body === 'object' && body !== null && 'alg' in body
+        ? (body as { alg: unknown }).alg
+        : undefined;
+    if (typeof alg !== 'string' || !SUPPORTED_ALGS.has(alg)) {
+      return errorResponse(422, 'UNSUPPORTED_ALG', `Unsupported alg: ${String(alg)}`);
+    }
 
-  const supabase = createSupabaseClient(token);
-  const { data, error } = await supabase
-    .rpc('replica_keys_create', { p_alg: alg })
-    .single<ReplicaKeyRpcRow>();
-  if (error || !data) {
-    console.error('replica_keys_create failed', { userId: user.id, error });
-    return errorResponse(500, 'SERVER', error?.message ?? 'replica_keys_create returned no row');
-  }
-  return NextResponse.json({ row: toResponseRow(data) }, { status: 201 });
+    try {
+      const result = await withUserContext(db, user.id, (tx) =>
+        tx.execute(sql`select * from public.replica_keys_create(${alg})`),
+      );
+      const row = result.rows[0] as unknown as ReplicaKeyRpcRow | undefined;
+      if (!row) {
+        return errorResponse(500, 'SERVER', 'replica_keys_create returned no row');
+      }
+      return NextResponse.json({ row: toResponseRow(row) }, { status: 201 });
+    } catch (error) {
+      console.error('replica_keys_create failed', { userId: user.id, error });
+      return errorResponse(500, 'SERVER', error instanceof Error ? error.message : 'Failed');
+    }
+  });
 }
 
 export async function DELETE(req: NextRequest) {
-  const { user, token } = await validateUserAndToken(req.headers.get('authorization'));
-  if (!user || !token) {
-    return errorResponse(401, 'AUTH', 'Not authenticated');
-  }
-  const supabase = createSupabaseClient(token);
-  const { error } = await supabase.rpc('replica_keys_forget');
-  if (error) {
-    console.error('replica_keys_forget failed', { userId: user.id, error });
-    return errorResponse(500, 'SERVER', error.message);
-  }
-  return NextResponse.json({ ok: true }, { status: 200 });
+  return withDb(async (db) => {
+    const { user, token } = await validateUserAndToken(db, req.headers.get('authorization'));
+    if (!user || !token) {
+      return errorResponse(401, 'AUTH', 'Not authenticated');
+    }
+
+    try {
+      await withUserContext(db, user.id, (tx) =>
+        tx.execute(sql`select public.replica_keys_forget()`),
+      );
+      return NextResponse.json({ ok: true }, { status: 200 });
+    } catch (error) {
+      console.error('replica_keys_forget failed', { userId: user.id, error });
+      return errorResponse(500, 'SERVER', error instanceof Error ? error.message : 'Failed');
+    }
+  });
 }
 
 const handler = async (req: NextApiRequest, res: NextApiResponse) => {

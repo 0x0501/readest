@@ -6,7 +6,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 // intercepts the imports inside the route.
 
 const validateUserMock = vi.fn();
-vi.mock('@/utils/access', () => ({
+vi.mock('@/libs/auth/verify', () => ({
   validateUserAndToken: (...args: unknown[]) => validateUserMock(...args),
 }));
 
@@ -27,28 +27,21 @@ const insertMock = vi.fn();
 const updateMock = vi.fn();
 const deleteMock = vi.fn();
 const countMock = vi.fn();
-vi.mock('@/utils/supabase', () => ({
-  createSupabaseAdminClient: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          in: () => countMock(),
-        }),
-      }),
-      insert: (row: unknown) => ({
-        select: () => ({
-          single: () => insertMock(row),
-        }),
-      }),
-      update: (row: unknown) => ({
-        eq: () => updateMock(row),
-      }),
-      delete: () => ({
-        eq: () => deleteMock(),
-      }),
-    }),
-  }),
-}));
+// One stub per Drizzle chain the route builds. Spelling them out rather than
+// reaching for the generic `stubDb` keeps the rollback assertions below able to
+// say which statement ran.
+vi.mock('@/libs/db', async (orig) => {
+  const db = {
+    select: () => ({ from: () => ({ where: () => countMock() }) }),
+    insert: () => ({ values: (row: unknown) => ({ returning: () => insertMock(row) }) }),
+    update: () => ({ set: (row: unknown) => ({ where: () => updateMock(row) }) }),
+    delete: () => ({ where: () => deleteMock() }),
+  };
+  return {
+    ...(await orig<typeof import('@/libs/db')>()),
+    withDb: <T>(fn: (handle: unknown) => Promise<T>) => fn(db),
+  };
+});
 
 // Import AFTER mocks are in place.
 const { default: handler } = await import('@/pages/api/send/inbox/file');
@@ -118,10 +111,10 @@ beforeEach(() => {
   validateUserMock.mockReset().mockResolvedValue({ user: validUser });
   putObjectMock.mockReset().mockResolvedValue(undefined);
   deleteObjectMock.mockReset().mockResolvedValue(undefined);
-  countMock.mockReset().mockResolvedValue({ count: 0, error: null });
-  insertMock.mockReset().mockResolvedValue({ data: { id: 'inbox-1' }, error: null });
-  updateMock.mockReset().mockResolvedValue({ error: null });
-  deleteMock.mockReset().mockResolvedValue({ error: null });
+  countMock.mockReset().mockResolvedValue([{ value: 0 }]);
+  insertMock.mockReset().mockResolvedValue([{ id: 'inbox-1' }]);
+  updateMock.mockReset().mockResolvedValue(undefined);
+  deleteMock.mockReset().mockResolvedValue(undefined);
   corsMock.mockReset().mockResolvedValue(undefined);
 });
 
@@ -168,7 +161,7 @@ describe('POST /api/send/inbox/file', () => {
   });
 
   test('rejects when inbox is full with 429', async () => {
-    countMock.mockResolvedValueOnce({ count: 60, error: null });
+    countMock.mockResolvedValueOnce([{ value: 60 }]);
     const req = makeReq({ ...VALID_HEADERS, body: Buffer.from('PK\x03\x04') });
     const res = makeRes();
     await handler(req, res as unknown as NextApiResponse);
@@ -199,12 +192,12 @@ describe('POST /api/send/inbox/file', () => {
     expect(insertMock).toHaveBeenCalledTimes(1);
     const insertArg = insertMock.mock.calls[0]![0];
     expect(insertArg).toMatchObject({
-      user_id: validUser.id,
+      userId: validUser.id,
       kind: 'file',
       source: 'extension',
       url: 'https://example.com/article',
       filename: 'Article ✅',
-      byte_size: body.byteLength,
+      byteSize: body.byteLength,
     });
 
     expect(putObjectMock).toHaveBeenCalledTimes(1);
@@ -213,7 +206,7 @@ describe('POST /api/send/inbox/file', () => {
 
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(updateMock.mock.calls[0]![0]).toEqual({
-      payload_key: 'inbox/user-123/inbox-1/clip.epub',
+      payloadKey: 'inbox/user-123/inbox-1/clip.epub',
     });
   });
 
@@ -229,7 +222,7 @@ describe('POST /api/send/inbox/file', () => {
   });
 
   test('rolls back the inbox row and stored payload when payload_key update fails', async () => {
-    updateMock.mockResolvedValueOnce({ error: { message: 'update failed' } });
+    updateMock.mockRejectedValueOnce(new Error('update failed'));
     const req = makeReq({ ...VALID_HEADERS, body: Buffer.from('PK\x03\x04') });
     const res = makeRes();
     await handler(req, res as unknown as NextApiResponse);

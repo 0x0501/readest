@@ -1,5 +1,6 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { NextResponse } from 'next/server';
+import { withDb } from '@/libs/db';
 import { rejectionToHttp, resolveActiveShare } from '@/libs/shareServer';
 import { SHARE_PRESIGN_TTL_SECONDS } from '@/services/constants';
 import { getDownloadSignedUrl } from '@/utils/object';
@@ -38,7 +39,7 @@ interface RouteParams {
 export async function GET(_request: Request, { params }: RouteParams) {
   const { token } = await params;
 
-  const result = await resolveActiveShare(token);
+  const result = await withDb((db) => resolveActiveShare(db, token));
   if (!result.ok) {
     const { status, body } = rejectionToHttp(result.reason);
     return NextResponse.json(body, { status });

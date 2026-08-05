@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { withDb } from '@/libs/db';
 import { rejectionToHttp, resolveActiveShare } from '@/libs/shareServer';
 
 interface RouteParams {
@@ -12,7 +13,7 @@ interface RouteParams {
 export async function GET(_request: Request, { params }: RouteParams) {
   const { token } = await params;
 
-  const result = await resolveActiveShare(token);
+  const result = await withDb((db) => resolveActiveShare(db, token));
   if (!result.ok) {
     const { status, body } = rejectionToHttp(result.reason);
     return NextResponse.json(body, { status });

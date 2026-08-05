@@ -1,8 +1,5 @@
 import { useState } from 'react';
-import { useEnv } from '@/context/EnvContext';
 import { useTranslation } from '@/hooks/useTranslation';
-import { UserPlan } from '@/types/quota';
-import { PAYMENTS_ENABLED } from '@/utils/access';
 
 interface DeleteConfirmationModalProps {
   show: boolean;
@@ -47,34 +44,25 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({
 };
 
 interface AccountActionsProps {
-  userPlan: UserPlan;
-  iapAvailable: boolean;
   onLogout: () => void;
   onResetPassword: () => void;
   onUpdateEmail: () => void;
   onConfirmDelete: () => void;
-  onRestorePurchase?: () => void;
-  onManageSubscription?: () => void;
   onManageStorage?: () => void;
   onManageSharedLinks?: () => void;
   onManageSync?: () => void;
 }
 
 const AccountActions: React.FC<AccountActionsProps> = ({
-  userPlan,
-  iapAvailable,
   onLogout,
   onResetPassword,
   onUpdateEmail,
   onConfirmDelete,
-  onRestorePurchase,
-  onManageSubscription,
   onManageStorage,
   onManageSharedLinks,
   onManageSync,
 }) => {
   const _ = useTranslation();
-  const { appService } = useEnv();
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
   const handleDeleteRequest = () => {
@@ -96,24 +84,6 @@ const AccountActions: React.FC<AccountActionsProps> = ({
         }}
       />
       <div className='flex flex-col gap-4 md:grid md:grid-cols-2 lg:grid-cols-3'>
-        {PAYMENTS_ENABLED &&
-          (appService?.hasIAP && iapAvailable ? (
-            <button
-              onClick={onRestorePurchase}
-              className='w-full rounded-lg bg-blue-100 px-6 py-3 font-medium text-blue-600 transition-colors hover:bg-blue-200 md:w-auto'
-            >
-              {_('Restore Purchase')}
-            </button>
-          ) : (
-            userPlan !== 'free' && (
-              <button
-                onClick={onManageSubscription}
-                className='w-full rounded-lg bg-blue-100 px-6 py-3 font-medium text-blue-600 transition-colors hover:bg-blue-200 md:w-auto'
-              >
-                {_('Manage Subscription')}
-              </button>
-            )
-          ))}
         {onManageSync && (
           <button
             onClick={onManageSync}

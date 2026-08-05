@@ -31,19 +31,6 @@ export const getUserProfilePlan = (token: string): UserPlan => {
 };
 
 /**
- * Master switch for the commercial surface — the plan comparison cards, the
- * "Manage Subscription" action and the Stripe/IAP plan fetch behind them. OFF:
- * a deployment with no Stripe or IAP credentials stops rendering checkout UI
- * that can only error, and `/api/stripe/plans` is never called (its 500 would
- * otherwise raise a toast on every visit to the profile page).
- *
- * The plan gates themselves ({@link isEmailInPlan}, {@link isCloudSyncAllowed},
- * {@link isTTSCacheAllowed}) are unaffected — they key off the plan claim, not
- * this flag.
- */
-export const PAYMENTS_ENABLED = false;
-
-/**
  * Plans that include the "Send to Readest via email" feature: Plus,
  * Pro, and Lifetime (`purchase`). Free users see an upgrade card on
  * the client and get a 403 from the server endpoints that allocate /

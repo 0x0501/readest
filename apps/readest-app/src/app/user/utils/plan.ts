@@ -1,5 +1,4 @@
-import type { StripeAvailablePlan } from '@/libs/payment/stripe/client';
-import type { AvailablePlan, PlanInterval, PlanType, QuotaFeature, UserPlan } from '@/types/quota';
+import type { PlanInterval, PlanType, QuotaFeature, UserPlan } from '@/types/quota';
 import { stubTranslation as _ } from '@/utils/misc';
 
 type FeatureType = {
@@ -30,50 +29,22 @@ export type PlanDetails = {
   products?: ProductInfo[];
 };
 
-const getProductFeature = (productId: string): QuotaFeature | undefined => {
-  const features: QuotaFeature[] = ['storage', 'translation', 'tokens', 'customization'];
-  const lowerId = productId.toLowerCase();
-  for (const feature of features) {
-    if (lowerId.includes(feature)) {
-      return feature;
-    }
-  }
-
-  return undefined;
-};
-
-export function getPlanDetails(
-  planCode: UserPlan,
-  availablePlans: (AvailablePlan & StripeAvailablePlan)[],
-  interval: PlanInterval = 'month',
-): PlanDetails {
-  const availablePlan = availablePlans.find(
-    (plan) => plan.plan === planCode && (!plan.interval || plan.interval === interval),
-  );
-  const currency = availablePlans?.[0]?.currency ?? 'USD';
+// Prices, product ids and the purchasable-product list came from the Stripe
+// catalogue. With no store configured there is nothing to look them up in, so
+// what is left is the static copy: plan names, feature blurbs and limits, which
+// is all the profile page renders.
+export function getPlanDetails(planCode: UserPlan, interval: PlanInterval = 'month'): PlanDetails {
+  const currency = 'USD';
   switch (planCode) {
     case 'purchase': {
-      const purchasableProducts: ProductInfo[] = availablePlans
-        .filter((plan) => plan.plan === planCode)
-        .sort((a, b) => a.price - b.price)
-        .map((plan) => {
-          return {
-            id: plan.productId,
-            name: plan.productName,
-            feature: plan.metadata?.feature || getProductFeature(plan.productId) || 'generic',
-            price: plan.price,
-            currency: plan.currency,
-          } as ProductInfo;
-        });
       return {
         name: _('Lifetime Plan'),
         plan: planCode,
         type: 'purchase',
         color: 'bg-green-100 text-green-800',
         hintColor: 'text-green-800/75',
-        price: availablePlan?.price || 1999,
+        price: 1999,
         currency,
-        productId: availablePlan?.productId,
         interval: _('lifetime'),
         features: [
           {
@@ -95,7 +66,6 @@ export function getPlanDetails(
             ),
           },
         ],
-        products: purchasableProducts,
       };
     }
     case 'free':
@@ -107,7 +77,6 @@ export function getPlanDetails(
         hintColor: 'text-gray-800/75',
         price: 0,
         currency,
-        productId: availablePlan?.productId,
         interval: interval === 'month' ? _('month') : _('year'),
         features: [
           {
@@ -153,9 +122,8 @@ export function getPlanDetails(
         type: 'subscription',
         color: 'bg-blue-200 text-blue-800',
         hintColor: 'text-blue-800/75',
-        price: availablePlan?.price || 499,
+        price: 499,
         currency,
-        productId: availablePlan?.productId,
         interval: interval === 'month' ? _('month') : _('year'),
         features: [
           {
@@ -204,9 +172,8 @@ export function getPlanDetails(
         type: 'subscription',
         color: 'bg-purple-200 text-purple-800',
         hintColor: 'text-purple-800/75',
-        price: availablePlan?.price || 999,
+        price: 999,
         currency,
-        productId: availablePlan?.productId,
         interval: interval === 'month' ? _('month') : _('year'),
         features: [
           {
@@ -243,6 +210,6 @@ export function getPlanDetails(
         },
       };
     default:
-      return getPlanDetails('free', availablePlans);
+      return getPlanDetails('free');
   }
 }

@@ -209,3 +209,29 @@ the new tier covers something nothing covered before: whether the migrations and
 the SQL are correct. It is also the only defence against ADR-005's standing
 risk, so every data route needs a "user A cannot read or write user B's data"
 test. CI gains a service container.
+
+### ADR-013: The daily-usage counters get a table of their own
+
+**Context.** `utils/usage.ts` called two Postgres functions,
+`increment_daily_usage` and `get_current_usage`. Neither is defined in
+`docker/volumes/db/migrations/`, and no table backs them: upstream created both
+directly in its hosted project and never shipped the SQL. On any database built
+from the tracked migrations the calls failed, the `catch` logged, and the
+counter returned 0 — so the DeepL daily quota never counted anything, and the
+test that covered it asserted the arguments of a mocked `supabase.rpc` call,
+which passed for as long as the function did not exist.
+
+**Decision.** Add `usage_stats` in `drizzle/local_003_usage_stats.sql` and do
+the counting in Drizzle. The functions are not recreated: ADR-010 preserves
+upstream's *existing* function bodies so upstream edits apply as-is, and there
+was never a body here to preserve. Reads and writes resolve the UTC date in
+Postgres rather than in the Worker, so the window does not depend on which
+machine asks.
+
+**Consequences.** Quotas start applying, which is a behaviour change on any
+deployment that had DeepL keys configured — usage that silently counted as zero
+now counts. `getCurrentUsage` no longer swallows errors: a quota it cannot read
+must not be granted, so the route fails closed. Writes stay best-effort, since a
+translation already delivered should not fail afterwards. If upstream ever ships
+its own `usage_stats`, its migration will fail to apply against this table
+rather than diverge quietly.

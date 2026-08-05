@@ -2,13 +2,11 @@ import crypto from 'crypto';
 import { NextApiRequest, NextApiResponse } from 'next';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
 import { getCloudflareContext } from '@opennextjs/cloudflare';
-import {
-  getDailyTranslationPlanData,
-  getSubscriptionPlan,
-  validateUserAndToken,
-} from '@/utils/access';
+import { getDailyTranslationPlanData, getSubscriptionPlan } from '@/utils/access';
+import { validateUserAndToken } from '@/libs/auth/verify';
+import { type Db, withDb } from '@/libs/db';
 import { ErrorCodes } from '@/services/translators';
-import { UsageStatsManager } from '@/utils/usage';
+import { USAGE_TYPES, getCurrentUsage, trackUsage } from '@/utils/usage';
 
 const DEFAULT_DEEPL_FREE_API = 'https://api-free.deepl.com/v2/translate';
 const DEFAULT_DEEPL_PRO_API = 'https://api.deepl.com/v2/translate';
@@ -39,9 +37,9 @@ const generateCacheKey = (text: string, sourceLang: string, targetLang: string):
   return `tr:${hash}`;
 };
 
-const checkDailyUsage = async (userId: string, token: string, chars: number) => {
+const checkDailyUsage = async (db: Db, userId: string, token: string, chars: number) => {
   const { quota: dailyQuota } = getDailyTranslationPlanData(token);
-  const dailyUsage = await UsageStatsManager.getCurrentUsage(userId, 'translation_chars', 'daily');
+  const dailyUsage = await getCurrentUsage(db, userId, USAGE_TYPES.TRANSLATION_CHARS, 'daily');
 
   if (dailyQuota <= dailyUsage + chars) {
     throw new Error(ErrorCodes.DAILY_QUOTA_EXCEEDED);
@@ -50,6 +48,7 @@ const checkDailyUsage = async (userId: string, token: string, chars: number) => 
 };
 
 const updateDailyUsage = async (
+  db: Db,
   userId: string | undefined,
   token: string | undefined,
   incrementUsage: number,
@@ -57,20 +56,15 @@ const updateDailyUsage = async (
   if (!userId || !token) return 0;
 
   try {
-    const userPlan = getSubscriptionPlan(token);
-    const newUsage = await UsageStatsManager.trackUsage(
-      userId,
-      'translation_chars',
-      incrementUsage,
-      {
-        plan_type: userPlan,
-        source: 'deepl_api',
-      },
-    );
-
-    return newUsage;
-  } catch (cacheError) {
-    console.error('Update daily usage error:', cacheError);
+    return await trackUsage(db, userId, USAGE_TYPES.TRANSLATION_CHARS, incrementUsage, {
+      plan_type: getSubscriptionPlan(token),
+      source: 'deepl_api',
+    });
+  } catch (error) {
+    // Counting is best-effort: a translation already delivered should not fail
+    // afterwards. The read side in `checkDailyUsage` deliberately does not
+    // swallow, since a quota it cannot read must not be granted.
+    console.error('Update daily usage error:', error);
   }
 
   return 0;
@@ -91,87 +85,92 @@ const handler = async (req: NextApiRequest, res: NextApiResponse) => {
   }
   const hasKVCache = !!env['TRANSLATIONS_KV'];
 
-  const { user, token } = await validateUserAndToken(req.headers['authorization']);
-  const { DEEPL_PRO_API, DEEPL_FREE_API } = process.env;
-  const deepFreeApiUrl = DEEPL_FREE_API || DEFAULT_DEEPL_FREE_API;
-  const deeplProApiUrl = DEEPL_PRO_API || DEFAULT_DEEPL_PRO_API;
+  // One connection for the whole request: the quota is read once per input and
+  // written once at the end, so opening per call would cost more than holding.
+  return withDb(async (db) => {
+    const { user, token } = await validateUserAndToken(db, req.headers['authorization']);
+    const { DEEPL_PRO_API, DEEPL_FREE_API } = process.env;
+    const deepFreeApiUrl = DEEPL_FREE_API || DEFAULT_DEEPL_FREE_API;
+    const deeplProApiUrl = DEEPL_PRO_API || DEFAULT_DEEPL_PRO_API;
 
-  let deeplApiUrl = deepFreeApiUrl;
-  let userPlan = 'free';
-  if (user && token) {
-    userPlan = getSubscriptionPlan(token);
-    if (userPlan === 'pro') deeplApiUrl = deeplProApiUrl;
-  }
-  const deeplAuthKey =
-    deeplApiUrl === deeplProApiUrl
-      ? getDeepLAPIKey(process.env['DEEPL_PRO_API_KEYS'])
-      : getDeepLAPIKey(process.env['DEEPL_FREE_API_KEYS']);
-
-  const {
-    text,
-    source_lang: sourceLang = 'AUTO',
-    target_lang: targetLang = 'EN',
-    use_cache: useCache = false,
-  }: { text: string[]; source_lang: string; target_lang: string; use_cache: boolean } = req.body;
-
-  try {
-    const translations = await Promise.all(
-      text.map(async (singleText) => {
-        if (!singleText?.trim()) {
-          return { text: '', daily_usage: 0 };
-        }
-        if (useCache && hasKVCache) {
-          try {
-            const cacheKey = generateCacheKey(singleText, sourceLang, targetLang);
-            const cachedTranslation = await env['TRANSLATIONS_KV']!.get(cacheKey);
-
-            if (cachedTranslation) {
-              return {
-                text: cachedTranslation,
-                daily_usage: 0,
-                detected_source_language: sourceLang,
-              };
-            }
-          } catch (cacheError) {
-            console.error('Cache retrieval error:', cacheError);
-          }
-        }
-
-        if (!user || !token) return res.status(401).json({ error: ErrorCodes.UNAUTHORIZED });
-        await checkDailyUsage(user?.id, token, singleText.length);
-
-        return await callDeepLAPI(
-          singleText,
-          sourceLang,
-          targetLang,
-          deeplApiUrl,
-          deeplAuthKey,
-          env['TRANSLATIONS_KV'],
-          useCache,
-        );
-      }),
-    );
-    const originalCharsCount = text.reduce((a, b) => a + b.length, 0);
-    const translatedCharsCount = translations.reduce((a, b) => a + (b?.text.length || 0), 0);
-    const newDailyUsage = await updateDailyUsage(
-      user?.id,
-      token,
-      originalCharsCount + translatedCharsCount,
-    );
-    translations.forEach((translation) => {
-      if (translation && translation.text) {
-        translation.daily_usage = newDailyUsage;
-      }
-    });
-    return res.status(200).json({ translations });
-  } catch (error) {
-    if (error instanceof Error && error.message.includes(ErrorCodes.DAILY_QUOTA_EXCEEDED)) {
-      return res.status(429).json({ error: ErrorCodes.DAILY_QUOTA_EXCEEDED });
-    } else {
-      console.error('Error proxying DeepL request:', error);
+    let deeplApiUrl = deepFreeApiUrl;
+    let userPlan = 'free';
+    if (user && token) {
+      userPlan = getSubscriptionPlan(token);
+      if (userPlan === 'pro') deeplApiUrl = deeplProApiUrl;
     }
-    return res.status(500).json({ error: ErrorCodes.INTERNAL_SERVER_ERROR });
-  }
+    const deeplAuthKey =
+      deeplApiUrl === deeplProApiUrl
+        ? getDeepLAPIKey(process.env['DEEPL_PRO_API_KEYS'])
+        : getDeepLAPIKey(process.env['DEEPL_FREE_API_KEYS']);
+
+    const {
+      text,
+      source_lang: sourceLang = 'AUTO',
+      target_lang: targetLang = 'EN',
+      use_cache: useCache = false,
+    }: { text: string[]; source_lang: string; target_lang: string; use_cache: boolean } = req.body;
+
+    try {
+      const translations = await Promise.all(
+        text.map(async (singleText) => {
+          if (!singleText?.trim()) {
+            return { text: '', daily_usage: 0 };
+          }
+          if (useCache && hasKVCache) {
+            try {
+              const cacheKey = generateCacheKey(singleText, sourceLang, targetLang);
+              const cachedTranslation = await env['TRANSLATIONS_KV']!.get(cacheKey);
+
+              if (cachedTranslation) {
+                return {
+                  text: cachedTranslation,
+                  daily_usage: 0,
+                  detected_source_language: sourceLang,
+                };
+              }
+            } catch (cacheError) {
+              console.error('Cache retrieval error:', cacheError);
+            }
+          }
+
+          if (!user || !token) return res.status(401).json({ error: ErrorCodes.UNAUTHORIZED });
+          await checkDailyUsage(db, user.id, token, singleText.length);
+
+          return await callDeepLAPI(
+            singleText,
+            sourceLang,
+            targetLang,
+            deeplApiUrl,
+            deeplAuthKey,
+            env['TRANSLATIONS_KV'],
+            useCache,
+          );
+        }),
+      );
+      const originalCharsCount = text.reduce((a, b) => a + b.length, 0);
+      const translatedCharsCount = translations.reduce((a, b) => a + (b?.text.length || 0), 0);
+      const newDailyUsage = await updateDailyUsage(
+        db,
+        user?.id,
+        token,
+        originalCharsCount + translatedCharsCount,
+      );
+      translations.forEach((translation) => {
+        if (translation && translation.text) {
+          translation.daily_usage = newDailyUsage;
+        }
+      });
+      return res.status(200).json({ translations });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes(ErrorCodes.DAILY_QUOTA_EXCEEDED)) {
+        return res.status(429).json({ error: ErrorCodes.DAILY_QUOTA_EXCEEDED });
+      } else {
+        console.error('Error proxying DeepL request:', error);
+      }
+      return res.status(500).json({ error: ErrorCodes.INTERNAL_SERVER_ERROR });
+    }
+  });
 };
 
 async function callDeepLAPI(

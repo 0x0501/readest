@@ -12,6 +12,7 @@ import {
   boolean,
   check,
   primaryKey,
+  date,
   jsonb,
   json,
   customType,
@@ -457,6 +458,35 @@ export const statBooks = pgTable(
     pgPolicy('stat_books_insert', { as: 'permissive', for: 'insert', to: ['authenticated'] }),
     pgPolicy('stat_books_update', { as: 'permissive', for: 'update', to: ['authenticated'] }),
     pgPolicy('stat_books_delete', { as: 'permissive', for: 'delete', to: ['authenticated'] }),
+  ],
+);
+
+export const usageStats = pgTable(
+  'usage_stats',
+  {
+    userId: uuid('user_id').notNull(),
+    usageType: text('usage_type').notNull(),
+    usageDate: date('usage_date').notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    usageCount: bigint('usage_count', { mode: 'number' }).default(0).notNull(),
+    metadata: jsonb().default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [user.id],
+      name: 'usage_stats_user_id_fkey',
+    }).onDelete('cascade'),
+    primaryKey({
+      columns: [table.userId, table.usageType, table.usageDate],
+      name: 'usage_stats_pkey',
+    }),
   ],
 );
 

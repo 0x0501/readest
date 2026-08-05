@@ -32,6 +32,7 @@ them as intentional rather than stray:
 | `apps/readest-app/src/__tests__/libs/auth-*.test.ts`, `db-connection-string.test.ts` | Tests for the above |
 | `apps/readest-app/docs/database.md` | Architecture decision records |
 | `apps/readest-app/workers/share-og/**` | The unfurl-card renderer, split out of the web Worker to keep satori's resvg.wasm out of it |
+| `apps/readest-app/drizzle/local_003_usage_stats.sql` | The `usage_stats` table upstream never shipped. If upstream adds its own, the migration fails to apply rather than diverging quietly — reconcile then, do not drop this one blindly |
 | `.github/workflows/deploy-personal.yml` | This deployment's deploy, gated on `ci-personal.yml` |
 | `.github/workflows/ci-personal.yml` | This fork's checks — upstream's only run on `main` |
 

@@ -35,11 +35,15 @@ reports the symmetric difference, so every file this fork added looks like an
 upstream change — hundreds of misleading lines. Three dots diff from the merge base
 and answer the question you asked.
 
-Two queries size the job:
+Three queries size the job:
 
 ```bash
 # New or changed migrations?
 git diff --name-only HEAD...upstream/main -- docker/volumes/db/migrations/
+
+# Did upstream change its CI? This fork's `ci-personal.yml` mirrors
+# `pull-request.yml` by hand and will not follow on its own.
+git diff --name-only HEAD...upstream/main -- .github/workflows/
 
 # Does upstream touch anything this fork edited? These are your conflicts.
 comm -12 <(git diff --name-only HEAD...upstream/main | sort -u) \
@@ -109,6 +113,19 @@ fresh-database shortcut makes it unnecessary. Upstream's `016_add_books_synced_a
 is the standing example. `references/pitfalls.md` explains why one such migration
 takes the whole chain down with it.
 
+## 3b. Re-mirror the CI if upstream moved it
+
+Skip when step 1 showed no `.github/workflows/` changes.
+
+Upstream's checks run on `main` only, so this fork carries its own
+`ci-personal.yml`, kept in a separate file so upstream's workflows never conflict.
+The trade is that it mirrors `pull-request.yml` by hand and goes stale in silence.
+
+Read what upstream changed and copy across what applies — a Node or pnpm bump, a
+new setup step, a renamed script, a check worth having. A stale runtime version is
+the one that bites: CI stays green against a Node this deployment no longer builds
+on, and the mismatch first appears at deploy.
+
 ## 4. Rebuild from empty
 
 This is the step that gets past green. Build the schema from nothing:
@@ -176,6 +193,8 @@ Each of these is checkable, and each has been wrong at least once:
   `next build` — an interrupted OpenNext build leaves `--webpack` seded in, and it
   rides along in a commit.
 - `pnpm lint` and `pnpm test` pass.
+- If upstream touched `.github/workflows/`, `ci-personal.yml` was re-checked
+  against it — node/pnpm versions especially.
 
 ## When the data layer lands
 

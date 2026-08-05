@@ -31,7 +31,8 @@ them as intentional rather than stray:
 | `apps/readest-app/src/app/api/auth/[...all]/route.ts` | Better Auth handler |
 | `apps/readest-app/src/__tests__/libs/auth-*.test.ts`, `db-connection-string.test.ts` | Tests for the above |
 | `apps/readest-app/docs/database.md` | Architecture decision records |
-| `.github/workflows/deploy-personal.yml` | This deployment's CI |
+| `.github/workflows/deploy-personal.yml` | This deployment's deploy, gated on `ci-personal.yml` |
+| `.github/workflows/ci-personal.yml` | This fork's checks — upstream's only run on `main` |
 
 ## Fork edits inside upstream files — where conflicts land
 
@@ -49,6 +50,29 @@ of whatever upstream changed rather than discarding either side.
 | `package.json` | Adds `db:migrate` and `db:pull` | Take upstream's dependency changes, keep the two scripts |
 | `.env.local.example` | Documents `DATABASE_URL`, `BETTER_AUTH_*`, `SIGNUP_ALLOWED_EMAILS`, `GITHUB_CLIENT_*` | Union of both |
 | `.gitignore` | Adds `.dev.vars` | Union of both |
+
+## Workflows: a mirror that upstream cannot conflict with
+
+The fork's CI lives in its own files precisely so upstream's workflows rebase
+untouched. The cost is that it does not follow upstream automatically: it mirrors
+`pull-request.yml`, and a mirror goes stale silently.
+
+Check it whenever upstream touches CI:
+
+```bash
+git diff HEAD...upstream/main -- .github/workflows/
+```
+
+Anything there means reading `pull-request.yml` and asking what changed that
+`ci-personal.yml` should copy — a bumped Node or pnpm version, a new setup step
+(vendor assets, submodules, a cache), a renamed script, a new check worth having.
+Version bumps matter most: CI passing on Node 24 while upstream moved to 26 tests
+the wrong runtime, and the failure surfaces at deploy.
+
+The reverse direction is worth a glance too. `ci-personal.yml` asserts things
+upstream has no reason to — the journal/`__drizzle_migrations` count match and the
+zero-`auth.users`-foreign-keys check — and those depend on this fork's migration
+layout. If that layout changes, the assertions change with it.
 
 ## Regenerate rather than merge
 

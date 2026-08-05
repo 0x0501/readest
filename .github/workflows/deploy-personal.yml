@@ -12,7 +12,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Upstream's checks only run on `main`, so without this the branch deployed
+  # with nothing validating it. `ci-personal.yml` is workflow_call-only, so it
+  # runs once here rather than racing a push-triggered copy of itself.
+  checks:
+    uses: ./.github/workflows/ci-personal.yml
+
   deploy:
+    needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

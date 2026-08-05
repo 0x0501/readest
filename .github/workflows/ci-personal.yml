@@ -1,0 +1,141 @@
+# Personal fork only — not part of upstream CI.
+#
+# Upstream's checks live in `pull-request.yml`, which triggers on `main` only, so
+# nothing validated this fork's branch before it deployed. This is the missing
+# gate, kept in its own file so upstream's workflows stay untouched and never
+# conflict on rebase.
+#
+# It is `workflow_call` rather than `push`: `deploy-personal.yml` invokes it and
+# depends on it, so the checks run exactly once per push and a red result stops
+# the deploy instead of merely reporting next to it.
+name: Personal CI
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: lint + typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # foliate-js and simplecc-wasm carry the pdfjs / opencc assets that
+          # `setup-vendors` copies into public/vendor, and js-mdict is consumed
+          # as TS source through tsconfig paths — lint fails without them.
+          submodules: recursive
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: copy vendor assets
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      - name: format check
+        run: pnpm -C apps/readest-app format:check
+
+      - name: lint and typecheck
+        run: pnpm -C apps/readest-app lint
+
+  test:
+    name: unit tests (${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: copy vendor assets
+        run: pnpm --filter @readest/readest-app setup-vendors
+
+      # Sharded the way upstream shards it. `test:pr:web:unit` caps workers at 4,
+      # which is also what keeps the suite from timing out on loaded machines.
+      - name: unit tests
+        working-directory: apps/readest-app
+        run: pnpm test:pr:web:unit --shard=${{ matrix.shard }}/2
+
+  # The migration chain is this fork's own risk surface: upstream's SQL is
+  # symlinked in and `drizzle/meta/_journal.json` decides what runs, so a missing
+  # journal entry or a dangling symlink is invisible to lint and tests. Building
+  # the schema from an empty database is the only thing that catches it.
+  migrations:
+    name: migration chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: testpw
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: no dangling migration symlinks
+        run: |
+          dangling=$(find apps/readest-app/drizzle -xtype l)
+          if [ -n "$dangling" ]; then
+            echo "::error::dangling symlinks — upstream renamed or removed a migration:"
+            echo "$dangling"
+            exit 1
+          fi
+
+      - name: apply the migration chain to an empty database
+        working-directory: apps/readest-app
+        env:
+          DATABASE_URL: postgresql://postgres:testpw@127.0.0.1:5432/postgres
+        run: pnpm db:migrate
+
+      - name: every journal entry ran, and no key still points at the auth stub
+        env:
+          PGPASSWORD: testpw
+        run: |
+          q() { psql -h 127.0.0.1 -U postgres -d postgres -tAc "$1" | tr -d '[:space:]'; }
+          applied=$(q "select count(*) from drizzle.__drizzle_migrations")
+          journal=$(node -p "JSON.parse(require('fs').readFileSync('apps/readest-app/drizzle/meta/_journal.json','utf8')).entries.length")
+          stale=$(q "select count(*) from pg_constraint c
+                     join pg_class t on t.oid = c.confrelid
+                     join pg_namespace n on n.oid = t.relnamespace
+                     where c.contype = 'f' and n.nspname = 'auth'")
+          echo "applied=$applied journal=$journal staleAuthFks=$stale"
+          [ "$applied" = "$journal" ] || { echo "::error::journal has $journal entries but $applied ran"; exit 1; }
+          [ "$stale" = "0" ] || { echo "::error::$stale foreign keys still reference the auth.users stub"; exit 1; }

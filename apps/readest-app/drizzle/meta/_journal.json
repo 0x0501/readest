@@ -82,6 +82,13 @@
       "when": 22,
       "tag": "local_002_repoint_user_fks",
       "breakpoints": false
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 23,
+      "tag": "local_003_usage_stats",
+      "breakpoints": false
     }
   ]
 }

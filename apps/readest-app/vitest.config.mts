@@ -35,6 +35,8 @@ export default defineConfig({
       '**/*.tauri.test.ts',
       // Android device e2e — run via `pnpm test:android`, not the unit lane.
       '**/*.android.test.ts',
+      // Need a real Postgres — run via `pnpm test:pg` with DATABASE_URL set.
+      '**/*.pg.test.ts',
     ],
     coverage: {
       provider: 'v8',

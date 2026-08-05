@@ -144,3 +144,12 @@ jobs:
           echo "applied=$applied journal=$journal staleAuthFks=$stale"
           [ "$applied" = "$journal" ] || { echo "::error::journal has $journal entries but $applied ran"; exit 1; }
           [ "$stale" = "0" ] || { echo "::error::$stale foreign keys still reference the auth.users stub"; exit 1; }
+
+      # The database this job just built is the only place these can run. A
+      # mocked equivalent is what let the usage counters ship against Postgres
+      # functions that were never defined (ADR-012).
+      - name: run the database-backed tests
+        working-directory: apps/readest-app
+        env:
+          DATABASE_URL: postgresql://postgres:testpw@127.0.0.1:5432/postgres
+        run: pnpm test:pg

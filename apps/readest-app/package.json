@@ -183,6 +183,7 @@
     "iso-639-3": "^3.0.1",
     "isomorphic-ws": "^5.0.0",
     "jieba-wasm": "^2.4.0",
+    "jose": "^6.1.3",
     "js-md5": "^0.8.3",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.562.0",

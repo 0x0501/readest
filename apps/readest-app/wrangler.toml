@@ -2,13 +2,12 @@ name = "readest-web"
 main = ".open-next/worker.js"
 compatibility_date = "2026-04-10"
 compatibility_flags = ["nodejs_compat"]
-workers_dev = true
-preview_urls = true
+workers_dev = false
+preview_urls = false
 
 [[routes]]
-pattern = "read.sumku.cc"
+pattern = "read.sumku.cc/*"
 zone_name = "sumku.cc"
-custom_domain = true
 
 [vars]
 PNPM_VERSION = "10.28.1"
@@ -36,8 +35,6 @@ traces = { head_sampling_rate = 0.01 }
 directory = ".open-next/assets"
 binding = "ASSETS"
 
-# Required by the r2IncrementalCache override registered in open-next.config.ts,
-# even though `dangerous.disableIncrementalCache` keeps it unused at runtime.
 # Postgres, reached through Hyperdrive so the Worker holds no direct connection
 # and the database can live anywhere. `id` comes from
 # `wrangler hyperdrive create readest-db --connection-string=…`.
@@ -45,6 +42,9 @@ binding = "ASSETS"
 binding = "HYPERDRIVE"
 id = "REPLACE_WITH_HYPERDRIVE_CONFIG_ID"
 
+# Required by the r2IncrementalCache override registered in open-next.config.ts,
+# even though `dangerous.disableIncrementalCache` keeps it unused at runtime.
+# The bucket still has to exist — wrangler validates bindings at deploy time.
 [[r2_buckets]]
 binding = "NEXT_INC_CACHE_R2_BUCKET"
 bucket_name = "readest-next-inc-cache"

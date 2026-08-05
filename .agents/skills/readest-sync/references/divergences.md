@@ -31,6 +31,7 @@ them as intentional rather than stray:
 | `apps/readest-app/src/app/api/auth/[...all]/route.ts` | Better Auth handler |
 | `apps/readest-app/src/__tests__/libs/auth-*.test.ts`, `db-connection-string.test.ts` | Tests for the above |
 | `apps/readest-app/docs/database.md` | Architecture decision records |
+| `apps/readest-app/workers/share-og/**` | The unfurl-card renderer, split out of the web Worker to keep satori's resvg.wasm out of it |
 | `.github/workflows/deploy-personal.yml` | This deployment's deploy, gated on `ci-personal.yml` |
 | `.github/workflows/ci-personal.yml` | This fork's checks — upstream's only run on `main` |
 
@@ -46,8 +47,10 @@ of whatever upstream changed rather than discarding either side.
 | `src/app/user/page.tsx`, `src/app/user/components/AccountActions.tsx`, `src/hooks/useAvailablePlans.ts` | Checkout UI hidden behind `PAYMENTS_ENABLED` | Keep the guard, re-wrap whatever upstream added |
 | `src/app/auth/page.tsx` | `providers={['github']}` — only what this deployment configured | Keep the list at exactly the providers this deployment has credentials for |
 | `src/app/reader/components/sidebar/SearchBar.tsx` | A skipped (cloud-only) book says "Download this book to search inside it" rather than "Search failed" | Keep the extra branch; its test pins both messages |
-| `wrangler.toml` | This deployment's zone, routes, R2/KV/Hyperdrive bindings, vars | Almost always take the fork's side; upstream's is a different account |
+| `src/app/api/share/[token]/og.png/route.ts` | Resolves the share and presigns the cover, then hands off to the SHARE_OG service binding. The fork **deleted** the sibling `render.tsx`; upstream draws inline with `next/og` | Keep the hand-off. If upstream restyles the card, port the JSX into `workers/share-og/src/card.tsx` — same shape, minus the `ImageResponse` wrapper |
+| `wrangler.toml` | This deployment's zone, routes, R2/KV/Hyperdrive/SHARE_OG bindings, vars | Almost always take the fork's side; upstream's is a different account |
 | `package.json` | Adds `db:migrate` and `db:pull` | Take upstream's dependency changes, keep the two scripts |
+| `pnpm-workspace.yaml` | Adds `apps/readest-app/workers/share-og` | Union of both — upstream adds workers here too |
 | `.env.local.example` | Documents `DATABASE_URL`, `BETTER_AUTH_*`, `SIGNUP_ALLOWED_EMAILS`, `GITHUB_CLIENT_*` | Union of both |
 | `.gitignore` | Adds `.dev.vars` | Union of both |
 

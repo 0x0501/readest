@@ -49,6 +49,15 @@ id = "REPLACE_WITH_HYPERDRIVE_CONFIG_ID"
 binding = "NEXT_INC_CACHE_R2_BUCKET"
 bucket_name = "readest-next-inc-cache"
 
+# Share unfurl cards. The renderer carries satori's 1.3 MB resvg.wasm, which
+# would otherwise ride along in every deploy of this Worker; it has no route of
+# its own, so this binding is the only way to reach it. Deploy
+# `workers/share-og` before this Worker — a binding to a Worker that does not
+# exist yet fails the deploy.
+[[services]]
+binding = "SHARE_OG"
+service = "readest-share-og"
+
 # TRANSLATIONS_KV (DeepL response cache) and IAP_WEBHOOK_AE (App Store / Google
 # Play webhook metrics) are dropped: this deployment configures neither DeepL
 # nor in-app purchases, and both bindings are optional at the call site.

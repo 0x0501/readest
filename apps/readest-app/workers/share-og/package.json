@@ -1,0 +1,20 @@
+{
+  "name": "readest-share-og-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker that renders the share unfurl card, kept out of the web app's bundle",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@resvg/resvg-wasm": "2.6.2",
+    "satori": "0.29.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^4.0.0"
+  }
+}

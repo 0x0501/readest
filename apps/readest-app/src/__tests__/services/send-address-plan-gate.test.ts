@@ -9,50 +9,37 @@ const validateUserMock = vi.fn();
 const getUserProfilePlanMock = vi.fn();
 vi.mock('@/utils/access', async () => {
   // Reach the real module so `isEmailInPlan` keeps the production logic
-  // (we test it directly below) while patching the two functions the
-  // route actually calls.
+  // (we test it directly below) while patching the function the route
+  // actually calls.
   const actual = await vi.importActual<typeof import('@/utils/access')>('@/utils/access');
-  return {
-    ...actual,
-    validateUserAndToken: (...args: unknown[]) => validateUserMock(...args),
-    getUserProfilePlan: (...args: unknown[]) => getUserProfilePlanMock(...args),
-  };
+  return { ...actual, getUserProfilePlan: (...args: unknown[]) => getUserProfilePlanMock(...args) };
 });
+vi.mock('@/libs/auth/verify', () => ({
+  validateUserAndToken: (...args: unknown[]) => validateUserMock(...args),
+  getUserEmail: vi.fn(async () => null),
+}));
 
 vi.mock('@/utils/cors', () => ({
   corsAllMethods: vi.fn(),
   runMiddleware: vi.fn(async () => undefined),
 }));
 
-// Supabase admin client — must not be touched on the gate-blocked path;
-// if any test calls into it the gate has leaked.
-const supabaseTouched = vi.fn();
+// The database handle must not be touched on the gate-blocked path; if any
+// blocked test reaches a query the gate has leaked.
+const dbTouched = vi.fn();
 
-// Permissive chain proxy: every property access returns a callable that
-// returns the same proxy; awaiting or calling a terminal returns
-// `{ data: null, error: null }`. Sufficient for verifying the gate
-// passes without modelling the full PostgREST builder.
-const chainProxy = (): unknown => {
-  const empty = { data: null, error: null };
-  const handler: ProxyHandler<{ then?: unknown }> = {
-    get(_target, prop) {
-      if (prop === 'then') return undefined;
-      return (..._args: unknown[]) => {
-        // Terminal methods return the empty result directly.
-        if (prop === 'maybeSingle' || prop === 'single') return Promise.resolve(empty);
-        return chainProxy();
-      };
+vi.mock('@/libs/db', async (orig) => {
+  const { stubDb } = await import('../helpers/db-mock');
+  return {
+    ...(await orig<typeof import('@/libs/db')>()),
+    withDb: <T>(fn: (db: unknown) => Promise<T>) => {
+      const { db, calls } = stubDb();
+      return Promise.resolve(fn(db)).finally(() => {
+        if (calls.length > 0) dbTouched();
+      });
     },
   };
-  return new Proxy({}, handler);
-};
-
-vi.mock('@/utils/supabase', () => ({
-  createSupabaseAdminClient: () => {
-    supabaseTouched();
-    return { from: () => chainProxy() };
-  },
-}));
+});
 
 const { default: addressHandler } = await import('@/pages/api/send/address');
 const { default: sendersHandler } = await import('@/pages/api/send/senders');
@@ -89,7 +76,7 @@ function makeReq(method: 'GET' | 'POST', body?: unknown): NextApiRequest {
 beforeEach(() => {
   validateUserMock.mockReset();
   getUserProfilePlanMock.mockReset();
-  supabaseTouched.mockReset();
+  dbTouched.mockReset();
   validateUserMock.mockResolvedValue({
     user: { id: 'user-1', email: 'u@example.com' },
     token: 'testtoken',
@@ -122,7 +109,7 @@ describe('/api/send/address — plan gate', () => {
     });
     // Critically: no Supabase access on the gate-blocked path. A free
     // user must never get a row allocated in `send_addresses`.
-    expect(supabaseTouched).not.toHaveBeenCalled();
+    expect(dbTouched).not.toHaveBeenCalled();
   });
 
   test('returns 403 for free users on POST (rotation blocked)', async () => {
@@ -132,7 +119,7 @@ describe('/api/send/address — plan gate', () => {
 
     expect(res._status).toBe(403);
     expect(res._body).toMatchObject({ code: 'plan_required' });
-    expect(supabaseTouched).not.toHaveBeenCalled();
+    expect(dbTouched).not.toHaveBeenCalled();
   });
 
   test.each<UserPlan>([
@@ -145,7 +132,7 @@ describe('/api/send/address — plan gate', () => {
     await addressHandler(makeReq('GET'), res as unknown as NextApiResponse);
     // The gate is past — Supabase was touched. We don't care here what
     // the eventual response is (the Supabase mock returns no row).
-    expect(supabaseTouched).toHaveBeenCalled();
+    expect(dbTouched).toHaveBeenCalled();
     expect(res._status).not.toBe(403);
   });
 });
@@ -158,7 +145,7 @@ describe('/api/send/senders — plan gate', () => {
 
     expect(res._status).toBe(403);
     expect(res._body).toMatchObject({ code: 'plan_required' });
-    expect(supabaseTouched).not.toHaveBeenCalled();
+    expect(dbTouched).not.toHaveBeenCalled();
   });
 
   test('returns 403 for free users on POST (add sender blocked)', async () => {
@@ -171,14 +158,14 @@ describe('/api/send/senders — plan gate', () => {
 
     expect(res._status).toBe(403);
     expect(res._body).toMatchObject({ code: 'plan_required' });
-    expect(supabaseTouched).not.toHaveBeenCalled();
+    expect(dbTouched).not.toHaveBeenCalled();
   });
 
   test.each<UserPlan>(['plus', 'pro', 'purchase'])('lets %s users past the gate', async (plan) => {
     getUserProfilePlanMock.mockReturnValue(plan);
     const res = makeRes();
     await sendersHandler(makeReq('GET'), res as unknown as NextApiResponse);
-    expect(supabaseTouched).toHaveBeenCalled();
+    expect(dbTouched).toHaveBeenCalled();
     expect(res._status).not.toBe(403);
   });
 });

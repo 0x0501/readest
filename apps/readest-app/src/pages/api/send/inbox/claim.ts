@@ -1,14 +1,16 @@
+import { sql } from 'drizzle-orm';
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createSupabaseClient } from '@/utils/supabase';
-import { corsAllMethods, runMiddleware } from '@/utils/cors';
-import { validateUserAndToken } from '@/utils/access';
+import { validateUserAndToken } from '@/libs/auth/verify';
+import { withDb } from '@/libs/db';
+import { withUserContext } from '@/libs/db/rpc';
 import type { DBSendInboxItem } from '@/types/sendRecords';
+import { corsAllMethods, runMiddleware } from '@/utils/cors';
 
 /**
  * Claim the oldest drainable inbox item for the caller, via the
- * `claim_inbox_item` RPC. Clients route through here instead of calling
- * Supabase directly. The RPC self-scopes to `auth.uid()`, so a user-scoped
- * Supabase client (carrying the caller's JWT) is used.
+ * `claim_inbox_item` RPC. The RPC self-scopes to `auth.uid()`, so the call runs
+ * inside `withUserContext`, which sets the subject claim for the transaction —
+ * PostgREST used to copy it out of the JWT.
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   await runMiddleware(req, res, corsAllMethods);
@@ -17,23 +19,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { user, token } = await validateUserAndToken(req.headers['authorization']);
-  if (!user || !token) {
-    return res.status(403).json({ error: 'Not authenticated' });
-  }
+  return withDb(async (db) => {
+    const { user, token } = await validateUserAndToken(db, req.headers['authorization']);
+    if (!user || !token) {
+      return res.status(403).json({ error: 'Not authenticated' });
+    }
 
-  const device = String(req.body?.device ?? '').slice(0, 100);
-  if (!device) {
-    return res.status(400).json({ error: 'Missing device id' });
-  }
+    const device = String(req.body?.device ?? '').slice(0, 100);
+    if (!device) {
+      return res.status(400).json({ error: 'Missing device id' });
+    }
 
-  const supabase = createSupabaseClient(token);
-  const { data, error } = await supabase.rpc('claim_inbox_item', { p_device: device });
-  if (error) {
-    return res.status(500).json({ error: error.message });
-  }
-
-  // The RPC yields null (or a NULL-filled row) when nothing was claimable.
-  const item = data && data.id ? (data as DBSendInboxItem) : null;
-  return res.status(200).json({ item });
+    try {
+      const result = await withUserContext(db, user.id, (tx) =>
+        tx.execute(sql`select * from public.claim_inbox_item(${device})`),
+      );
+      // The RPC yields a NULL-filled row when nothing was claimable.
+      const row = result.rows[0] as DBSendInboxItem | undefined;
+      return res.status(200).json({ item: row?.id ? row : null });
+    } catch (error) {
+      return res
+        .status(500)
+        .json({ error: error instanceof Error ? error.message : 'Could not claim item' });
+    }
+  });
 }

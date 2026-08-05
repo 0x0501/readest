@@ -58,6 +58,5 @@ bucket_name = "readest-next-inc-cache"
 binding = "SHARE_OG"
 service = "readest-share-og"
 
-# TRANSLATIONS_KV (DeepL response cache) and IAP_WEBHOOK_AE (App Store / Google
-# Play webhook metrics) are dropped: this deployment configures neither DeepL
-# nor in-app purchases, and both bindings are optional at the call site.
+# TRANSLATIONS_KV (DeepL response cache) is dropped: this deployment configures
+# no DeepL key, and the binding is optional at the call site.

@@ -62,6 +62,16 @@ jobs:
       - name: Copy pdfjs / simplecc / jieba assets into public/vendor
         run: pnpm --filter @readest/readest-app setup-vendors
 
+      # Must come first: the web Worker declares a SHARE_OG service binding,
+      # and Cloudflare rejects a deploy whose binding names a Worker that does
+      # not exist yet. Redeploying an unchanged renderer is a no-op upload.
+      - name: Deploy the share-og renderer
+        working-directory: apps/readest-app/workers/share-og
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm run deploy
+
       - name: Build and deploy
         working-directory: apps/readest-app
         env:

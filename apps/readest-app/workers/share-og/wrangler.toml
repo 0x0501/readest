@@ -1,0 +1,17 @@
+name = "readest-share-og"
+main = "src/index.tsx"
+compatibility_date = "2026-04-10"
+compatibility_flags = ["nodejs_compat"]
+
+# No route and no workers.dev URL: the only way in is the SHARE_OG service
+# binding declared in ../../wrangler.toml. Nothing on the public internet can
+# ask this Worker to render arbitrary text over an arbitrary image, and the
+# share URL the web app publishes stays unchanged.
+workers_dev = false
+
+# Satori needs the font as bytes. Wrangler treats .wasm imports as compiled
+# modules on its own; .ttf needs telling.
+[[rules]]
+type = "Data"
+globs = ["**/*.ttf"]
+fallthrough = true

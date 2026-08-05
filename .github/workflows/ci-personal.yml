@@ -45,6 +45,11 @@ jobs:
       - name: lint and typecheck
         run: pnpm -C apps/readest-app lint
 
+      # The share-og Worker has its own tsconfig (satori's JSX runtime, Workers
+      # types) and is outside the app's tsgo run, so nothing else typechecks it.
+      - name: typecheck the share-og worker
+        run: pnpm --filter readest-share-og-worker typecheck
+
   test:
     name: unit tests (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest

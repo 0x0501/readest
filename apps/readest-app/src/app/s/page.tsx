@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { READEST_WEB_BASE_URL, SHARE_BASE_URL } from '@/services/constants';
+import { withDb } from '@/libs/db';
 import { resolveActiveShare } from '@/libs/shareServer';
 import ShareLanding from './ShareLanding';
 
@@ -41,7 +42,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
     };
   }
 
-  const result = await resolveActiveShare(token);
+  const result = await withDb((db) => resolveActiveShare(db, token));
   if (!result.ok) {
     return {
       title: 'Share link unavailable · Readest',

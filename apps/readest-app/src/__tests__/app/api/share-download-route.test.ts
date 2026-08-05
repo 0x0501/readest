@@ -10,6 +10,12 @@ vi.mock('@/libs/shareServer', async (orig) => {
 vi.mock('@/utils/object', () => ({
   getDownloadSignedUrl: (...a: unknown[]) => getDownloadSignedUrlMock(...a),
 }));
+// The route opens a connection to hand to `resolveActiveShare`, which is mocked
+// here — so the handle never gets used, it just has to exist.
+vi.mock('@/libs/db', async (orig) => ({
+  ...(await orig<typeof import('@/libs/db')>()),
+  withDb: <T>(fn: (db: unknown) => Promise<T>) => fn({}),
+}));
 
 import { GET } from '@/app/api/share/[token]/download/route';
 

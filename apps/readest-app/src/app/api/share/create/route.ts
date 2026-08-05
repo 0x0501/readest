@@ -1,6 +1,7 @@
+import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
-import { createSupabaseAdminClient } from '@/utils/supabase';
-import { validateUserAndToken } from '@/utils/access';
+import { validateUserAndToken } from '@/libs/auth/verify';
+import { schema, withDb } from '@/libs/db';
 import { generateShareToken } from '@/libs/shareServer';
 import { objectExists } from '@/utils/object';
 import {
@@ -40,139 +41,155 @@ const trimText = (value: unknown, max: number): string | null => {
 const isControlChar = (s: string): boolean => /[\u0000-\u001f\u007f]/.test(s);
 
 export async function POST(request: Request) {
-  const { user, token } = await validateUserAndToken(request.headers.get('authorization'));
-  if (!user || !token) {
-    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-  }
-
-  let body: CreateShareBody;
-  try {
-    body = (await request.json()) as CreateShareBody;
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
-
-  const bookHash = trimText(body.bookHash, 64);
-  if (!bookHash) {
-    return NextResponse.json({ error: 'Missing or invalid bookHash' }, { status: 400 });
-  }
-
-  if (!isAllowedExpiration(body.expirationDays)) {
-    return NextResponse.json(
-      {
-        error: `expirationDays must be one of ${SHARE_EXPIRATION_DAYS.join(', ')}`,
-        code: 'invalid_expiration',
-      },
-      { status: 400 },
-    );
-  }
-  const expirationDays = body.expirationDays;
-
-  const title = trimText(body.title, 512);
-  if (!title) {
-    return NextResponse.json({ error: 'Missing or invalid title' }, { status: 400 });
-  }
-  const author = trimText(body.author, 256);
-  const format = trimText(body.format, 16);
-  if (!format) {
-    return NextResponse.json({ error: 'Missing or invalid format' }, { status: 400 });
-  }
-
-  let cfi: string | null = null;
-  if (body.cfi != null) {
-    cfi = trimText(body.cfi, SHARE_CFI_MAX_LENGTH);
-    if (cfi && isControlChar(cfi)) {
-      return NextResponse.json({ error: 'cfi contains invalid characters' }, { status: 400 });
+  return withDb(async (db) => {
+    const { user, token } = await validateUserAndToken(db, request.headers.get('authorization'));
+    if (!user || !token) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
-  }
 
-  const supabase = createSupabaseAdminClient();
+    let body: CreateShareBody;
+    try {
+      body = (await request.json()) as CreateShareBody;
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
 
-  // Active-share cap — silently enforced. Counts only non-revoked, non-expired rows.
-  const { count: activeCount, error: countError } = await supabase
-    .from('book_shares')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .is('revoked_at', null)
-    .gt('expires_at', new Date().toISOString());
-  if (countError) {
-    console.error('book_shares cap query failed:', countError);
-    return NextResponse.json({ error: 'Could not check share quota' }, { status: 500 });
-  }
-  if ((activeCount ?? 0) >= SHARE_MAX_PER_USER) {
-    return NextResponse.json(
-      {
-        error: `You have reached the maximum of ${SHARE_MAX_PER_USER} active shares.`,
-        code: 'share_limit_reached',
-      },
-      { status: 429 },
-    );
-  }
+    const bookHash = trimText(body.bookHash, 64);
+    if (!bookHash) {
+      return NextResponse.json({ error: 'Missing or invalid bookHash' }, { status: 400 });
+    }
 
-  // Look up the live `files` row for this user's book. Re-uploads of the same
-  // hash follow the share automatically because we resolve at every access.
-  const { data: bookFiles, error: filesError } = await supabase
-    .from('files')
-    .select('file_key, file_size')
-    .eq('user_id', user.id)
-    .eq('book_hash', bookHash)
-    .is('deleted_at', null);
-  if (filesError) {
-    console.error('book_shares files lookup failed:', filesError);
-    return NextResponse.json({ error: 'Could not look up book' }, { status: 500 });
-  }
-  if (!bookFiles || bookFiles.length === 0) {
-    return NextResponse.json(
-      { error: 'Book is not uploaded yet', code: 'book_not_uploaded' },
-      { status: 409 },
-    );
-  }
+    if (!isAllowedExpiration(body.expirationDays)) {
+      return NextResponse.json(
+        {
+          error: `expirationDays must be one of ${SHARE_EXPIRATION_DAYS.join(', ')}`,
+          code: 'invalid_expiration',
+        },
+        { status: 400 },
+      );
+    }
+    const expirationDays = body.expirationDays;
 
-  // Pick the book file (not the cover) by extension. Covers are PNG/JPG;
-  // book files are EPUB/PDF/MOBI/etc. The widest filter is "is not an image".
-  const bookFile = bookFiles.find((f) => !/\.(png|jpe?g|webp|gif)$/i.test(f.file_key));
-  if (!bookFile) {
-    return NextResponse.json(
-      { error: 'Book file row not found', code: 'book_not_uploaded' },
-      { status: 409 },
-    );
-  }
-  const size = bookFile.file_size;
+    const title = trimText(body.title, 512);
+    if (!title) {
+      return NextResponse.json({ error: 'Missing or invalid title' }, { status: 400 });
+    }
+    const author = trimText(body.author, 256);
+    const format = trimText(body.format, 16);
+    if (!format) {
+      return NextResponse.json({ error: 'Missing or invalid format' }, { status: 400 });
+    }
 
-  // The `files` row is inserted before bytes upload (storage/upload.ts:74), so
-  // a ghost row can exist if the client aborted. HEAD R2 to confirm bytes are
-  // really there before we make the share publicly resolvable.
-  const exists = await objectExists(bookFile.file_key);
-  if (!exists) {
-    return NextResponse.json(
-      { error: 'Book upload is incomplete; please retry', code: 'upload_incomplete' },
-      { status: 409 },
-    );
-  }
+    let cfi: string | null = null;
+    if (body.cfi != null) {
+      cfi = trimText(body.cfi, SHARE_CFI_MAX_LENGTH);
+      if (cfi && isControlChar(cfi)) {
+        return NextResponse.json({ error: 'cfi contains invalid characters' }, { status: 400 });
+      }
+    }
 
-  const { raw, hash } = await generateShareToken();
-  const expiresAt = new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000);
+    // Active-share cap — silently enforced. Counts only non-revoked, non-expired
+    // rows, and `now()` comes from the database so the window does not depend on
+    // the Worker's clock.
+    let activeCount: number;
+    try {
+      const [row] = await db
+        .select({ value: count() })
+        .from(schema.bookShares)
+        .where(
+          and(
+            eq(schema.bookShares.userId, user.id),
+            isNull(schema.bookShares.revokedAt),
+            gt(schema.bookShares.expiresAt, sql`now()`),
+          ),
+        );
+      activeCount = row?.value ?? 0;
+    } catch (error) {
+      console.error('book_shares cap query failed:', error);
+      return NextResponse.json({ error: 'Could not check share quota' }, { status: 500 });
+    }
+    if (activeCount >= SHARE_MAX_PER_USER) {
+      return NextResponse.json(
+        {
+          error: `You have reached the maximum of ${SHARE_MAX_PER_USER} active shares.`,
+          code: 'share_limit_reached',
+        },
+        { status: 429 },
+      );
+    }
 
-  const { error: insertError } = await supabase.from('book_shares').insert({
-    token_hash: hash,
-    token: raw,
-    user_id: user.id,
-    book_hash: bookHash,
-    book_title: title,
-    book_author: author,
-    book_format: format,
-    book_size: size,
-    cfi,
-    expires_at: expiresAt.toISOString(),
-  });
-  if (insertError) {
-    console.error('book_shares insert failed:', insertError);
-    return NextResponse.json({ error: 'Could not create share' }, { status: 500 });
-  }
+    // Look up the live `files` row for this user's book. Re-uploads of the same
+    // hash follow the share automatically because we resolve at every access.
+    let bookFiles: { fileKey: string; fileSize: number }[];
+    try {
+      bookFiles = await db
+        .select({ fileKey: schema.files.fileKey, fileSize: schema.files.fileSize })
+        .from(schema.files)
+        .where(
+          and(
+            eq(schema.files.userId, user.id),
+            eq(schema.files.bookHash, bookHash),
+            isNull(schema.files.deletedAt),
+          ),
+        );
+    } catch (error) {
+      console.error('book_shares files lookup failed:', error);
+      return NextResponse.json({ error: 'Could not look up book' }, { status: 500 });
+    }
+    if (bookFiles.length === 0) {
+      return NextResponse.json(
+        { error: 'Book is not uploaded yet', code: 'book_not_uploaded' },
+        { status: 409 },
+      );
+    }
 
-  return NextResponse.json({
-    token: raw,
-    url: `${SHARE_BASE_URL}/${raw}`,
-    expiresAt: expiresAt.toISOString(),
+    // Pick the book file (not the cover) by extension. Covers are PNG/JPG;
+    // book files are EPUB/PDF/MOBI/etc. The widest filter is "is not an image".
+    const bookFile = bookFiles.find((f) => !/\.(png|jpe?g|webp|gif)$/i.test(f.fileKey));
+    if (!bookFile) {
+      return NextResponse.json(
+        { error: 'Book file row not found', code: 'book_not_uploaded' },
+        { status: 409 },
+      );
+    }
+    const size = bookFile.fileSize;
+
+    // The `files` row is inserted before bytes upload (storage/upload.ts:74), so
+    // a ghost row can exist if the client aborted. HEAD R2 to confirm bytes are
+    // really there before we make the share publicly resolvable.
+    const exists = await objectExists(bookFile.fileKey);
+    if (!exists) {
+      return NextResponse.json(
+        { error: 'Book upload is incomplete; please retry', code: 'upload_incomplete' },
+        { status: 409 },
+      );
+    }
+
+    const { raw, hash } = await generateShareToken();
+    const expiresAt = new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000);
+
+    try {
+      await db.insert(schema.bookShares).values({
+        tokenHash: hash,
+        token: raw,
+        userId: user.id,
+        bookHash,
+        bookTitle: title,
+        bookAuthor: author,
+        bookFormat: format,
+        bookSize: size,
+        cfi,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (error) {
+      console.error('book_shares insert failed:', error);
+      return NextResponse.json({ error: 'Could not create share' }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      token: raw,
+      url: `${SHARE_BASE_URL}/${raw}`,
+      expiresAt: expiresAt.toISOString(),
+    });
   });
 }

@@ -1,5 +1,6 @@
+import { sql } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
-import { createSupabaseAdminClient } from '@/utils/supabase';
+import { withDb } from '@/libs/db';
 import { hashShareToken, isValidShareToken } from '@/libs/shareServer';
 
 interface RouteParams {
@@ -14,8 +15,8 @@ interface RouteParams {
 // Increments are done in a single SQL UPDATE so concurrent requests cannot
 // race a read-modify-write. We also accept the small risk that an increment
 // lands shortly after a revoke — that's harmless, the counter doesn't grant
-// access. The validity check below skips obviously dead shares so crawlers
-// hitting expired links don't pollute the count after the fact.
+// access. The validity check inside the function skips obviously dead shares
+// so crawlers hitting expired links don't pollute the count after the fact.
 export async function POST(_request: Request, { params }: RouteParams) {
   const { token } = await params;
 
@@ -24,18 +25,16 @@ export async function POST(_request: Request, { params }: RouteParams) {
     return new NextResponse(null, { status: 204 });
   }
 
-  const supabase = createSupabaseAdminClient();
   const tokenHash = await hashShareToken(token);
 
-  // Atomic conditional update via the SQL function defined alongside the
-  // table. Only bumps rows that are still active so late-firing pings on
-  // expired/revoked shares don't pollute the count.
-  const nowIso = new Date().toISOString();
-  const { error } = await supabase.rpc('increment_book_share_download', {
-    p_token_hash: tokenHash,
-    p_now: nowIso,
-  });
-  if (error) {
+  try {
+    // Upstream's function, called as-is (ADR-010). `now()` rather than a
+    // timestamp from here: it is compared against `expires_at` in the same
+    // database, so the database's clock is the one that should decide.
+    await withDb((db) =>
+      db.execute(sql`select public.increment_book_share_download(${tokenHash}, now())`),
+    );
+  } catch (error) {
     // Best-effort beacon — log but never surface to the caller.
     console.error('download confirm rpc failed:', error);
   }

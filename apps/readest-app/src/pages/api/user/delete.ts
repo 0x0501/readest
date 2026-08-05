@@ -1,7 +1,8 @@
+import { eq } from 'drizzle-orm';
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { validateUserAndToken } from '@/libs/auth/verify';
+import { schema, withDb } from '@/libs/db';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
-import { createSupabaseAdminClient } from '@/utils/supabase';
-import { validateUserAndToken } from '@/utils/access';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   await runMiddleware(req, res, corsAllMethods);
@@ -11,20 +12,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { user, token } = await validateUserAndToken(req.headers['authorization']);
-    if (!user || !token) {
-      return res.status(403).json({ error: 'Not authenticated' });
-    }
+    return await withDb(async (db) => {
+      const { user, token } = await validateUserAndToken(db, req.headers['authorization']);
+      if (!user || !token) {
+        return res.status(403).json({ error: 'Not authenticated' });
+      }
 
-    const supabaseAdmin = createSupabaseAdminClient();
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(user.id);
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
+      // GoTrue's admin API is gone; the row in `public."user"` is the account.
+      // Deleting it cascades through every `user_id` foreign key — books,
+      // notes, configs, shares, files, replicas, the inbox — because
+      // `local_002_repoint_user_fks.sql` moved all twelve onto this table with
+      // their ON DELETE CASCADE intact.
+      //
+      // The R2 objects those `files` rows pointed at are NOT removed here, and
+      // were not before either: storage cleanup is the purge endpoint's job.
+      await db.delete(schema.user).where(eq(schema.user.id, user.id));
 
-    res.status(200).json({ message: 'User deleted successfully' });
+      return res.status(200).json({ message: 'User deleted successfully' });
+    });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Something went wrong' });
+    console.error('User deletion failed:', error);
+    return res.status(500).json({ error: 'Could not delete the account' });
   }
 }

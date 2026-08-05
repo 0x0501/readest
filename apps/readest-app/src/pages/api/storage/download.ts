@@ -1,8 +1,9 @@
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createSupabaseAdminClient } from '@/utils/supabase';
+import { validateUserAndToken } from '@/libs/auth/verify';
+import { type Db, schema, withDb } from '@/libs/db';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
 import { getDownloadSignedUrl } from '@/utils/object';
-import { validateUserAndToken } from '@/utils/access';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   await runMiddleware(req, res, corsAllMethods);
@@ -12,57 +13,60 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { user, token } = await validateUserAndToken(req.headers['authorization']);
-    if (!user || !token) {
-      return res.status(403).json({ error: 'Not authenticated' });
-    }
-
-    if (req.method === 'GET') {
-      let { fileKey } = req.query;
-      // Also parse fileKey directly from raw URL to handle special characters like & in filenames.
-      // because frameworks may incorrectly split parameters when the fileKey value contains
-      // encoded & (%26), treating it as a parameter separator.
-      if (req.url?.includes('fileKey=') && req.url?.includes('&')) {
-        const fileKeyFromUrl = req.url
-          .substring(req.url.indexOf('fileKey=') + 8)
-          .replace(/\+/g, '%20')
-          .replace(/&/g, '%26')
-          .replace(/=$/, '');
-        fileKey = decodeURIComponent(fileKeyFromUrl);
-      }
-      if (!fileKey || typeof fileKey !== 'string') {
-        return res.status(400).json({ error: 'Missing or invalid fileKey' });
+    return await withDb(async (db) => {
+      const { user, token } = await validateUserAndToken(db, req.headers['authorization']);
+      if (!user || !token) {
+        return res.status(403).json({ error: 'Not authenticated' });
       }
 
-      const downloadUrlsMap = await processFileKeys([fileKey], user.id);
-      const downloadUrl = downloadUrlsMap[fileKey];
+      if (req.method === 'GET') {
+        let { fileKey } = req.query;
+        // Also parse fileKey directly from raw URL to handle special characters like & in filenames.
+        // because frameworks may incorrectly split parameters when the fileKey value contains
+        // encoded & (%26), treating it as a parameter separator.
+        if (req.url?.includes('fileKey=') && req.url?.includes('&')) {
+          const fileKeyFromUrl = req.url
+            .substring(req.url.indexOf('fileKey=') + 8)
+            .replace(/\+/g, '%20')
+            .replace(/&/g, '%26')
+            .replace(/=$/, '');
+          fileKey = decodeURIComponent(fileKeyFromUrl);
+        }
+        if (!fileKey || typeof fileKey !== 'string') {
+          return res.status(400).json({ error: 'Missing or invalid fileKey' });
+        }
 
-      if (!downloadUrl) {
-        return res.status(404).json({ error: 'File not found' });
+        const downloadUrlsMap = await processFileKeys(db, [fileKey], user.id);
+        const downloadUrl = downloadUrlsMap[fileKey];
+
+        if (!downloadUrl) {
+          return res.status(404).json({ error: 'File not found' });
+        }
+
+        return res.status(200).json({ downloadUrl });
       }
 
-      return res.status(200).json({ downloadUrl });
-    }
+      if (req.method === 'POST') {
+        const { fileKeys } = req.body;
 
-    if (req.method === 'POST') {
-      const { fileKeys } = req.body;
+        if (!fileKeys || !Array.isArray(fileKeys)) {
+          return res.status(400).json({ error: 'Missing or invalid fileKeys array' });
+        }
 
-      if (!fileKeys || !Array.isArray(fileKeys)) {
-        return res.status(400).json({ error: 'Missing or invalid fileKeys array' });
+        if (fileKeys.length === 0) {
+          return res.status(400).json({ error: 'fileKeys array cannot be empty' });
+        }
+
+        if (!fileKeys.every((key) => typeof key === 'string')) {
+          return res.status(400).json({ error: 'All fileKeys must be strings' });
+        }
+
+        const downloadUrls = await processFileKeys(db, fileKeys, user.id);
+
+        return res.status(200).json({ downloadUrls });
       }
-
-      if (fileKeys.length === 0) {
-        return res.status(400).json({ error: 'fileKeys array cannot be empty' });
-      }
-
-      if (!fileKeys.every((key) => typeof key === 'string')) {
-        return res.status(400).json({ error: 'All fileKeys must be strings' });
-      }
-
-      const downloadUrls = await processFileKeys(fileKeys, user.id);
-
-      return res.status(200).json({ downloadUrls });
-    }
+      return res.status(405).json({ error: 'Method not allowed' });
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Something went wrong' });
@@ -70,24 +74,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 }
 
 async function processFileKeys(
+  db: Db,
   fileKeys: string[],
   userId: string,
 ): Promise<Record<string, string | undefined>> {
-  const supabase = createSupabaseAdminClient();
+  // Every lookup here is scoped to the caller, which is the whole of the
+  // authorization now that RLS is not enforcing it (ADR-005).
+  const columns = { fileKey: schema.files.fileKey, bookHash: schema.files.bookHash };
 
-  const { data: fileRecords, error: fileError } = await supabase
-    .from('files')
-    .select('user_id, file_key, book_hash')
-    .eq('user_id', userId)
-    .in('file_key', fileKeys)
-    .is('deleted_at', null);
-
-  if (fileError) {
-    console.error('Error querying files:', fileError);
+  let fileRecords: { fileKey: string; bookHash: string | null }[];
+  try {
+    fileRecords = await db
+      .select(columns)
+      .from(schema.files)
+      .where(
+        and(
+          eq(schema.files.userId, userId),
+          inArray(schema.files.fileKey, fileKeys),
+          isNull(schema.files.deletedAt),
+        ),
+      );
+  } catch (error) {
+    console.error('Error querying files:', error);
     return Object.fromEntries(fileKeys.map((key) => [key, undefined]));
   }
 
-  const fileRecordMap = new Map((fileRecords || []).map((record) => [record.file_key, record]));
+  const fileRecordMap = new Map(fileRecords.map((record) => [record.fileKey, record]));
 
   const missingFileKeys = fileKeys.filter((key) => !fileRecordMap.has(key));
 
@@ -109,24 +121,32 @@ async function processFileKeys(
     if (fallbackCandidates.length > 0) {
       const bookHashes = [...new Set(fallbackCandidates.map((c) => c.bookHash))];
 
-      const { data: fallbackRecords, error: fallbackError } = await supabase
-        .from('files')
-        .select('user_id, file_key, book_hash')
-        .eq('user_id', userId)
-        .in('book_hash', bookHashes)
-        .is('deleted_at', null);
+      try {
+        const fallbackRecords = await db
+          .select(columns)
+          .from(schema.files)
+          .where(
+            and(
+              eq(schema.files.userId, userId),
+              inArray(schema.files.bookHash, bookHashes),
+              isNull(schema.files.deletedAt),
+            ),
+          );
 
-      if (!fallbackError && fallbackRecords) {
         for (const candidate of fallbackCandidates) {
           const matchedFile = fallbackRecords.find(
             (f) =>
-              f.book_hash === candidate.bookHash &&
-              f.file_key.endsWith(`.${candidate.fileExtension}`),
+              f.bookHash === candidate.bookHash &&
+              f.fileKey.endsWith(`.${candidate.fileExtension}`),
           );
           if (matchedFile) {
             fileRecordMap.set(candidate.originalKey, matchedFile);
           }
         }
+      } catch (error) {
+        // The fallback is a convenience for keys whose filename changed; a
+        // failure here just means those keys stay unresolved.
+        console.error('Error querying files by book hash:', error);
       }
     }
   }
@@ -139,12 +159,8 @@ async function processFileKeys(
         return { fileKey, downloadUrl: undefined };
       }
 
-      if (fileRecord.user_id !== userId) {
-        return { fileKey, downloadUrl: undefined };
-      }
-
       try {
-        const downloadUrl = await getDownloadSignedUrl(fileRecord.file_key, 1800);
+        const downloadUrl = await getDownloadSignedUrl(fileRecord.fileKey, 1800);
         return { fileKey, downloadUrl };
       } catch (error) {
         console.error('Error creating signed URL for %s:', fileKey, error);

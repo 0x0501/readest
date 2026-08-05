@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { stubDb } from '../helpers/db-mock';
 
 // Issue #5352: the temp (public) image key used to embed the wall-clock hour,
 // so the same cover got a brand-new public URL every hour. Discord had to
@@ -16,9 +17,11 @@ vi.mock('@/utils/cors', () => ({
   runMiddleware: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@/utils/access', () => ({
-  validateUserAndToken: (...a: unknown[]) => validateUserAndTokenMock(...a),
   getStoragePlanData: vi.fn().mockReturnValue({ usage: 0, quota: 10 ** 12 }),
   STORAGE_QUOTA_GRACE_BYTES: 0,
+}));
+vi.mock('@/libs/auth/verify', () => ({
+  validateUserAndToken: (...a: unknown[]) => validateUserAndTokenMock(...a),
 }));
 vi.mock('@/utils/object', async (orig) => {
   const actual = await orig<typeof import('@/utils/object')>();
@@ -28,8 +31,9 @@ vi.mock('@/utils/object', async (orig) => {
     getDownloadSignedUrl: (...a: unknown[]) => getDownloadSignedUrlMock(...a),
   };
 });
-vi.mock('@/utils/supabase', () => ({
-  createSupabaseAdminClient: vi.fn(),
+vi.mock('@/libs/db', async (orig) => ({
+  ...(await orig<typeof import('@/libs/db')>()),
+  withDb: <T>(fn: (db: unknown) => Promise<T>) => fn(stubDb().db),
 }));
 
 import handler from '@/pages/api/storage/upload';

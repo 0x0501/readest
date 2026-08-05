@@ -1,7 +1,8 @@
+import { and, eq } from 'drizzle-orm';
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { validateUserAndToken } from '@/libs/auth/verify';
+import { schema, withDb } from '@/libs/db';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
-import { createSupabaseAdminClient } from '@/utils/supabase';
-import { validateUserAndToken } from '@/utils/access';
 import { deleteObject } from '@/utils/object';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -12,48 +13,48 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { user, token } = await validateUserAndToken(req.headers['authorization']);
-    if (!user || !token) {
-      return res.status(403).json({ error: 'Not authenticated' });
-    }
+    return await withDb(async (db) => {
+      const { user, token } = await validateUserAndToken(db, req.headers['authorization']);
+      if (!user || !token) {
+        return res.status(403).json({ error: 'Not authenticated' });
+      }
 
-    const { fileKey } = req.query;
+      const { fileKey } = req.query;
 
-    if (!fileKey || typeof fileKey !== 'string') {
-      return res.status(400).json({ error: 'Missing or invalid fileKey' });
-    }
+      if (!fileKey || typeof fileKey !== 'string') {
+        return res.status(400).json({ error: 'Missing or invalid fileKey' });
+      }
 
-    const supabase = createSupabaseAdminClient();
-    const { data: fileRecord, error: fileError } = await supabase
-      .from('files')
-      .select('user_id, id')
-      .eq('user_id', user.id)
-      .eq('file_key', fileKey)
-      .limit(1)
-      .single();
+      // Scoped by user_id, so someone else's file_key reads as 404 rather than
+      // 403 — the caller learns nothing about what other users hold (ADR-005).
+      const [fileRecord] = await db
+        .select({ id: schema.files.id })
+        .from(schema.files)
+        .where(and(eq(schema.files.userId, user.id), eq(schema.files.fileKey, fileKey)))
+        .limit(1);
 
-    if (fileError || !fileRecord) {
-      return res.status(404).json({ error: 'File not found' });
-    }
+      if (!fileRecord) {
+        return res.status(404).json({ error: 'File not found' });
+      }
 
-    if (fileRecord.user_id !== user.id) {
-      return res.status(403).json({ error: 'Unauthorized access to the file' });
-    }
+      try {
+        await deleteObject(fileKey);
+      } catch (error) {
+        console.error('Error deleting file from storage:', error);
+        return res.status(500).json({ error: 'Could not delete file from storage' });
+      }
 
-    try {
-      await deleteObject(fileKey);
-      const { error: deleteError } = await supabase.from('files').delete().eq('id', fileRecord.id);
-
-      if (deleteError) {
-        console.error('Error updating file record:', deleteError);
+      try {
+        await db.delete(schema.files).where(eq(schema.files.id, fileRecord.id));
+      } catch (error) {
+        // Bytes are gone but the row is not: the file will read as present and
+        // 404 on download until this is retried.
+        console.error('Error deleting file record:', error);
         return res.status(500).json({ error: 'Could not update file record' });
       }
 
-      res.status(200).json({ message: 'File deleted successfully' });
-    } catch (error) {
-      console.error('Error deleting file from S3:', error);
-      res.status(500).json({ error: 'Could not delete file from storage' });
-    }
+      return res.status(200).json({ message: 'File deleted successfully' });
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Something went wrong' });

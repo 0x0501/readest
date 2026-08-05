@@ -1,7 +1,9 @@
+import { and, count, desc, eq, isNull, sql, sum } from 'drizzle-orm';
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createSupabaseAdminClient } from '@/utils/supabase';
+import { validateUserAndToken } from '@/libs/auth/verify';
+import { schema, withDb } from '@/libs/db';
+import { getStoragePlanData } from '@/utils/access';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
-import { validateUserAndToken, getStoragePlanData } from '@/utils/access';
 
 interface StorageStats {
   totalFiles: number;
@@ -24,117 +26,61 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { user, token } = await validateUserAndToken(req.headers['authorization']);
-    if (!user || !token) {
-      return res.status(403).json({ error: 'Not authenticated' });
-    }
+    return await withDb(async (db) => {
+      const { user, token } = await validateUserAndToken(db, req.headers['authorization']);
+      if (!user || !token) {
+        return res.status(403).json({ error: 'Not authenticated' });
+      }
 
-    const supabase = createSupabaseAdminClient();
+      const live = and(eq(schema.files.userId, user.id), isNull(schema.files.deletedAt));
 
-    // Get total file count and size (paginated to avoid Supabase 1000 row limit)
-    const PAGE_SIZE = 1000;
-    let allFileStats: { file_size: number }[] = [];
-    let offset = 0;
-    let hasMore = true;
+      // Both of these used to be page-by-page loops over every row the user
+      // owns, because PostgREST caps a response at 1000 rows and the totals
+      // were summed in JavaScript. The grouping additionally called
+      // `get_storage_by_book_hash`, an RPC that exists in no migration, and
+      // fell back to a second full scan when it failed — which was always.
+      let totals: { files: number; size: string | null } | undefined;
+      let byBookHash: StorageStats['byBookHash'];
+      try {
+        [totals] = await db
+          .select({ files: count(), size: sum(schema.files.fileSize) })
+          .from(schema.files)
+          .where(live);
 
-    while (hasMore) {
-      const { data, error } = await supabase
-        .from('files')
-        .select('file_size')
-        .eq('user_id', user.id)
-        .is('deleted_at', null)
-        .range(offset, offset + PAGE_SIZE - 1);
+        const grouped = await db
+          .select({
+            bookHash: schema.files.bookHash,
+            fileCount: count(),
+            totalSize: sum(schema.files.fileSize).mapWith(Number),
+          })
+          .from(schema.files)
+          .where(live)
+          .groupBy(schema.files.bookHash)
+          .orderBy(desc(sql`sum(${schema.files.fileSize})`));
 
-      if (error) {
-        console.error('Error querying total stats:', error);
+        byBookHash = grouped.map((row) => ({
+          bookHash: row.bookHash,
+          fileCount: row.fileCount,
+          totalSize: row.totalSize ?? 0,
+        }));
+      } catch (error) {
+        console.error('Error querying storage statistics:', error);
         return res.status(500).json({ error: 'Failed to retrieve storage statistics' });
       }
 
-      if (data && data.length > 0) {
-        allFileStats = allFileStats.concat(data);
-        offset += PAGE_SIZE;
-        hasMore = data.length === PAGE_SIZE;
-      } else {
-        hasMore = false;
-      }
-    }
+      const { usage, quota } = getStoragePlanData(token);
+      const response: StorageStats = {
+        totalFiles: totals?.files ?? 0,
+        // `sum` comes back as a numeric string, or null for an empty set.
+        totalSize: Number(totals?.size ?? 0),
+        usage,
+        quota,
+        usagePercentage: quota > 0 ? Math.round((usage / quota) * 100) : 0,
+        byBookHash,
+      };
 
-    const totalFiles = allFileStats.length;
-    const totalSize = allFileStats.reduce((sum, file) => sum + (file.file_size || 0), 0);
-
-    // Get storage plan data
-    const { usage, quota } = getStoragePlanData(token);
-    const usagePercentage = quota > 0 ? Math.round((usage / quota) * 100) : 0;
-
-    // Get stats grouped by book_hash
-    const { data: bookHashStats, error: bookHashError } = await supabase.rpc(
-      'get_storage_by_book_hash',
-      { p_user_id: user.id },
-    );
-
-    // Fallback if RPC function doesn't exist - manual aggregation
-    let byBookHash: Array<{ bookHash: string | null; fileCount: number; totalSize: number }> = [];
-
-    if (bookHashError) {
-      console.warn('RPC function not available, using fallback aggregation:', bookHashError);
-
-      let allFiles: { book_hash: string | null; file_size: number }[] = [];
-      let fallbackOffset = 0;
-      let fallbackHasMore = true;
-
-      while (fallbackHasMore) {
-        const { data, error: filesError } = await supabase
-          .from('files')
-          .select('book_hash, file_size')
-          .eq('user_id', user.id)
-          .is('deleted_at', null)
-          .range(fallbackOffset, fallbackOffset + PAGE_SIZE - 1);
-
-        if (filesError) break;
-
-        if (data && data.length > 0) {
-          allFiles = allFiles.concat(data);
-          fallbackOffset += PAGE_SIZE;
-          fallbackHasMore = data.length === PAGE_SIZE;
-        } else {
-          fallbackHasMore = false;
-        }
-      }
-
-      if (allFiles.length > 0) {
-        const grouped = new Map<string | null, { count: number; size: number }>();
-
-        allFiles.forEach((file) => {
-          const key = file.book_hash;
-          const current = grouped.get(key) || { count: 0, size: 0 };
-          grouped.set(key, {
-            count: current.count + 1,
-            size: current.size + file.file_size,
-          });
-        });
-
-        byBookHash = Array.from(grouped.entries())
-          .map(([bookHash, stats]) => ({
-            bookHash,
-            fileCount: stats.count,
-            totalSize: stats.size,
-          }))
-          .sort((a, b) => b.totalSize - a.totalSize);
-      }
-    } else if (bookHashStats) {
-      byBookHash = bookHashStats;
-    }
-
-    const response: StorageStats = {
-      totalFiles,
-      totalSize,
-      usage,
-      quota,
-      usagePercentage,
-      byBookHash,
-    };
-
-    return res.status(200).json(response);
+      return res.status(200).json(response);
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Something went wrong' });

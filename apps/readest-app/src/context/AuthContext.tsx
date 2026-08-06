@@ -10,7 +10,7 @@ import {
   ReactNode,
   useEffect,
 } from 'react';
-import { type AuthUser, authClient } from '@/libs/auth/client';
+import { type AuthUser, authClient, mintAccessToken } from '@/libs/auth/client';
 
 interface AuthContextType {
   token: string | null;
@@ -63,8 +63,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
     let active = true;
-    authClient.token().then(({ data }) => {
-      if (active && data?.token) store(data.token, session.user);
+    mintAccessToken().then((token) => {
+      if (active && token) store(token, session.user);
     });
     return () => {
       active = false;
@@ -82,10 +82,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // deleting a book leaves the quota bar reading the old figure until a fresh
   // one is minted. Only the token changes; the user did not.
   const refresh = useCallback(async () => {
-    const { data } = await authClient.token();
-    if (!data?.token) return;
-    localStorage.setItem('token', data.token);
-    setToken(data.token);
+    const token = await mintAccessToken();
+    if (!token) return;
+    localStorage.setItem('token', token);
+    setToken(token);
   }, []);
 
   const value = useMemo(() => ({ token, user, logout, refresh }), [token, user, logout, refresh]);

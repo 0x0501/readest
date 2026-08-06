@@ -39,20 +39,59 @@ jobs:
       # root package.json, so this does not drift when upstream bumps it.
       - run: corepack enable
 
-      # `.env.prod` is gitignored, so CI reconstructs it from one secret holding
-      # the whole file. Local and CI deploys then run the identical `pnpm
-      # deploy`, rather than CI maintaining its own parallel list of variables
-      # that drifts from the file everyone else edits.
-      - name: Write .env.prod from the ENV_PROD secret
+      # `.env.prod` is gitignored, so CI composes it from repository secrets and
+      # variables. Local and CI deploys then run the identical `pnpm deploy`,
+      # which reads the file for both halves of the job: the build bakes the
+      # NEXT_PUBLIC_* values into the bundle, `--secrets-file` uploads the rest
+      # to the Worker.
+      #
+      # Only names with a value are written. An empty key is worse than an
+      # absent one — wrangler uploads every key it finds, and the code falls
+      # back with `??`, which catches undefined but not `''`.
+      - name: Compose .env.prod
         working-directory: apps/readest-app
         env:
-          ENV_PROD: ${{ secrets.ENV_PROD }}
+          NEXT_PUBLIC_WEB_BASE_URL: ${{ vars.NEXT_PUBLIC_WEB_BASE_URL }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+          NEXT_PUBLIC_OBJECT_STORAGE_TYPE: r2
+          SIGNUP_ALLOWED_EMAILS: ${{ vars.SIGNUP_ALLOWED_EMAILS }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          # Optional. GitHub refuses secret names beginning with `GITHUB_`, so
+          # the OAuth pair is stored under GH_OAUTH_* and renamed here.
+          GITHUB_CLIENT_ID: ${{ secrets.GH_OAUTH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GH_OAUTH_CLIENT_SECRET }}
+          NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL: ${{ vars.NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL }}
+          NEXT_PUBLIC_PUBLIC_STORAGE_BASE_URL: ${{ vars.NEXT_PUBLIC_PUBLIC_STORAGE_BASE_URL }}
+          NEXT_PUBLIC_SEND_EMAIL_DOMAIN: ${{ vars.NEXT_PUBLIC_SEND_EMAIL_DOMAIN }}
+          DEEPL_PRO_API_KEYS: ${{ secrets.DEEPL_PRO_API_KEYS }}
+          DEEPL_FREE_API_KEYS: ${{ secrets.DEEPL_FREE_API_KEYS }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          GOOGLE_BOOKS_API_KEYS: ${{ secrets.GOOGLE_BOOKS_API_KEYS }}
         run: |
-          if [ -z "$ENV_PROD" ]; then
-            echo "::error::the ENV_PROD secret is empty — see apps/readest-app/.env.prod.example"
-            exit 1
-          fi
-          printf '%s' "$ENV_PROD" > .env.prod
+          : > .env.prod
+          for v in NEXT_PUBLIC_WEB_BASE_URL NEXT_PUBLIC_API_BASE_URL \
+                   NEXT_PUBLIC_OBJECT_STORAGE_TYPE SIGNUP_ALLOWED_EMAILS \
+                   BETTER_AUTH_SECRET DATABASE_URL \
+                   R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY \
+                   GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+                   NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL NEXT_PUBLIC_PUBLIC_STORAGE_BASE_URL \
+                   NEXT_PUBLIC_SEND_EMAIL_DOMAIN \
+                   DEEPL_PRO_API_KEYS DEEPL_FREE_API_KEYS AI_GATEWAY_API_KEY \
+                   GOOGLE_BOOKS_API_KEYS; do
+            value="${!v}"
+            [ -n "$value" ] || continue
+            # Single-quoted so a `#` in a password does not start a comment and
+            # a `\n` is not expanded. A value containing a single quote cannot be
+            # encoded this way, so say so rather than write a corrupt file.
+            case "$value" in
+              *"'"*) echo "::error::$v contains a single quote, which cannot be encoded here"; exit 1 ;;
+            esac
+            printf "%s='%s'\n" "$v" "$value" >> .env.prod
+          done
 
       - name: Fail fast on missing deployment config
         working-directory: apps/readest-app
@@ -68,7 +107,7 @@ jobs:
           for v in NEXT_PUBLIC_WEB_BASE_URL NEXT_PUBLIC_API_BASE_URL BETTER_AUTH_SECRET \
                    SIGNUP_ALLOWED_EMAILS R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
             if ! grep -qE "^$v=.+" .env.prod; then
-              echo "::error::$v is missing or empty in .env.prod"
+              echo "::error::$v is not set — add it to the repository secrets or variables"
               missing=1
             fi
           done

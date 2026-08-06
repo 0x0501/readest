@@ -1,9 +1,12 @@
 # What this fork changed, and how to resolve each conflict
 
-Two facts make the rebase easier than it looks:
+Two facts set the shape of every rebase here:
 
-- **The fork deletes nothing upstream ships.** No `git rm` to re-apply, no
-  resurrection conflicts.
+- **The fork deletes a lot of what upstream ships.** Payments, the Supabase
+  client, the Tauri OAuth flow and two auth pages are gone. A rebase resurrects
+  none of them, but an upstream commit that *edits* a deleted file arrives as a
+  delete/modify conflict — `git rm` it again and check whether the change it
+  carried belongs somewhere that still exists.
 - **`docker/volumes/db/migrations/` is pristine upstream.** The fork's own SQL lives
   in `apps/readest-app/drizzle/`, so upstream's migration directory takes their side
   wholesale, every time.
@@ -13,8 +16,22 @@ things this fork deleted:
 
 ```bash
 git diff --stat upstream/main...HEAD -- docker/volumes/db/migrations/   # expect empty
-git diff --diff-filter=D --name-only upstream/main...HEAD               # expect empty
+git diff --diff-filter=D --name-only upstream/main...HEAD               # match the list below
 ```
+
+## What the fork deletes
+
+Everything here was removed on purpose. If a rebase brings one back, the
+resolution is to delete it again, not to wire it up.
+
+| Path | Why it went |
+| --- | --- |
+| `src/libs/payment/**`, `src/app/api/{stripe,apple,google}/**`, the checkout and plan-comparison UI | Every query hit a table no migration ships. The feature was never deployable from this repo |
+| `src/utils/supabase.ts` | No PostgREST client left to build |
+| `src/helpers/auth.ts`, `src/app/auth/callback/page.tsx` | Implicit-flow token parsing. Better Auth returns with a cookie already set |
+| `src/app/auth/update/page.tsx` | Email change needs an outbound mailer this deployment does not have (ADR-015) |
+| `src/app/auth/utils/appleIdAuth.ts`, `src/app/auth/components/ProviderLogin.tsx` | The Tauri OAuth path. `nativeAuth.ts` survived — Drive and OneDrive still use it — and moved to `src/services/sync/providers/oauth/` |
+| `workers/iap-reconcile/**` | Swept subscription tables that never existed |
 
 ## Fork-only files — cannot conflict
 
@@ -44,9 +61,14 @@ of whatever upstream changed rather than discarding either side.
 | File | The fork's change | If upstream also changed it |
 | --- | --- | --- |
 | `src/services/constants.ts` | `READEST_WEB_BASE_URL` and friends read `NEXT_PUBLIC_*` env vars instead of hardcoding `readest.com` | Keep the env-var indirection; take upstream's new constants alongside |
-| `src/utils/access.ts` | `PAYMENTS_ENABLED = false` | Keep the flag false; take upstream's plan-gate logic |
-| `src/app/user/page.tsx`, `src/app/user/components/AccountActions.tsx`, `src/hooks/useAvailablePlans.ts` | Checkout UI hidden behind `PAYMENTS_ENABLED` | Keep the guard, re-wrap whatever upstream added |
-| `src/app/auth/page.tsx` | `providers={['github']}` — only what this deployment configured | Keep the list at exactly the providers this deployment has credentials for |
+| `src/utils/access.ts` | Plan gating stays; `getAccessToken` / `getUserID` read localStorage and nothing else. No `validateUserAndToken` — that lives in `libs/auth/verify.ts` | Take upstream's plan logic; route any new server-side token check through `libs/auth/verify.ts` |
+| `src/app/user/page.tsx`, `src/app/user/components/AccountActions.tsx` | No checkout, no plan comparison, no email-change action | Drop whatever upstream adds that needs a Stripe catalogue or an outbound mailer |
+| `src/app/auth/page.tsx` | An email/password form on Better Auth, GitHub when configured. No Supabase Auth UI, no Tauri OAuth | Port upstream's copy and layout changes only; the flow underneath is not theirs |
+| `src/app/auth/recovery/page.tsx` | Changes a password with `authClient.changePassword` rather than finishing a mailed reset (ADR-015) | Keep. Upstream's version needs GoTrue and a mailer |
+| `src/context/AuthContext.tsx`, `src/hooks/useUserActions.ts` | Session from `authClient.useSession()`; a JWT minted per session change. No `login` in the context | Re-apply on top; the localStorage keys (`token`, `user`) are the same ones upstream writes |
+| `src/pages/api/sync.ts` | The whole data layer is Drizzle. Merge logic is upstream's, verbatim | Port merge changes into the resolvers; leave the query shape alone. See ADR-014 before touching a jsonb column |
+| `src/services/runtimeConfig.ts` | `githubSignIn` instead of the Supabase URL and anon key | Keep |
+| `workers/send-email/**` | Reads the app's Drizzle schema over Hyperdrive; no service-role key, no plan gate | Port mail-handling changes; the queries are not upstream's |
 | `src/app/reader/components/sidebar/SearchBar.tsx` | A skipped (cloud-only) book says "Download this book to search inside it" rather than "Search failed" | Keep the extra branch; its test pins both messages |
 | `src/app/api/share/[token]/og.png/route.ts` | Resolves the share and presigns the cover, then hands off to the SHARE_OG service binding. The fork **deleted** the sibling `render.tsx`; upstream draws inline with `next/og` | Keep the hand-off. If upstream restyles the card, port the JSX into `workers/share-og/src/card.tsx` — same shape, minus the `ImageResponse` wrapper |
 | `wrangler.toml` | This deployment's zone, routes, R2/KV/Hyperdrive/SHARE_OG bindings, vars | Almost always take the fork's side; upstream's is a different account |

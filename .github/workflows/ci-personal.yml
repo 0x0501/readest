@@ -45,10 +45,14 @@ jobs:
       - name: lint and typecheck
         run: pnpm -C apps/readest-app lint
 
-      # The share-og Worker has its own tsconfig (satori's JSX runtime, Workers
-      # types) and is outside the app's tsgo run, so nothing else typechecks it.
+      # Both Workers have their own tsconfig and are outside the app's tsgo run,
+      # so nothing else typechecks them. send-email imports the app's Drizzle
+      # schema, so a column rename would otherwise surface at deploy time.
       - name: typecheck the share-og worker
         run: pnpm --filter readest-share-og-worker typecheck
+
+      - name: typecheck the send-email worker
+        run: pnpm --filter readest-send-email-worker typecheck
 
   test:
     name: unit tests (${{ matrix.shard }}/2)

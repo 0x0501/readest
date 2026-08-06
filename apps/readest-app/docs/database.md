@@ -235,3 +235,48 @@ must not be granted, so the route fails closed. Writes stay best-effort, since a
 translation already delivered should not fail afterwards. If upstream ever ships
 its own `usage_stats`, its migration will fail to apply against this table
 rather than diverge quietly.
+
+### ADR-014: json and jsonb columns are read through a raw expression
+
+**Context.** Four columns hold JSON the client has already stringified —
+`book_configs.progress`, `search_config`, `view_settings` and `books.metadata`.
+`transformBookConfigToDB` sends `JSON.stringify(progress)`, and
+`transformBookConfigFromDB` calls `JSON.parse` on the way back, so the value on
+the wire is a *string* and the column holds a jsonb string. PostgREST returned
+that string unchanged. Drizzle does not: node-postgres parses the wire value and
+Drizzle's own jsonb mapper parses it a second time, so the client receives an
+array where it expects a string and throws inside its own `JSON.parse`.
+
+Writes are unaffected — Drizzle stringifies for the driver exactly as PostgREST
+did, and the stored value is byte-identical.
+
+**Decision.** `sync.ts` selects json and jsonb columns as ``sql`${column}` ``
+rather than as the column object. A raw expression carries no decoder, so
+Drizzle hands back the driver's value, which is what PostgREST produced.
+
+**Consequences.** The rule is applied by column *type*, not by column name, so a
+new jsonb column inherits it. Columns whose value is a genuine object —
+`stat_pages.ext` — are unaffected either way, since one parse is correct for
+them and one parse is what they get. A real-database test pushes a config and
+pulls it back asserting `typeof progress === 'string'`, because this failure
+mode is invisible to a mocked query: it lives in the driver.
+
+### ADR-015: Account recovery and email change are gone, not stubbed
+
+**Context.** `/auth/recovery` finished a password reset that GoTrue started by
+mailing a link, and `/auth/update` changed an account's email by mailing a
+confirmation to both addresses. This deployment configures no outbound mail —
+the only email Worker here is inbound. Better Auth can drive either flow, but
+not without a sender.
+
+**Decision.** `/auth/update` is deleted along with its menu action.
+`/auth/recovery` becomes a change-password form built on
+`authClient.changePassword`, which takes the current password and needs no mail
+at all; it revokes other sessions, which is the point of changing a password
+under suspicion.
+
+**Consequences.** A forgotten password is an operator problem, resolved against
+the database. That is defensible for an instance whose sign-up is an
+`SIGNUP_ALLOWED_EMAILS` allow-list. Dropping the email change also closes a gap
+that list left open: the allow-list gates account *creation*, so an account
+could otherwise move itself to an address that was never invited.

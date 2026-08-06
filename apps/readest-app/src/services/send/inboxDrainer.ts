@@ -1,7 +1,7 @@
 import type { DBSendInboxItem } from '@/types/sendRecords';
 
 /**
- * Side-effect ports the drainer needs. The Supabase RPC calls, the payload
+ * Side-effect ports the drainer needs. The API calls, the payload
  * download, and the import pipeline are injected so the orchestration here is
  * unit-testable and free of React/network coupling. The `useInboxDrainer` hook
  * builds the real adapter from app context.

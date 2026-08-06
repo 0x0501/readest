@@ -540,7 +540,7 @@ export const useReplicaPull = ({
 
   // Mirror the React-side auth state into the module-level flag the
   // auto-sync listeners read. Kept in its own effect so a user ref
-  // change (Supabase TOKEN_REFRESHED reissues the user object on
+  // change (a re-minted token reissues the user object on
   // foreground / refresh) doesn't tear down the boot-pull effect.
   useEffect(() => {
     hasCurrentUser = !!user;

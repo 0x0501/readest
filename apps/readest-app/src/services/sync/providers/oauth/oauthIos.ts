@@ -8,7 +8,7 @@
  * `Info-ios.plist` `CFBundleURLTypes` so the OS routes the redirect back.
  *
  * Consent opens in an `ASWebAuthenticationSession` via Readest's native bridge
- * command `auth_with_safari` (the same one the Supabase login uses). That session
+ * command `auth_with_safari`. That session
  * intercepts the redirect by its `callbackURLScheme` — so unlike the desktop
  * deep-link runner, no app-wide URL listener is needed: the native command opens
  * consent AND resolves with the redirect URL in one round trip. The callback

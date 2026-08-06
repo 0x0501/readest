@@ -2,15 +2,15 @@ import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const useSessionMock = vi.hoisted(() => vi.fn());
-const tokenMock = vi.hoisted(() => vi.fn());
+const mintMock = vi.hoisted(() => vi.fn());
 const signOutMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/libs/auth/client', () => ({
   authClient: {
     useSession: useSessionMock,
-    token: tokenMock,
     signOut: signOutMock,
   },
+  mintAccessToken: mintMock,
 }));
 
 vi.mock('posthog-js', () => ({
@@ -46,7 +46,7 @@ describe('AuthContext', () => {
     captured.length = 0;
     window.localStorage.clear();
     useSessionMock.mockReturnValue({ data: null, isPending: false });
-    tokenMock.mockResolvedValue({ data: { token: 'jwt-abc' } });
+    mintMock.mockResolvedValue('jwt-abc');
     signOutMock.mockResolvedValue(undefined);
   });
 
@@ -99,7 +99,7 @@ describe('AuthContext', () => {
     render(<Wrapper tick={0} />);
     await waitFor(() => expect(window.localStorage.getItem('token')).toBe('jwt-abc'));
 
-    tokenMock.mockResolvedValue({ data: { token: 'jwt-fresh' } });
+    mintMock.mockResolvedValue('jwt-fresh');
     await captured.at(-1)!.refresh();
 
     expect(window.localStorage.getItem('token')).toBe('jwt-fresh');

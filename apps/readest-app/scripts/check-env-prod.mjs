@@ -21,6 +21,12 @@ const REQUIRED = {
   R2_ACCOUNT_ID: 'R2 is reached over the S3 API, so it needs real credentials.',
   R2_ACCESS_KEY_ID: 'Without it the site reads fine and cannot upload a book.',
   R2_SECRET_ACCESS_KEY: 'Without it the site reads fine and cannot upload a book.',
+  AUTH_EMAIL_FROM:
+    'The sender for password-reset mail. Unset, the reset flow fails on send — the request looks accepted and no mail ever arrives.',
+  TURNSTILE_SECRET_KEY:
+    'The captcha plugin is registered only when this is set, so an unset value leaves sign-in, sign-up and reset unprotected while everything looks normal (ADR-017).',
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY:
+    'Without it the widget never renders, so the client sends no captcha token and every protected request is rejected.',
 };
 
 let raw;

@@ -46,7 +46,7 @@ export const bookShares = pgTable(
     index('idx_book_shares_user_id').using('btree', table.userId.asc().nullsLast().op('uuid_ops')),
     index('idx_book_shares_user_id_book_hash').using(
       'btree',
-      table.userId.asc().nullsLast().op('text_ops'),
+      table.userId.asc().nullsLast().op('uuid_ops'),
       table.bookHash.asc().nullsLast().op('text_ops'),
     ),
     foreignKey({
@@ -87,18 +87,18 @@ export const files = pgTable(
     index('idx_files_file_key_deleted_at').using(
       'btree',
       table.fileKey.asc().nullsLast().op('timestamptz_ops'),
-      table.deletedAt.asc().nullsLast().op('text_ops'),
+      table.deletedAt.asc().nullsLast().op('timestamptz_ops'),
     ),
     index('idx_files_replica_lookup').using(
       'btree',
-      table.userId.asc().nullsLast().op('uuid_ops'),
-      table.replicaKind.asc().nullsLast().op('uuid_ops'),
+      table.userId.asc().nullsLast().op('text_ops'),
+      table.replicaKind.asc().nullsLast().op('text_ops'),
       table.replicaId.asc().nullsLast().op('uuid_ops'),
     ),
     index('idx_files_user_id_deleted_at').using(
       'btree',
       table.userId.asc().nullsLast().op('uuid_ops'),
-      table.deletedAt.asc().nullsLast().op('timestamptz_ops'),
+      table.deletedAt.asc().nullsLast().op('uuid_ops'),
     ),
     foreignKey({
       columns: [table.userId],
@@ -231,7 +231,7 @@ export const sendInbox = pgTable(
     index('idx_send_inbox_user_status').using(
       'btree',
       table.userId.asc().nullsLast().op('text_ops'),
-      table.status.asc().nullsLast().op('uuid_ops'),
+      table.status.asc().nullsLast().op('timestamptz_ops'),
       table.createdAt.asc().nullsLast().op('uuid_ops'),
     ),
     foreignKey({
@@ -395,6 +395,35 @@ export const apikey = pgTable(
   ],
 );
 
+export const passkey = pgTable(
+  'passkey',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    name: text(),
+    publicKey: text().notNull(),
+    userId: uuid().notNull(),
+    credentialID: text().notNull(),
+    counter: integer().notNull(),
+    deviceType: text().notNull(),
+    backedUp: boolean().notNull(),
+    transports: text(),
+    createdAt: timestamp({ withTimezone: true, mode: 'string' }),
+    aaguid: text(),
+  },
+  (table) => [
+    index('passkey_credentialID_idx').using(
+      'btree',
+      table.credentialID.asc().nullsLast().op('text_ops'),
+    ),
+    index('passkey_userId_idx').using('btree', table.userId.asc().nullsLast().op('uuid_ops')),
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [user.id],
+      name: 'passkey_userId_fkey',
+    }).onDelete('cascade'),
+  ],
+);
+
 export const replicaKeys = pgTable(
   'replica_keys',
   {
@@ -509,7 +538,7 @@ export const statPages = pgTable(
   (table) => [
     index('idx_stat_pages_user_updated').using(
       'btree',
-      table.userId.asc().nullsLast().op('uuid_ops'),
+      table.userId.asc().nullsLast().op('timestamptz_ops'),
       table.updatedAt.asc().nullsLast().op('uuid_ops'),
     ),
     foreignKey({
@@ -555,8 +584,8 @@ export const replicas = pgTable(
   (table) => [
     index('idx_replicas_pull_cursor').using(
       'btree',
-      table.userId.asc().nullsLast().op('text_ops'),
-      table.kind.asc().nullsLast().op('uuid_ops'),
+      table.userId.asc().nullsLast().op('uuid_ops'),
+      table.kind.asc().nullsLast().op('text_ops'),
       table.updatedAtTs.asc().nullsLast().op('uuid_ops'),
     ),
     foreignKey({

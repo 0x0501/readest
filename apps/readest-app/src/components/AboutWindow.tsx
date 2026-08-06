@@ -2,14 +2,11 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useEnv } from '@/context/EnvContext';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useSettingsStore } from '@/store/settingsStore';
-import { checkForAppUpdates, checkAppReleaseNotes } from '@/helpers/updater';
 import { parseWebViewInfo } from '@/utils/ua';
 import { getAppVersion } from '@/utils/version';
 import { writeTextToClipboard } from '@/utils/clipboard';
 import { eventDispatcher } from '@/utils/event';
-import SupportLinks from './SupportLinks';
-import LegalLinks from './LegalLinks';
+import { FORK_REPO_URL } from '@/services/constants';
 import Dialog from './Dialog';
 import Link from './Link';
 
@@ -23,13 +20,9 @@ export const setAboutDialogVisible = (visible: boolean) => {
   }
 };
 
-type UpdateStatus = 'checking' | 'updating' | 'updated' | 'error';
-
 export const AboutWindow = () => {
   const _ = useTranslation();
   const { appService } = useEnv();
-  const { settings } = useSettingsStore();
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [browserInfo, setBrowserInfo] = useState('');
   const [isOpen, setIsOpen] = useState(false);
 
@@ -53,33 +46,8 @@ export const AboutWindow = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleCheckUpdate = async () => {
-    setUpdateStatus('checking');
-    try {
-      const hasUpdate = await checkForAppUpdates(_, false, settings.updateChannel);
-      if (hasUpdate) {
-        handleClose();
-      } else {
-        setUpdateStatus('updated');
-      }
-    } catch (error) {
-      console.info('Error checking for updates:', error);
-      setUpdateStatus('error');
-    }
-  };
-
-  const handleShowRecentUpdates = async () => {
-    const hasNotes = await checkAppReleaseNotes(false);
-    if (hasNotes) {
-      handleClose();
-    } else {
-      setUpdateStatus('error');
-    }
-  };
-
   const handleClose = () => {
     setIsOpen(false);
-    setUpdateStatus(null);
   };
 
   const versionInfo = `${_('Version {{version}}', { version: getAppVersion() })} (${browserInfo})`;
@@ -122,61 +90,40 @@ export const AboutWindow = () => {
                 {versionInfo}
               </button>
             </div>
-            <div className='my-1 h-5'>
-              {!updateStatus && (
-                <button
-                  className='btn btn-sm btn-primary cursor-pointer p-1 text-xs'
-                  onClick={appService?.hasUpdater ? handleCheckUpdate : handleShowRecentUpdates}
-                >
-                  {_('Check Update')}
-                </button>
-              )}
-              {updateStatus === 'updated' && (
-                <p className='text-neutral-content mt-2 text-xs'>
-                  {_('Already the latest version')}
-                </p>
-              )}
-              {updateStatus === 'checking' && (
-                <p className='text-neutral-content mt-2 text-xs'>{_('Checking for updates...')}</p>
-              )}
-              {updateStatus === 'error' && (
-                <p className='text-error mt-2 text-xs'>{_('Error checking for updates')}</p>
-              )}
-            </div>
           </div>
 
           <hr aria-hidden='true' className='border-base-300 my-12 w-full sm:my-4' />
 
           <div
-            className='flex flex-1 flex-col items-center justify-start gap-2 px-4 text-center'
+            className='flex flex-1 flex-col items-center justify-start gap-2 px-4 pb-4 text-center'
             dir='ltr'
           >
             <p className='text-neutral-content text-sm'>
-              © {new Date().getFullYear()} Bilingify LLC. All rights reserved.
+              {_(
+                'This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.',
+              )}
             </p>
 
             <p className='text-neutral-content text-xs'>
-              This software is licensed under the{' '}
+              Readest is licensed under the{' '}
               <Link
                 href='https://www.gnu.org/licenses/agpl-3.0.html'
                 className='text-blue-500 underline'
               >
                 GNU Affero General Public License v3.0
               </Link>
-              . You are free to use, modify, and distribute this software under the terms of the
-              AGPL v3 license. Please see the license for more details.
-            </p>
-            <p className='text-neutral-content text-xs'>
-              Source code is available at{' '}
-              <Link href='https://github.com/readest/readest' className='text-blue-500 underline'>
-                GitHub
-              </Link>
               .
             </p>
-
-            <LegalLinks />
+            {/* Not decoration: AGPL §13 requires that anyone interacting with a
+                modified version over a network be offered its source, which is
+                why this points at the fork rather than upstream. */}
+            <p className='text-neutral-content text-xs'>
+              Source code:{' '}
+              <Link href={FORK_REPO_URL} className='text-blue-500 underline'>
+                {FORK_REPO_URL.replace('https://', '')}
+              </Link>
+            </p>
           </div>
-          <SupportLinks />
         </div>
       )}
     </Dialog>

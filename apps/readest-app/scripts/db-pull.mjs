@@ -11,7 +11,7 @@
 // migration 016), so pull runs against a throwaway directory and only schema.ts
 // is kept.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,6 +69,19 @@ try {
       );
   }
 
+  // 3. drizzle-kit camel-cases a column name into the property key and lets the
+  //    key stand in for the column, so `"credentialID"` comes back as
+  //    `credentialId: text()` — which addresses a column that does not exist.
+  //    Renaming the key is the whole fix: drizzle derives the column from it.
+  //
+  //    This one is worth more care than the other two because it fails silently
+  //    in both directions. Better Auth's Drizzle adapter looks a column up as
+  //    `schemaModel[fieldName]` and does `if (!schemaModel[field]) continue` —
+  //    so a key it cannot find drops that condition from the WHERE clause rather
+  //    than raising, and a passkey lookup by credential returns whatever row
+  //    came first.
+  schema = schema.replaceAll('credentialId', 'credentialID');
+
   // Both repairs are workarounds for bugs in drizzle-kit's introspection, keyed
   // to the exact strings it emits. `drizzle-kit` is on a caret range, so a
   // version that changes those strings would leave the output broken —
@@ -81,6 +94,28 @@ try {
           'Its output has changed; re-check the workarounds against the current version.',
       );
     }
+  }
+
+  // Repair 3 is one instance of a general hazard: any column whose name does not
+  // survive drizzle-kit's camel-casing addresses a column that is not there.
+  // Rather than wait to be surprised by the next one, check every column the
+  // pull actually saw. The baseline SQL drizzle-kit writes alongside schema.ts
+  // quotes real column names, so it is the authority on what the database has.
+  // drizzle-kit names the baseline with a random suffix, so find it by extension.
+  const baselineFile = readdirSync(scratch).find((name) => name.endsWith('.sql'));
+  const baseline = readFileSync(join(scratch, baselineFile), 'utf8');
+  const columns = new Set(
+    [...baseline.matchAll(/^\s+"([A-Za-z_][A-Za-z0-9_]*)"\s/gm)].map((match) => match[1]),
+  );
+  const missing = [...columns]
+    .filter((column) => !new RegExp(`\\b${column}\\b`).test(schema))
+    .sort();
+  if (missing.length) {
+    throw new Error(
+      `These columns exist in the database but no identifier in the generated schema ` +
+        `matches them, so any query against them silently addresses nothing: ${missing.join(', ')}. ` +
+        'Add a repair above, as with credentialID.',
+    );
   }
 
   writeFileSync(schemaPath, schema);

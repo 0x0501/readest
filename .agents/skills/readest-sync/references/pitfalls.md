@@ -178,6 +178,26 @@ the bugs were fixed (drop that repair) or merely reshaped (update it). Keep the
 assertion either way — it is what converts a silent Worker crash into a loud script
 failure.
 
+## `pnpm db:pull` names columns nothing in the schema matches
+
+**Symptom:** "These columns exist in the database but no identifier in the
+generated schema matches them".
+
+drizzle-kit camel-cases a column name into the property key and then lets the key
+stand in for the column. `"credentialID"` comes back as `credentialId: text()`,
+which addresses a column that does not exist. Nothing raises at that point.
+
+What makes it worth a hard stop rather than a warning is what consumes the schema:
+Better Auth's Drizzle adapter looks a column up as `schemaModel[fieldName]` and does
+`if (!schemaModel[field]) continue` — so a key it cannot find silently drops that
+condition from the `WHERE` clause. A passkey lookup by credential then matches on
+nothing in particular and returns whichever row came first.
+
+Fix by adding a rename to `scripts/db-pull.mjs` beside the `credentialID` one, then
+re-run. The check compares every quoted column in drizzle-kit's own baseline SQL
+against the generated file, so it catches the next one without anyone knowing to
+look for it.
+
 ## Every sign-in returns 403 `INVALID_ORIGIN`
 
 **Symptom:** the site works, `/api/auth/jwks` answers, sign-in always fails. Reads
@@ -226,3 +246,13 @@ PID=$(ss -ltnp | grep ':3000' | grep -oP 'pid=\K[0-9]+' | head -1)
 **Browser state ends with `agent-browser close`.** Imported books, annotations and
 reading progress live in the browser profile and are discarded. Re-import and carry
 on.
+
+**A WebAuthn ceremony hangs forever under `agent-browser`.** Passkey enrolment needs
+a CDP virtual authenticator, and agent-browser has no CDP passthrough — attach one
+over the page's own WebSocket endpoint (`agent-browser get cdp-url`, then
+`/json/list` for the page target). Two traps: Chrome tears the authenticator down
+when that client disconnects, so the script has to stay attached for the whole run;
+and Chrome allows **one internal authenticator per environment**, so a previous
+attempt that exited leaves an orphan and the next `addVirtualAuthenticator` fails
+with that message while every ceremony hangs waiting on an authenticator nothing is
+driving. `agent-browser close --all` clears it.

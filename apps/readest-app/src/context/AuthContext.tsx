@@ -1,6 +1,5 @@
 'use client';
 
-import posthog from 'posthog-js';
 import {
   createContext,
   useState,
@@ -43,7 +42,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (nextToken && nextUser) {
       localStorage.setItem('token', nextToken);
       localStorage.setItem('user', JSON.stringify(nextUser));
-      posthog.identify(nextUser.id);
     } else {
       localStorage.removeItem('token');
       localStorage.removeItem('user');

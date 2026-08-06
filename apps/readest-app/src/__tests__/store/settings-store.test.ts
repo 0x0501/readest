@@ -42,7 +42,6 @@ function makeSettings(overrides: Partial<SystemSettings> = {}): SystemSettings {
     autoImportBooksOnOpen: false,
     savedBookCoverForLockScreen: '',
     savedBookCoverForLockScreenPath: '',
-    telemetryEnabled: false,
     discordRichPresenceEnabled: false,
     libraryViewMode: 'grid',
     librarySortBy: 'updated',

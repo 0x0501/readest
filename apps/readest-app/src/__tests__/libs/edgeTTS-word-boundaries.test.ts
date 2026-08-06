@@ -41,12 +41,6 @@ vi.mock('@/services/environment', () => ({
   isTauriAppPlatform: () => false,
 }));
 
-vi.mock('@/utils/supabase', () => ({
-  supabase: { auth: { getSession: async () => ({ data: { session: null } }) } },
-  createSupabaseClient: () => ({}),
-  createSupabaseAdminClient: () => ({}),
-}));
-
 // Controllable stub for the authenticated HTTPS proxy fetch.
 const httpState = vi.hoisted(() => ({
   headers: {} as Record<string, string>,

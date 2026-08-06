@@ -1,9 +1,5 @@
 export interface ReadestRuntimeConfig {
   githubSignIn?: boolean;
-  // Only `pages/api/sync.ts` still reads these, and only to build a PostgREST
-  // client. They go when it does.
-  supabaseUrl?: string;
-  supabaseAnonKey?: string;
   apiBaseUrl?: string;
   objectStorageType?: string;
   storageFixedQuota?: number;
@@ -24,11 +20,6 @@ export const getServerRuntimeConfig = (): ReadestRuntimeConfig => ({
   // libs/auth/server.ts: a button for a provider the deployment has no
   // credentials for renders fine and can only fail on click.
   githubSignIn: Boolean(process.env['GITHUB_CLIENT_ID'] && process.env['GITHUB_CLIENT_SECRET']),
-  supabaseUrl:
-    process.env['SUPABASE_PUBLIC_URL'] ??
-    process.env['NEXT_PUBLIC_SUPABASE_URL'] ??
-    process.env['SUPABASE_URL'],
-  supabaseAnonKey: process.env['SUPABASE_ANON_KEY'] ?? process.env['NEXT_PUBLIC_SUPABASE_ANON_KEY'],
   apiBaseUrl:
     process.env['API_BASE_URL'] ??
     process.env['NEXT_PUBLIC_API_BASE_URL'] ??

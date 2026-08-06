@@ -469,7 +469,8 @@ export interface BookProgress {
   fraction: number;
   index: number;
   range: Range;
-  page: number;
+  // Absent until foliate has paginated the section; see readerStore.setProgress.
+  page?: number;
 }
 
 export type SearchMode = 'contains' | 'whole-words' | 'regex' | 'nearby-words';

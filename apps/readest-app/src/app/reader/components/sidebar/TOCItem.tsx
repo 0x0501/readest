@@ -55,7 +55,9 @@ export const buildTOCDisplayItems = (
   activeHref: string | null,
   currentPage: number | null | undefined,
 ): TOCDisplayItem[] => {
-  if (!activeHref || currentPage == null) return flatItems;
+  // `== null` alone let NaN through, and NaN is exactly what an unpaginated
+  // relocate used to produce (see readerStore.setProgress).
+  if (!activeHref || currentPage == null || !Number.isFinite(currentPage)) return flatItems;
   const activeIndex = flatItems.findIndex((f) => f.item.href === activeHref);
   if (activeIndex === -1) return flatItems;
   const currentRow: CurrentPositionItem = {

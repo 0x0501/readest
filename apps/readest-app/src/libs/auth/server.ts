@@ -1,5 +1,6 @@
 import { apiKey } from '@better-auth/api-key';
 import { betterAuth } from 'better-auth';
+import { APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { jwt } from 'better-auth/plugins/jwt';
 import { and, eq, isNull, sum } from 'drizzle-orm';
@@ -95,7 +96,13 @@ export const createAuth = (db: Db) =>
         create: {
           before: async (user) => {
             if (!isSignupAllowed(user.email)) {
-              throw new Error('This instance is invite-only.');
+              // An APIError, not a plain one: Better Auth wraps anything else as
+              // a bare `Failed to create user`, so the sign-up form told a
+              // blocked address nothing it could act on.
+              throw new APIError('FORBIDDEN', {
+                message: 'This instance is invite-only — that address is not on the list.',
+                code: 'SIGNUP_NOT_ALLOWED',
+              });
             }
             return { data: user };
           },

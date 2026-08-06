@@ -197,7 +197,12 @@ const Dialog: React.FC<DialogProps> = ({
       tabIndex={-1}
       open={isOpen}
       aria-label={title}
-      aria-hidden={!isOpen}
+      // `inert`, not `aria-hidden`. Closing re-renders before the effect below
+      // restores focus, so for one frame the dialog was aria-hidden with the
+      // focus still on an input inside it — which the browser refuses and warns
+      // about. `inert` takes the subtree out of the a11y tree *and* blurs it, so
+      // there is no frame where the two disagree.
+      inert={!isOpen}
       className={clsx(
         'modal sm:min-w-90 z-50 h-full w-full !items-start !bg-transparent sm:w-full sm:!items-center',
         className,
@@ -252,7 +257,6 @@ const Dialog: React.FC<DialogProps> = ({
             <div className='flex h-11 w-full items-center justify-between'>
               <button
                 aria-label={_('Close')}
-                aria-hidden={!isOpen}
                 onClick={onClose}
                 disabled={!dismissible}
                 className={
@@ -270,7 +274,6 @@ const Dialog: React.FC<DialogProps> = ({
               </div>
               <button
                 aria-label={_('Close')}
-                aria-hidden={!isOpen}
                 onClick={onClose}
                 disabled={!dismissible}
                 className={

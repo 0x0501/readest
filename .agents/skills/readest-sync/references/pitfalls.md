@@ -36,6 +36,21 @@ upload, because a presign against a missing bucket fails at PUT time, not at
 presign time.
 
 
+## CI is green and the deploy fails to typecheck
+
+**Symptom:** `pnpm lint` passes, `pnpm test` passes, and `next build` stops on a
+`Type error` in the deploy job.
+
+`pnpm lint` runs **tsgo**; `next build` runs **tsc**. They do not always agree —
+tsgo accepted `authClient.token()` where tsc found the plugin's return type
+unassignable, so the error only appeared after CI had gone green.
+`ci-personal.yml` runs `tsc --noEmit` as its own step for this reason; it costs
+about fifteen seconds and it is the checker that decides whether a deploy builds.
+
+If you find yourself adding a `@ts-expect-error` to satisfy one and not the
+other, the disagreement is the finding — check which one the build uses before
+suppressing anything.
+
 ## One migration takes the whole chain down
 
 **Symptom:** `pnpm db:migrate` fails and the database is empty rather than partly

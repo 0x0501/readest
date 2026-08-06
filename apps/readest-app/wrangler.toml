@@ -41,6 +41,13 @@ binding = "ASSETS"
 [[hyperdrive]]
 binding = "HYPERDRIVE"
 id = "fe2eeafa8f554a8aad8313cc5a0f51d1"
+# Only ever used by the local emulator, never by the deployed Worker — but
+# `opennextjs-cloudflare deploy` reads the Worker env through a miniflare
+# instance, and miniflare refuses to construct a Hyperdrive binding without
+# somewhere local to point it. Nothing connects to this during a deploy; it
+# only has to parse. Override it for real local work with
+# CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE.
+localConnectionString = "postgresql://postgres:postgres@127.0.0.1:5432/postgres"
 
 # Required by the r2IncrementalCache override registered in open-next.config.ts,
 # even though `dangerous.disableIncrementalCache` keeps it unused at runtime.

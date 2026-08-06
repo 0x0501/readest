@@ -15,7 +15,7 @@ import {
   StatBookRecord,
   StatPageRecord,
 } from '@/libs/sync';
-import { validateUserAndToken } from '@/utils/access';
+import { validateRequestUser } from '@/libs/auth/verify';
 import { DBBook, DBBookConfig } from '@/types/records';
 
 const pageKey = (r: StatPageRecord) => `${r.book_hash}|${r.page}|${r.start_time}`;
@@ -180,7 +180,7 @@ type TableName = keyof typeof transformsToDB;
 type DBError = { table: TableName; error: PostgrestError };
 
 export async function GET(req: NextRequest) {
-  const { user, token } = await validateUserAndToken(req.headers.get('authorization'));
+  const { user, token } = await validateRequestUser(req.headers.get('authorization'));
   if (!user || !token) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
   }
@@ -488,7 +488,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { user, token } = await validateUserAndToken(req.headers.get('authorization'));
+  const { user, token } = await validateRequestUser(req.headers.get('authorization'));
   if (!user || !token) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
   }

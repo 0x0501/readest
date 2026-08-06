@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { type JWTPayload, importJWK, jwtVerify } from 'jose';
-import { type Db, schema } from '@/libs/db';
+import { type Db, schema, withDb } from '@/libs/db';
 import { READEST_WEB_BASE_URL } from '@/services/constants';
 
 /**
@@ -96,4 +96,20 @@ export const validateUserAndToken = async (
   const payload = await verifyAccessToken(db, token);
   if (!payload) return {};
   return { user: { id: payload.sub }, token };
+};
+
+/**
+ * The same check for routes that touch no other table — AI chat and embedding,
+ * Edge TTS, Yandex, metadata search, URL fetching.
+ *
+ * They hold a connection only for the JWKS lookup and give it back before the
+ * work starts, which matters because that work is a streamed upstream response:
+ * wrapping the handler in `withDb` would pin a Postgres connection open for as
+ * long as a model takes to finish talking.
+ */
+export const validateRequestUser = async (
+  authHeader: string | null | undefined,
+): Promise<{ user?: VerifiedUser; token?: string }> => {
+  if (!authHeader) return {};
+  return withDb((db) => validateUserAndToken(db, authHeader));
 };

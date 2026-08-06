@@ -22,18 +22,6 @@ vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: vi.fn(),
 }));
 
-// Stub Supabase so importing the full providers registry (which pulls in
-// deepl.ts → @/utils/access → @/utils/supabase) doesn't instantiate a real
-// GoTrueClient on every `vi.resetModules()` round. Without this, each test
-// that dynamically imports the registry logs a "Multiple GoTrueClient
-// instances" warning from the real Supabase client.
-vi.mock('@/utils/supabase', () => ({
-  supabase: {
-    auth: { getSession: vi.fn().mockResolvedValue({ data: { session: null } }) },
-    from: vi.fn(),
-  },
-}));
-
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 

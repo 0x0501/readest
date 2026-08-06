@@ -13,13 +13,6 @@ vi.mock('isomorphic-ws', () => ({
 
 // Stub the Supabase client so importing edgeTTS.ts (transitively via
 // @/utils/fetch -> @/utils/access) does not instantiate a real GoTrueClient.
-// Each `vi.resetModules()` would otherwise create another client and Supabase
-// logs "Multiple GoTrueClient instances detected" to stderr.
-vi.mock('@/utils/supabase', () => ({
-  supabase: { auth: { getSession: async () => ({ data: { session: null } }) } },
-  createSupabaseClient: () => ({}),
-  createSupabaseAdminClient: () => ({}),
-}));
 
 type GlobalWithWsPair = typeof globalThis & { WebSocketPair?: unknown };
 

@@ -1,7 +1,9 @@
+import { and, asc, desc, eq, getTableColumns, gt, inArray, lt, or, sql } from 'drizzle-orm';
+import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { NextRequest, NextResponse } from 'next/server';
-import { PostgrestError } from '@supabase/supabase-js';
-import { createSupabaseClient } from '@/utils/supabase';
+import { validateUserAndToken } from '@/libs/auth/verify';
+import { schema, withDb } from '@/libs/db';
 import { BookDataRecord } from '@/types/book';
 import { transformBookConfigToDB } from '@/utils/transform';
 import { transformBookNoteToDB } from '@/utils/transform';
@@ -15,7 +17,6 @@ import {
   StatBookRecord,
   StatPageRecord,
 } from '@/libs/sync';
-import { validateRequestUser } from '@/libs/auth/verify';
 import { DBBook, DBBookConfig } from '@/types/records';
 
 const pageKey = (r: StatPageRecord) => `${r.book_hash}|${r.page}|${r.start_time}`;
@@ -177,659 +178,744 @@ const DBSyncTypeMap = {
 
 type TableName = keyof typeof transformsToDB;
 
-type DBError = { table: TableName; error: PostgrestError };
+type DBError = { table: TableName; error: Error };
+
+const TABLES = {
+  books: schema.books,
+  book_notes: schema.bookNotes,
+  book_configs: schema.bookConfigs,
+} satisfies Record<TableName, PgTable>;
+
+/**
+ * The sync wire format is snake_case and so are the Postgres columns; only
+ * Drizzle's TypeScript names are camelCase. Both maps below are derived from the
+ * column metadata rather than written out, so neither can drift off the schema
+ * the way a hand-kept list would — and every row in and out of this file keeps
+ * the shape the clients already speak.
+ */
+const wireColumns = (table: PgTable) =>
+  Object.fromEntries(
+    Object.values(getTableColumns(table)).map((column) => [
+      column.name,
+      // json/jsonb read back through the column object is parsed twice — once by
+      // node-postgres and again by Drizzle's mapper. Clients hand us `progress`,
+      // `search_config`, `view_settings` and `metadata` already stringified, so
+      // the second parse would return an object where the client calls
+      // JSON.parse and throws. A raw expression keeps the driver's value, which
+      // is exactly what PostgREST handed back.
+      isJson(column) ? sql`${column}`.as(column.name) : column,
+    ]),
+  ) as Record<string, PgColumn>;
+
+const isJson = (column: PgColumn) =>
+  column.columnType === 'PgJson' || column.columnType === 'PgJsonb';
+
+const propertyNames = (table: PgTable) =>
+  Object.fromEntries(
+    Object.entries(getTableColumns(table)).map(([property, column]) => [column.name, property]),
+  ) as Record<string, string>;
+
+const WIRE_COLUMNS: Record<TableName, Record<string, PgColumn>> = {
+  books: wireColumns(schema.books),
+  book_notes: wireColumns(schema.bookNotes),
+  book_configs: wireColumns(schema.bookConfigs),
+};
+
+const PROPERTY_NAMES: Record<TableName, Record<string, string>> = {
+  books: propertyNames(schema.books),
+  book_notes: propertyNames(schema.bookNotes),
+  book_configs: propertyNames(schema.bookConfigs),
+};
+
+const STAT_BOOK_COLUMNS = wireColumns(schema.statBooks);
+const STAT_PAGE_COLUMNS = wireColumns(schema.statPages);
+
+const columnsOf = (table: TableName) =>
+  getTableColumns(TABLES[table] as PgTable) as Record<string, PgColumn>;
+const wireColumnsOf = (table: TableName) => WIRE_COLUMNS[table];
+const propertyOf = (table: TableName, wireName: string) => PROPERTY_NAMES[table][wireName]!;
+
+/** A snake_case wire row rekeyed for Drizzle's insert builder. */
+const toRow = (table: TableName, row: object) => {
+  const properties = PROPERTY_NAMES[table];
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    const property = properties[key];
+    if (property) out[property] = value;
+  }
+  return out;
+};
+
+/**
+ * `SET col = excluded.col` for every column the batch carries, which is what
+ * PostgREST's upsert did implicitly. Built from the union of the rows' keys
+ * because Drizzle inserts DEFAULT for a column some rows omit, and a grafted
+ * server row does not carry the same columns as a transformed client one.
+ */
+const excludedSet = (table: TableName, rows: Record<string, unknown>[], keys: string[]) => {
+  const columns = columnsOf(table);
+  const properties = new Set<string>();
+  for (const row of rows) for (const property of Object.keys(row)) properties.add(property);
+  for (const key of keys) properties.delete(key);
+  return Object.fromEntries(
+    [...properties].map((property) => [property, sql.raw(`excluded."${columns[property]!.name}"`)]),
+  );
+};
 
 export async function GET(req: NextRequest) {
-  const { user, token } = await validateRequestUser(req.headers.get('authorization'));
-  if (!user || !token) {
-    return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
-  }
-  const supabase = createSupabaseClient(token);
+  return withDb(async (db) => {
+    const { user, token } = await validateUserAndToken(db, req.headers.get('authorization'));
+    if (!user || !token) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
+    }
 
-  const { searchParams } = new URL(req.url);
-  const sinceParam = searchParams.get('since');
-  const typeParam = searchParams.get('type') as SyncType | undefined;
-  const bookParam = searchParams.get('book');
-  const metaHashParam = searchParams.get('meta_hash');
-  // Optional page size for `type=stats` and `type=books` (client-driven paged
-  // pull). Absent for old clients, which keep the full-delta response.
-  const limitParam = searchParams.get('limit');
-  const limit = limitParam ? Math.max(1, Math.floor(Number(limitParam))) : 0;
+    const { searchParams } = new URL(req.url);
+    const sinceParam = searchParams.get('since');
+    const typeParam = searchParams.get('type') as SyncType | undefined;
+    const bookParam = searchParams.get('book');
+    const metaHashParam = searchParams.get('meta_hash');
+    // Optional page size for `type=stats` and `type=books` (the client-driven paged
+    // pull). Absent for old clients, which keep the full-delta response.
+    const limitParam = searchParams.get('limit');
+    const limit = limitParam ? Math.max(1, Math.floor(Number(limitParam))) : 0;
 
-  if (!sinceParam) {
-    return NextResponse.json({ error: '"since" query parameter is required' }, { status: 400 });
-  }
+    if (!sinceParam) {
+      return NextResponse.json({ error: 'A "since" query parameter is required' }, { status: 400 });
+    }
 
-  const since = new Date(Number(sinceParam));
-  if (isNaN(since.getTime())) {
-    return NextResponse.json({ error: 'Invalid "since" timestamp' }, { status: 400 });
-  }
+    const since = new Date(Number(sinceParam));
+    if (isNaN(since.getTime())) {
+      return NextResponse.json({ error: 'Invalid "since" timestamp' }, { status: 400 });
+    }
 
-  const sinceIso = since.toISOString();
+    const sinceIso = since.toISOString();
 
-  try {
-    const results: SyncResult = { books: [], configs: [], notes: [], statBooks: [], statPages: [] };
-    const errors: Record<TableName, DBError | null> = {
-      books: null,
-      book_notes: null,
-      book_configs: null,
-    };
-
-    const queryTables = async (table: TableName, dedupeKeys?: (keyof BookDataRecord)[]) => {
-      const PAGE_SIZE = 1000;
-      let allRecords: SyncRecord[] = [];
-      let offset = 0;
-      let hasMore = true;
-
-      // books keys the pull on the server-assigned `synced_at` cursor, which a
-      // trigger bumps on every write — including deletes — so a server-resolved
-      // merge propagates without touching updated_at (the date-read sort key).
-      // configs/notes have no server-side merge, so they stay on updated_at and
-      // still need the explicit deleted_at clause. See issue #4678.
-      const cursorColumn = table === 'books' ? 'synced_at' : 'updated_at';
-
-      while (hasMore) {
-        let query = supabase
-          .from(table)
-          .select('*')
-          .eq('user_id', user.id)
-          .range(offset, offset + PAGE_SIZE - 1);
-
-        if (bookParam && metaHashParam) {
-          query = query.or(`book_hash.eq.${bookParam},meta_hash.eq.${metaHashParam}`);
-        } else if (bookParam) {
-          query = query.eq('book_hash', bookParam);
-        } else if (metaHashParam) {
-          query = query.eq('meta_hash', metaHashParam);
-        }
-
-        if (cursorColumn === 'synced_at') {
-          query = query.gt('synced_at', sinceIso);
-        } else {
-          query = query.or(`updated_at.gt.${sinceIso},deleted_at.gt.${sinceIso}`);
-        }
-        query = query.order(cursorColumn, { ascending: false });
-
-        console.log('Querying table:', table, 'since:', sinceIso, 'offset:', offset);
-
-        const { data, error } = await query;
-        if (error) throw { table, error } as DBError;
-
-        if (data && data.length > 0) {
-          allRecords = allRecords.concat(data);
-          offset += PAGE_SIZE;
-          hasMore = data.length === PAGE_SIZE;
-        } else {
-          hasMore = false;
-        }
-      }
-
-      let records = allRecords;
-      if (dedupeKeys && dedupeKeys.length > 0) {
-        const seen = new Set<string>();
-        records = records.filter((rec) => {
-          const key = dedupeKeys
-            .map((k) => rec[k])
-            .filter(Boolean)
-            .join('|');
-          if (key && seen.has(key)) {
-            return false;
-          } else {
-            seen.add(key);
-            return true;
-          }
-        });
-      }
-      (results as unknown as Record<string, SyncRecord[]>)[DBSyncTypeMap[table]] = records || [];
-    };
-
-    // One bounded page of books for the app's and the calibre plugin's
-    // client-driven paged pull: a 10k-book delta accumulated into a single
-    // response exceeds the Worker's resource limits (CF error 1102). Rows come
-    // back ordered by synced_at ASCENDING, completed to the trailing synced_at
-    // millisecond — batch upserts stamp one now() per statement, so rows share
-    // boundary timestamps and a strict `> cursor` re-pull would otherwise skip
-    // the rest of a batch split by the page boundary. A page shorter than
-    // `limit` tells the client the delta is exhausted.
-    const fetchPagedBooks = async () => {
-      const bookFilters = <T extends { or: (f: string) => T; eq: (c: string, v: string) => T }>(
-        q: T,
-      ): T => {
-        if (bookParam && metaHashParam) {
-          return q.or(`book_hash.eq.${bookParam},meta_hash.eq.${metaHashParam}`);
-        } else if (bookParam) {
-          return q.eq('book_hash', bookParam);
-        } else if (metaHashParam) {
-          return q.eq('meta_hash', metaHashParam);
-        }
-        return q;
+    try {
+      const results: SyncResult = {
+        books: [],
+        configs: [],
+        notes: [],
+        statBooks: [],
+        statPages: [],
       };
-      const { data, error } = await bookFilters(
-        supabase
-          .from('books')
-          .select('*')
-          .eq('user_id', user.id)
-          .gt('synced_at', sinceIso)
-          .order('synced_at', { ascending: true })
-          .range(0, limit - 1),
-      );
-      if (error) throw { table: 'books', error } as DBError;
-      const rows = (data ?? []) as SyncRecord[];
-      if (rows.length === limit) {
-        const lastSynced = (rows[rows.length - 1] as unknown as { synced_at: string }).synced_at;
-        const { data: extra, error: extraError } = await bookFilters(
-          supabase.from('books').select('*').eq('user_id', user.id).eq('synced_at', lastSynced),
-        );
-        if (extraError) throw { table: 'books', error: extraError } as DBError;
-        const seen = new Set(rows.map((r) => r.book_hash));
-        for (const r of (extra ?? []) as SyncRecord[]) {
-          if (!seen.has(r.book_hash)) {
-            seen.add(r.book_hash);
-            rows.push(r);
-          }
-        }
-      }
-      results.books = rows;
-    };
-
-    if (!typeParam || typeParam === 'books') {
-      const booksQuery =
-        limit > 0 && typeParam === 'books' ? fetchPagedBooks : () => queryTables('books');
-      await booksQuery().catch((err) => (errors['books'] = err));
-      // TODO: Remove this hotfix for the initial race condition for books sync
-      if (results.books?.length === 0 && since.getTime() < 1000) {
-        const dummyHash = '00000000000000000000000000000000';
-        const now = Date.now();
-        results.books.push({
-          user_id: user.id,
-          id: dummyHash,
-          book_hash: dummyHash,
-          deleted_at: now,
-          updated_at: now,
-
-          hash: dummyHash,
-          title: 'Dummy Book',
-          format: 'EPUB',
-          author: '',
-          createdAt: now,
-          updatedAt: now,
-          deletedAt: now,
-        });
-      }
-    }
-    if (!typeParam || typeParam === 'configs') {
-      await queryTables('book_configs').catch((err) => (errors['book_configs'] = err));
-    }
-    if (!typeParam || typeParam === 'notes') {
-      await queryTables('book_notes', ['id']).catch((err) => (errors['book_notes'] = err));
-    }
-    if (!typeParam || typeParam === 'stats') {
-      // PostgREST caps responses at ~1000 rows; stat_pages grows one row per page
-      // event, so page through both tables (ordered by updated_at ascending for a
-      // stable cursor) and accumulate every row — otherwise a device pulling >1000
-      // events only gets the first page and then advances its cursor past the rest.
-      //
-      // Cursor is `updated_at > since` ONLY (no `OR deleted_at > since`). Every
-      // stat push server-stamps `updated_at = now()` including deletes (see the
-      // upserts below), so a delete always lands with updated_at greater than any
-      // peer's max(updated_at) pull cursor — `updated_at > since` already returns
-      // it. The redundant OR was the #1 query by total DB time: it defeats the
-      // (user_id, updated_at) index range scan and forces a walk of the user's
-      // entire page-event history on every incremental sync. Same rationale as the
-      // books `synced_at` cursor (#4678); here updated_at is itself server-stamped.
-      const PAGE = 1000;
-      const fetchAll = async (table: 'stat_books' | 'stat_pages', filterBook: boolean) => {
-        const all: Record<string, unknown>[] = [];
-        let offset = 0;
-        for (;;) {
-          let q = supabase
-            .from(table)
-            .select('*')
-            .eq('user_id', user.id)
-            .gt('updated_at', sinceIso)
-            .order('updated_at', { ascending: true })
-            .range(offset, offset + PAGE - 1);
-          if (filterBook && bookParam) q = q.eq('book_hash', bookParam);
-          const { data, error } = await q;
-          if (error) return { error };
-          const rows = (data ?? []) as Record<string, unknown>[];
-          all.push(...rows);
-          if (rows.length < PAGE) break;
-          offset += PAGE;
-        }
-        return { data: all };
+      const errors: Record<TableName, DBError | null> = {
+        books: null,
+        book_notes: null,
+        book_configs: null,
       };
-      // A single bounded page of stat_pages for the app's client-driven paged
-      // pull, completed to the trailing updated_at millisecond so the client can
-      // advance its cursor with a strict `> cursor` without skipping ties.
-      const fetchPagedPages = async () => {
-        let q = supabase
-          .from('stat_pages')
-          .select('*')
-          .eq('user_id', user.id)
-          .gt('updated_at', sinceIso)
-          .order('updated_at', { ascending: true })
-          .range(0, limit - 1);
-        if (bookParam) q = q.eq('book_hash', bookParam);
-        const { data, error } = await q;
-        if (error) return { error };
-        const rows = (data ?? []) as Record<string, unknown>[];
+
+      // Scoped by user_id, which is the whole of the authorization now that RLS
+      // is not enforcing it (ADR-005).
+      const scopeOf = (table: TableName) => {
+        const cols = columnsOf(table);
+        const filters = [eq(cols['userId']!, user.id)];
+        if (bookParam && metaHashParam) {
+          filters.push(or(eq(cols['bookHash']!, bookParam), eq(cols['metaHash']!, metaHashParam))!);
+        } else if (bookParam) {
+          filters.push(eq(cols['bookHash']!, bookParam));
+        } else if (metaHashParam) {
+          filters.push(eq(cols['metaHash']!, metaHashParam));
+        }
+        return filters;
+      };
+
+      const queryTables = async (table: TableName, dedupeKeys?: (keyof BookDataRecord)[]) => {
+        const cols = columnsOf(table);
+
+        // books keys the pull on the server-assigned `synced_at` cursor, which a
+        // trigger bumps on every write — including deletes — so a server-resolved
+        // merge propagates without touching updated_at (the date-read sort key).
+        // configs/notes have no server-side merge, so they stay on updated_at and
+        // still need the explicit deleted_at clause. See issue #4678.
+        const cursor =
+          table === 'books'
+            ? gt(cols['syncedAt']!, sinceIso)
+            : or(gt(cols['updatedAt']!, sinceIso), gt(cols['deletedAt']!, sinceIso))!;
+        const cursorColumn = table === 'books' ? cols['syncedAt']! : cols['updatedAt']!;
+
+        // One statement, no offset walk: the loop this replaces existed because
+        // PostgREST truncated a response at ~1000 rows.
+        const allRecords = (await db
+          .select(wireColumnsOf(table))
+          .from(TABLES[table])
+          .where(and(...scopeOf(table), cursor))
+          .orderBy(desc(cursorColumn))) as unknown as SyncRecord[];
+
+        let records = allRecords;
+        if (dedupeKeys && dedupeKeys.length > 0) {
+          const seen = new Set<string>();
+          records = records.filter((rec) => {
+            const key = dedupeKeys
+              .map((k) => rec[k])
+              .filter(Boolean)
+              .join('|');
+            if (key && seen.has(key)) {
+              return false;
+            } else {
+              seen.add(key);
+              return true;
+            }
+          });
+        }
+        (results as unknown as Record<string, SyncRecord[]>)[DBSyncTypeMap[table]] = records || [];
+      };
+
+      // One bounded page of books for the app's and the calibre plugin's
+      // client-driven paged pull: a 10k-book delta accumulated into a single
+      // response exceeds the Worker's resource limits (CF error 1102). Rows come
+      // back ordered by synced_at ASCENDING, and the trailing synced_at
+      // millisecond is completed — batch upserts stamp one now() per statement, so
+      // rows share boundary timestamps and a strict `> cursor` re-pull would
+      // otherwise skip the half of a batch split by the page boundary. A page
+      // shorter than `limit` tells the client the delta is exhausted.
+      const fetchPagedBooks = async () => {
+        const scope = scopeOf('books');
+        const rows = (await db
+          .select(wireColumnsOf('books'))
+          .from(schema.books)
+          .where(and(...scope, gt(schema.books.syncedAt, sinceIso)))
+          .orderBy(asc(schema.books.syncedAt))
+          .limit(limit)) as unknown as SyncRecord[];
         if (rows.length === limit) {
-          const lastUpdated = rows[rows.length - 1]!['updated_at'] as string;
-          let eq = supabase
-            .from('stat_pages')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('updated_at', lastUpdated);
-          if (bookParam) eq = eq.eq('book_hash', bookParam);
-          const { data: extra, error: extraErr } = await eq;
-          if (extraErr) return { error: extraErr };
-          const keyOf = (r: Record<string, unknown>) =>
-            `${r['book_hash']}|${r['page']}|${r['start_time']}`;
-          const seen = new Set(rows.map(keyOf));
-          for (const r of (extra ?? []) as Record<string, unknown>[]) {
-            const k = keyOf(r);
-            if (!seen.has(k)) {
-              seen.add(k);
+          const lastSynced = (rows[rows.length - 1] as unknown as { synced_at: string }).synced_at;
+          const extra = (await db
+            .select(wireColumnsOf('books'))
+            .from(schema.books)
+            .where(
+              and(...scope, eq(schema.books.syncedAt, lastSynced)),
+            )) as unknown as SyncRecord[];
+          const seen = new Set(rows.map((r) => r.book_hash));
+          for (const r of extra) {
+            if (!seen.has(r.book_hash)) {
+              seen.add(r.book_hash);
               rows.push(r);
             }
           }
         }
-        return { data: rows };
+        results.books = rows;
       };
-      // stat_books is always returned in full (one row per book, small); only
-      // stat_pages pages when the client asks (the koplugin omits `limit`).
-      const sb = await fetchAll('stat_books', false);
-      const sp = limit > 0 ? await fetchPagedPages() : await fetchAll('stat_pages', true);
-      if (sb.error)
-        return NextResponse.json(
-          { error: `stat_books: ${sb.error.message || 'Unknown error'}` },
-          { status: 500 },
-        );
-      if (sp.error)
-        return NextResponse.json(
-          { error: `stat_pages: ${sp.error.message || 'Unknown error'}` },
-          { status: 500 },
-        );
-      // Attach updated_at_ms (epoch ms) so non-JS clients (the Lua koplugin) can
-      // compute their pull cursor without parsing ISO-8601 timestamps.
-      const withMs = <T extends { updated_at?: string }>(rows: T[]) =>
-        rows.map((r) => ({
-          ...r,
-          updated_at_ms: r.updated_at ? new Date(r.updated_at).getTime() : 0,
-        }));
-      (
-        results as unknown as { statBooks: StatBookRecord[]; statPages: StatPageRecord[] }
-      ).statBooks = withMs((sb.data ?? []) as unknown as StatBookRecord[]);
-      (
-        results as unknown as { statBooks: StatBookRecord[]; statPages: StatPageRecord[] }
-      ).statPages = withMs((sp.data ?? []) as unknown as StatPageRecord[]);
-    }
 
-    const dbErrors = Object.values(errors).filter((err) => err !== null);
-    if (dbErrors.length > 0) {
-      console.error('Errors occurred:', dbErrors);
-      const errorMsg = dbErrors
-        .map((err) => `${err.table}: ${err.error.message || 'Unknown error'}`)
-        .join('; ');
-      return NextResponse.json({ error: errorMsg }, { status: 500 });
-    }
+      if (!typeParam || typeParam === 'books') {
+        const booksQuery =
+          limit > 0 && typeParam === 'books' ? fetchPagedBooks : () => queryTables('books');
+        await booksQuery().catch((err) => (errors['books'] = { table: 'books', error: err }));
+        // TODO: Remove this hotfix for the initial race condition of books sync
+        if (results.books?.length === 0 && since.getTime() < 1000) {
+          const dummyHash = '00000000000000000000000000000000';
+          const now = Date.now();
+          results.books.push({
+            user_id: user.id,
+            id: dummyHash,
+            book_hash: dummyHash,
+            deleted_at: now,
+            updated_at: now,
 
-    const response = NextResponse.json(results, { status: 200 });
-    response.headers.set('Cache-Control', 'no-store');
-    response.headers.set('Pragma', 'no-cache');
-    response.headers.delete('ETag');
-    return response;
-  } catch (error: unknown) {
-    console.error(error);
-    const errorMessage = (error as PostgrestError).message || 'Unknown error';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
-  }
+            hash: dummyHash,
+            title: 'Dummy Book',
+            format: 'EPUB',
+            author: '',
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: now,
+          });
+        }
+      }
+      if (!typeParam || typeParam === 'configs') {
+        await queryTables('book_configs').catch(
+          (err) => (errors['book_configs'] = { table: 'book_configs', error: err }),
+        );
+      }
+      if (!typeParam || typeParam === 'notes') {
+        await queryTables('book_notes', ['id']).catch(
+          (err) => (errors['book_notes'] = { table: 'book_notes', error: err }),
+        );
+      }
+      if (!typeParam || typeParam === 'stats') {
+        // Cursor is `updated_at > since` ONLY (no `OR deleted_at > since`). Every
+        // stat push server-stamps `updated_at = now()` including deletes (see the
+        // upserts below), so a delete always lands with an updated_at greater than
+        // any peer's max(updated_at) pull cursor — `updated_at > since` already
+        // returns it. The redundant OR made this the #1 query by total DB time: it
+        // defeats the (user_id, updated_at) index.
+        //
+        // Note this differs from the page-event tables above (#4678); here every
+        // write is server-stamped.
+        const statPagesScope = () =>
+          and(
+            eq(schema.statPages.userId, user.id),
+            gt(schema.statPages.updatedAt, sinceIso),
+            bookParam ? eq(schema.statPages.bookHash, bookParam) : undefined,
+          );
+
+        // stat_books is always returned in full (one row per book, small); only
+        // stat_pages pages when the client asks (the koplugin omits `limit`).
+        const statBookRows = await db
+          .select(STAT_BOOK_COLUMNS)
+          .from(schema.statBooks)
+          .where(
+            and(eq(schema.statBooks.userId, user.id), gt(schema.statBooks.updatedAt, sinceIso)),
+          )
+          .orderBy(asc(schema.statBooks.updatedAt));
+
+        // A single bounded page of stat_pages for the app's client-driven paged
+        // pull, with the trailing updated_at millisecond completed so the client
+        // can advance its cursor with a strict `>` without skipping ties.
+        const fetchPagedPages = async () => {
+          const rows = await db
+            .select(STAT_PAGE_COLUMNS)
+            .from(schema.statPages)
+            .where(statPagesScope())
+            .orderBy(asc(schema.statPages.updatedAt))
+            .limit(limit);
+          if (rows.length === limit) {
+            const lastUpdated = rows[rows.length - 1]!['updated_at'] as unknown as string;
+            const extra = await db
+              .select(STAT_PAGE_COLUMNS)
+              .from(schema.statPages)
+              .where(
+                and(
+                  eq(schema.statPages.userId, user.id),
+                  eq(schema.statPages.updatedAt, lastUpdated),
+                  bookParam ? eq(schema.statPages.bookHash, bookParam) : undefined,
+                ),
+              );
+            const keyOf = (r: Record<string, unknown>) =>
+              `${r['book_hash']}|${r['page']}|${r['start_time']}`;
+            const seen = new Set(rows.map(keyOf));
+            for (const r of extra) {
+              const k = keyOf(r);
+              if (!seen.has(k)) {
+                seen.add(k);
+                rows.push(r);
+              }
+            }
+          }
+          return rows;
+        };
+
+        const statPageRows =
+          limit > 0
+            ? await fetchPagedPages()
+            : await db
+                .select(STAT_PAGE_COLUMNS)
+                .from(schema.statPages)
+                .where(statPagesScope())
+                .orderBy(asc(schema.statPages.updatedAt));
+
+        // Attach updated_at_ms (epoch ms) so non-JS clients (the Lua koplugin) can
+        // compute their pull cursor without parsing ISO-8601 timestamps.
+        const withMs = <T extends { updated_at?: string }>(rows: T[]) =>
+          rows.map((r) => ({
+            ...r,
+            updated_at_ms: r.updated_at ? new Date(r.updated_at).getTime() : 0,
+          }));
+
+        results.statBooks = withMs(statBookRows as unknown as StatBookRecord[]);
+        results.statPages = withMs(statPageRows as unknown as StatPageRecord[]);
+      }
+
+      const dbErrors = Object.values(errors).filter((err) => err !== null);
+      if (dbErrors.length > 0) {
+        console.error('Errors occurred:', dbErrors);
+        const errorMsg = dbErrors
+          .map((err) => `${err.table}: ${err.error.message || 'Unknown error'}`)
+          .join('; ');
+        return NextResponse.json({ error: errorMsg }, { status: 500 });
+      }
+
+      const response = NextResponse.json(results, { status: 200 });
+      response.headers.set('Cache-Control', 'no-store');
+      response.headers.set('Pragma', 'no-cache');
+      response.headers.delete('ETag');
+      return response;
+    } catch (error: unknown) {
+      console.error(error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
+    }
+  });
 }
 
 export async function POST(req: NextRequest) {
-  const { user, token } = await validateRequestUser(req.headers.get('authorization'));
-  if (!user || !token) {
-    return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
-  }
-  const supabase = createSupabaseClient(token);
-  const body = await req.json();
-  const { books = [], configs = [], notes = [], statBooks = [], statPages = [] } = body as SyncData;
-
-  const BATCH_SIZE = 100;
-  const upsertRecords = async (
-    table: TableName,
-    primaryKeys: (keyof BookDataRecord)[],
-    records: BookDataRecord[],
-  ) => {
-    if (records.length === 0) return { data: [] };
-
-    const allAuthoritativeRecords: BookDataRecord[] = [];
-
-    // Process in batches
-    for (let i = 0; i < records.length; i += BATCH_SIZE) {
-      const batch = records.slice(i, i + BATCH_SIZE);
-
-      // Transform all records to DB format
-      const dbRecords = batch.map((rec) => {
-        const dbRec = transformsToDB[table](rec, user.id);
-        rec.user_id = user.id;
-        rec.book_hash = dbRec.book_hash;
-        return { original: rec, db: dbRec };
-      });
-
-      // Build match conditions for batch
-      const matchConditions = dbRecords.map(({ original }) => {
-        const conditions: Record<string, string | number> = { user_id: user.id };
-        for (const pk of primaryKeys) {
-          conditions[pk] = original[pk]!;
-        }
-        return conditions;
-      });
-
-      // Fetch existing records for this batch
-      const orConditions = matchConditions
-        .map((cond) => {
-          const parts = Object.entries(cond).map(([key, val]) => `${key}.eq.${val}`);
-          return `and(${parts.join(',')})`;
-        })
-        .join(',');
-
-      const { data: serverRecords, error: fetchError } = await supabase
-        .from(table)
-        .select()
-        .or(orConditions);
-
-      if (fetchError) {
-        return { error: fetchError.message };
-      }
-
-      // Create lookup map
-      const serverRecordsMap = new Map<string, BookDataRecord>();
-      (serverRecords || []).forEach((record) => {
-        const key = primaryKeys.map((pk) => record[pk]).join('|');
-        serverRecordsMap.set(key, record);
-      });
-
-      // Separate into inserts and updates
-      const toInsert: (DBBook | DBBookConfig | DBBookConfig)[] = [];
-      const toUpdate: (DBBook | DBBookConfig | DBBookConfig)[] = [];
-      const batchAuthoritativeRecords: BookDataRecord[] = [];
-
-      for (const { original, db: dbRec } of dbRecords) {
-        const key = primaryKeys.map((pk) => original[pk]).join('|');
-        const serverData = serverRecordsMap.get(key);
-
-        if (!serverData) {
-          dbRec.updated_at = new Date().toISOString();
-          toInsert.push(dbRec);
-        } else {
-          const clientUpdatedAt = dbRec.updated_at ? new Date(dbRec.updated_at).getTime() : 0;
-          const serverUpdatedAt = serverData.updated_at
-            ? new Date(serverData.updated_at).getTime()
-            : 0;
-          const clientDeletedAt = dbRec.deleted_at ? new Date(dbRec.deleted_at).getTime() : 0;
-          const serverDeletedAt = serverData.deleted_at
-            ? new Date(serverData.deleted_at).getTime()
-            : 0;
-          const clientIsNewer =
-            clientDeletedAt > serverDeletedAt || clientUpdatedAt > serverUpdatedAt;
-
-          if (table === 'books') {
-            // `dbRec` is DBBook | DBBookConfig; in the 'books' branch it is always DBBook.
-            const clientBook = dbRec as DBBook;
-            // `serverData` is BookDataRecord but the DB row carries the status +
-            // cover columns at runtime — widen the type without going through `unknown`.
-            const serverBook = serverData as BookDataRecord &
-              Partial<
-                Pick<
-                  DBBook,
-                  | 'reading_status'
-                  | 'reading_status_updated_at'
-                  | 'cover_hash'
-                  | 'cover_updated_at'
-                  | 'metadata'
-                  | 'metadata_updated_at'
-                >
-              > &
-              Pick<DBBook, 'title' | 'author' | 'tags'>;
-            const status = resolveReadingStatusMerge(clientBook, serverBook);
-            // Cover has its own field-level LWW so a page-turn can't clobber a
-            // cover edit (issue #4544; mirrors reading_status / #4634).
-            const cover = resolveCoverMerge(clientBook, serverBook);
-            // The metadata group likewise merges on its own clock (issue #5438).
-            const meta = resolveMetadataMerge(clientBook, serverBook, clientIsNewer);
-            if (clientIsNewer) {
-              // Client wins the row; graft the fresher status + cover +
-              // metadata onto it (server's may be the newer one even though
-              // the row is older).
-              clientBook.reading_status = status.reading_status;
-              clientBook.reading_status_updated_at = status.reading_status_updated_at;
-              clientBook.cover_hash = cover.cover_hash;
-              clientBook.cover_updated_at = cover.cover_updated_at;
-              clientBook.title = meta.title;
-              clientBook.author = meta.author;
-              clientBook.tags = meta.tags;
-              clientBook.metadata = meta.metadata;
-              clientBook.metadata_updated_at = meta.metadata_updated_at;
-              toUpdate.push(clientBook);
-            } else {
-              // Only rewrite when a resolved field VALUE differs from the
-              // server's — a timestamp-only difference on the same value is a
-              // no-op, and rewriting it would churn updated_at + re-propagate.
-              const statusChanged = readingStatusChanged(
-                status.reading_status,
-                serverBook.reading_status,
-              );
-              const coverChanged = (cover.cover_hash ?? null) !== (serverBook.cover_hash ?? null);
-              const metadataChanged = bookMetadataChanged(meta, serverBook);
-              if (statusChanged || coverChanged || metadataChanged) {
-                // Server wins the row, but the client's status, cover and/or
-                // metadata is the fresher one. Graft the fresher fields onto
-                // the server row and leave updated_at untouched; the
-                // books_set_synced_at trigger advances synced_at so peers
-                // re-pull via the synced_at cursor without reordering the
-                // date-read library (#4678, #4544, #5438).
-                // The runtime DB row carries all DBBook columns; the static type
-                // of `serverBook` is a narrower intersection so `unknown` is
-                // required to bridge the gap at this one construction site.
-                const propagated = buildStatusPropagationRow(
-                  serverBook as unknown as DBBook,
-                  status,
-                );
-                propagated.cover_hash = cover.cover_hash;
-                propagated.cover_updated_at = cover.cover_updated_at;
-                propagated.title = meta.title;
-                propagated.author = meta.author;
-                propagated.tags = meta.tags;
-                propagated.metadata = meta.metadata;
-                propagated.metadata_updated_at = meta.metadata_updated_at;
-                toUpdate.push(propagated);
-              } else {
-                batchAuthoritativeRecords.push(serverData);
-              }
-            }
-          } else if (clientIsNewer) {
-            toUpdate.push(dbRec);
-          } else {
-            batchAuthoritativeRecords.push(serverData);
-          }
-        }
-      }
-
-      // Batch insert
-      if (toInsert.length > 0) {
-        const { data: inserted, error: insertError } = await supabase
-          .from(table)
-          .insert(toInsert)
-          .select();
-
-        if (insertError) {
-          console.log(`Failed to insert ${table} records:`, JSON.stringify(toInsert));
-          return { error: insertError.message };
-        }
-        batchAuthoritativeRecords.push(...(inserted || []));
-      }
-
-      // Batch upsert
-      if (toUpdate.length > 0) {
-        const { data: updated, error: updateError } = await supabase
-          .from(table)
-          .upsert(toUpdate, {
-            onConflict: ['user_id', ...primaryKeys].join(','),
-          })
-          .select();
-
-        if (updateError) {
-          console.log(`Failed to update ${table} records:`, JSON.stringify(toUpdate));
-          return { error: updateError.message };
-        }
-        batchAuthoritativeRecords.push(...(updated || []));
-      }
-
-      allAuthoritativeRecords.push(...batchAuthoritativeRecords);
+  return withDb(async (db) => {
+    const { user, token } = await validateUserAndToken(db, req.headers.get('authorization'));
+    if (!user || !token) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
     }
+    const body = await req.json();
+    const {
+      books = [],
+      configs = [],
+      notes = [],
+      statBooks = [],
+      statPages = [],
+    } = body as SyncData;
 
-    return { data: allAuthoritativeRecords };
-  };
+    const BATCH_SIZE = 100;
+    const upsertRecords = async (
+      table: TableName,
+      primaryKeys: (keyof BookDataRecord)[],
+      records: BookDataRecord[],
+    ) => {
+      if (records.length === 0) return { data: [] };
 
-  try {
-    const [booksResult, configsResult, notesResult] = await Promise.all([
-      upsertRecords('books', ['book_hash'], books as BookDataRecord[]),
-      upsertRecords('book_configs', ['book_hash'], configs as BookDataRecord[]),
-      upsertRecords('book_notes', ['book_hash', 'id'], notes as BookDataRecord[]),
-    ]);
+      const cols = columnsOf(table);
+      const keyProps = primaryKeys.map((pk) => propertyOf(table, pk as string));
+      const allAuthoritativeRecords: BookDataRecord[] = [];
 
-    if (booksResult?.error) throw new Error(booksResult.error);
-    if (configsResult?.error) throw new Error(configsResult.error);
-    if (notesResult?.error) throw new Error(notesResult.error);
+      // Process in batches
+      for (let i = 0; i < records.length; i += BATCH_SIZE) {
+        const batch = records.slice(i, i + BATCH_SIZE);
 
-    // Piggyback the per-book reading progress from the configs push onto the
-    // matching `books` row. Other devices' library pull-to-refresh reads
-    // books.progress + books.updated_at, so without this the row would stay
-    // stale until the user navigates back to the library and useBooksSync
-    // re-pushes. The .lt('updated_at') predicate keeps last-writer-wins —
-    // a concurrent newer books push is never downgraded — and a missing
-    // row is a silent no-op (useBooksSync will insert it later).
-    type BookProgressUpdate = {
-      book_hash: string;
-      progress: [number, number];
-      updated_at: string;
-    };
-    const bookProgressUpdates: BookProgressUpdate[] = [];
-    for (const rec of (configsResult.data ?? []) as unknown as DBBookConfig[]) {
-      if (!rec.book_hash || !rec.updated_at || rec.progress == null) continue;
-      let parsed: unknown;
-      try {
-        parsed = typeof rec.progress === 'string' ? JSON.parse(rec.progress) : rec.progress;
-      } catch {
-        continue;
-      }
-      if (
-        !Array.isArray(parsed) ||
-        parsed.length !== 2 ||
-        typeof parsed[0] !== 'number' ||
-        typeof parsed[1] !== 'number'
-      ) {
-        continue;
-      }
-      bookProgressUpdates.push({
-        book_hash: rec.book_hash,
-        progress: [parsed[0], parsed[1]],
-        updated_at: rec.updated_at,
-      });
-    }
+        // Transform all records to DB format
+        const dbRecords = batch.map((rec) => {
+          const dbRec = transformsToDB[table](rec, user.id);
+          rec.user_id = user.id;
+          rec.book_hash = dbRec.book_hash;
+          return { original: rec, db: dbRec };
+        });
 
-    if (bookProgressUpdates.length > 0) {
-      await Promise.all(
-        bookProgressUpdates.map(async (u) => {
-          const { error } = await supabase
-            .from('books')
-            .update({ progress: u.progress, updated_at: u.updated_at })
-            .eq('user_id', user.id)
-            .eq('book_hash', u.book_hash)
-            .lt('updated_at', u.updated_at);
-          if (error) {
-            // Best-effort: never fail the configs push because of this side
-            // effect — useBooksSync will reconcile the row later.
-            console.warn('books.progress piggyback failed for', u.book_hash, error.message);
-          }
-        }),
-      );
-    }
-
-    if (statBooks.length > 0) {
-      const rows = statBooks.map((b: StatBookRecord) => ({
-        user_id: user.id,
-        book_hash: b.book_hash,
-        title: b.title,
-        authors: b.authors,
-        updated_at: new Date().toISOString(),
-        deleted_at: b.deleted_at ?? null,
-      }));
-      const { error } = await supabase
-        .from('stat_books')
-        .upsert(rows, { onConflict: 'user_id,book_hash' });
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    if (statPages.length > 0) {
-      // Process in batches so the "longer-duration-wins" merge stays correct at
-      // scale: the existing-row fetch is scoped to each batch's (book_hash,
-      // start_time) keys (not a book's whole history) and bounded under
-      // PostgREST's ~1000-row cap — otherwise existing rows beyond 1000 are
-      // invisible to pickWinningPages and a shorter duration could overwrite a
-      // longer one.
-      const BATCH = 500;
-      for (let off = 0; off < statPages.length; off += BATCH) {
-        const batch = statPages.slice(off, off + BATCH);
-        const bookHashes = [...new Set(batch.map((p) => p.book_hash))];
-        const startTimes = [...new Set(batch.map((p) => p.start_time))];
-        const { data: existing, error: exErr } = await supabase
-          .from('stat_pages')
-          .select('*')
-          .eq('user_id', user.id)
-          .in('book_hash', bookHashes)
-          .in('start_time', startTimes);
-        if (exErr) return NextResponse.json({ error: exErr.message }, { status: 500 });
-        const serverMap = new Map<string, StatPageRecord>();
-        (existing ?? []).forEach((r) =>
-          serverMap.set(pageKey(r as StatPageRecord), r as StatPageRecord),
+        // Existing rows for this batch. One IN list per key column is a superset
+        // of the key tuples when there are two of them (book_notes), which is
+        // harmless: the map below is keyed on the exact tuple, so the extra rows
+        // are never matched. PostgREST needed an `or(and(...))` string naming
+        // every row individually.
+        const keyFilters = primaryKeys.map((pk, idx) =>
+          inArray(cols[keyProps[idx]!]!, [
+            ...new Set(dbRecords.map(({ original }) => original[pk] as string)),
+          ]),
         );
-        const { toUpsert } = pickWinningPages(batch, serverMap);
-        const rows = toUpsert.map((p) => ({
-          user_id: user.id,
-          book_hash: p.book_hash,
-          page: p.page,
-          start_time: p.start_time,
-          duration: p.duration,
-          total_pages: p.total_pages,
-          ext: p.ext ?? null,
-          updated_at: new Date().toISOString(),
-          deleted_at: p.deleted_at ?? null,
-        }));
-        if (rows.length > 0) {
-          const { error } = await supabase
-            .from('stat_pages')
-            .upsert(rows, { onConflict: 'user_id,book_hash,page,start_time' });
-          if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        const serverRecords = (await db
+          .select(wireColumnsOf(table))
+          .from(TABLES[table])
+          .where(and(eq(cols['userId']!, user.id), ...keyFilters))) as unknown as BookDataRecord[];
+
+        // Create lookup map
+        const serverRecordsMap = new Map<string, BookDataRecord>();
+        serverRecords.forEach((record) => {
+          const key = primaryKeys.map((pk) => record[pk]).join('|');
+          serverRecordsMap.set(key, record);
+        });
+
+        // Separate into inserts and updates
+        const toInsert: (DBBook | DBBookConfig | DBBookConfig)[] = [];
+        const toUpdate: (DBBook | DBBookConfig | DBBookConfig)[] = [];
+        const batchAuthoritativeRecords: BookDataRecord[] = [];
+
+        for (const { original, db: dbRec } of dbRecords) {
+          const key = primaryKeys.map((pk) => original[pk]).join('|');
+          const serverData = serverRecordsMap.get(key);
+
+          if (!serverData) {
+            dbRec.updated_at = new Date().toISOString();
+            toInsert.push(dbRec);
+          } else {
+            const clientUpdatedAt = dbRec.updated_at ? new Date(dbRec.updated_at).getTime() : 0;
+            const serverUpdatedAt = serverData.updated_at
+              ? new Date(serverData.updated_at).getTime()
+              : 0;
+            const clientDeletedAt = dbRec.deleted_at ? new Date(dbRec.deleted_at).getTime() : 0;
+            const serverDeletedAt = serverData.deleted_at
+              ? new Date(serverData.deleted_at).getTime()
+              : 0;
+            const clientIsNewer =
+              clientDeletedAt > serverDeletedAt || clientUpdatedAt > serverUpdatedAt;
+
+            if (table === 'books') {
+              // `dbRec` is DBBook | DBBookConfig; in the 'books' branch it is always DBBook.
+              const clientBook = dbRec as DBBook;
+              // `serverData` is BookDataRecord but the DB row carries the status +
+              // cover columns at runtime — widen the type without going through `unknown`.
+              const serverBook = serverData as BookDataRecord &
+                Partial<
+                  Pick<
+                    DBBook,
+                    | 'reading_status'
+                    | 'reading_status_updated_at'
+                    | 'cover_hash'
+                    | 'cover_updated_at'
+                    | 'metadata'
+                    | 'metadata_updated_at'
+                  >
+                > &
+                Pick<DBBook, 'title' | 'author' | 'tags'>;
+              const status = resolveReadingStatusMerge(clientBook, serverBook);
+              // Cover has its own field-level LWW so a page-turn can't clobber a
+              // cover edit (issue #4544; mirrors reading_status / #4634).
+              const cover = resolveCoverMerge(clientBook, serverBook);
+              // The metadata group likewise merges on its own clock (issue #5438).
+              const meta = resolveMetadataMerge(clientBook, serverBook, clientIsNewer);
+              if (clientIsNewer) {
+                // Client wins the row; graft the fresher status + cover +
+                // metadata onto it (server's may be the newer one even though
+                // the row is older).
+                clientBook.reading_status = status.reading_status;
+                clientBook.reading_status_updated_at = status.reading_status_updated_at;
+                clientBook.cover_hash = cover.cover_hash;
+                clientBook.cover_updated_at = cover.cover_updated_at;
+                clientBook.title = meta.title;
+                clientBook.author = meta.author;
+                clientBook.tags = meta.tags;
+                clientBook.metadata = meta.metadata;
+                clientBook.metadata_updated_at = meta.metadata_updated_at;
+                toUpdate.push(clientBook);
+              } else {
+                // Only rewrite when a resolved field VALUE differs from the
+                // server's — a timestamp-only difference on the same value is a
+                // no-op, and rewriting it would churn updated_at + re-propagate.
+                const statusChanged = readingStatusChanged(
+                  status.reading_status,
+                  serverBook.reading_status,
+                );
+                const coverChanged = (cover.cover_hash ?? null) !== (serverBook.cover_hash ?? null);
+                const metadataChanged = bookMetadataChanged(meta, serverBook);
+                if (statusChanged || coverChanged || metadataChanged) {
+                  // Server wins the row, but the client's status, cover and/or
+                  // metadata is the fresher one. Graft the fresher fields onto
+                  // the server row and leave updated_at untouched; the
+                  // books_set_synced_at trigger advances synced_at so peers
+                  // re-pull via the synced_at cursor without reordering the
+                  // date-read library (#4678, #4544, #5438).
+                  // The runtime DB row carries all DBBook columns; the static type
+                  // of `serverBook` is a narrower intersection so `unknown` is
+                  // required to bridge the gap at this one construction site.
+                  const propagated = buildStatusPropagationRow(
+                    serverBook as unknown as DBBook,
+                    status,
+                  );
+                  propagated.cover_hash = cover.cover_hash;
+                  propagated.cover_updated_at = cover.cover_updated_at;
+                  propagated.title = meta.title;
+                  propagated.author = meta.author;
+                  propagated.tags = meta.tags;
+                  propagated.metadata = meta.metadata;
+                  propagated.metadata_updated_at = meta.metadata_updated_at;
+                  toUpdate.push(propagated);
+                } else {
+                  batchAuthoritativeRecords.push(serverData);
+                }
+              }
+            } else if (clientIsNewer) {
+              toUpdate.push(dbRec);
+            } else {
+              batchAuthoritativeRecords.push(serverData);
+            }
+          }
+        }
+
+        // Batch insert
+        if (toInsert.length > 0) {
+          try {
+            const inserted = (await db
+              .insert(TABLES[table])
+              // Drizzle types `.values()` off the concrete table, and this one is a
+              // union of three; the rows are built from that same table's columns.
+              .values(toInsert.map((row) => toRow(table, row)) as never)
+              .returning(wireColumnsOf(table))) as unknown as BookDataRecord[];
+            batchAuthoritativeRecords.push(...inserted);
+          } catch (error) {
+            console.log(`Failed to insert ${table} records:`, JSON.stringify(toInsert));
+            return { error: error instanceof Error ? error.message : 'Insert failed' };
+          }
+        }
+
+        // Batch upsert
+        if (toUpdate.length > 0) {
+          const rows = toUpdate.map((row) => toRow(table, row));
+          try {
+            const updated = (await db
+              .insert(TABLES[table])
+              .values(rows as never)
+              .onConflictDoUpdate({
+                target: [cols['userId']!, ...keyProps.map((prop) => cols[prop]!)],
+                set: excludedSet(table, rows, ['userId', ...keyProps]),
+              })
+              .returning(wireColumnsOf(table))) as unknown as BookDataRecord[];
+            batchAuthoritativeRecords.push(...updated);
+          } catch (error) {
+            console.log(`Failed to update ${table} records:`, JSON.stringify(toUpdate));
+            return { error: error instanceof Error ? error.message : 'Update failed' };
+          }
+        }
+
+        allAuthoritativeRecords.push(...batchAuthoritativeRecords);
+      }
+
+      return { data: allAuthoritativeRecords };
+    };
+
+    try {
+      // Sequential rather than concurrent: these share the request's single
+      // connection, so Promise.all would only queue them anyway.
+      const booksResult = await upsertRecords('books', ['book_hash'], books as BookDataRecord[]);
+      const configsResult = await upsertRecords(
+        'book_configs',
+        ['book_hash'],
+        configs as BookDataRecord[],
+      );
+      const notesResult = await upsertRecords(
+        'book_notes',
+        ['book_hash', 'id'],
+        notes as BookDataRecord[],
+      );
+
+      if (booksResult?.error) throw new Error(booksResult.error);
+      if (configsResult?.error) throw new Error(configsResult.error);
+      if (notesResult?.error) throw new Error(notesResult.error);
+
+      // Piggyback the per-book reading progress from the configs push onto the
+      // matching `books` row. Other devices' library pull-to-refresh reads
+      // books.progress + books.updated_at, so without this the row would stay
+      // stale until the user navigates back to the library and useBooksSync
+      // re-pushes. The `updated_at <` predicate keeps last-writer-wins —
+      // a concurrent newer books push is never downgraded — and a missing
+      // row is a silent no-op (useBooksSync will insert it later).
+      type BookProgressUpdate = {
+        book_hash: string;
+        progress: [number, number];
+        updated_at: string;
+      };
+      const bookProgressUpdates: BookProgressUpdate[] = [];
+      for (const rec of (configsResult.data ?? []) as unknown as DBBookConfig[]) {
+        if (!rec.book_hash || !rec.updated_at || rec.progress == null) continue;
+        let parsed: unknown;
+        try {
+          parsed = typeof rec.progress === 'string' ? JSON.parse(rec.progress) : rec.progress;
+        } catch {
+          continue;
+        }
+        if (
+          !Array.isArray(parsed) ||
+          parsed.length !== 2 ||
+          typeof parsed[0] !== 'number' ||
+          typeof parsed[1] !== 'number'
+        ) {
+          continue;
+        }
+        bookProgressUpdates.push({
+          book_hash: rec.book_hash,
+          progress: [parsed[0], parsed[1]],
+          updated_at: rec.updated_at,
+        });
+      }
+
+      for (const u of bookProgressUpdates) {
+        try {
+          await db
+            .update(schema.books)
+            .set({ progress: u.progress, updatedAt: u.updated_at })
+            .where(
+              and(
+                eq(schema.books.userId, user.id),
+                eq(schema.books.bookHash, u.book_hash),
+                lt(schema.books.updatedAt, u.updated_at),
+              ),
+            );
+        } catch (error) {
+          // Best-effort: never fail the configs push because of this side
+          // effect — useBooksSync will reconcile the row later.
+          console.warn('books.progress piggyback failed for', u.book_hash, error);
         }
       }
-    }
 
-    return NextResponse.json(
-      {
-        books: booksResult?.data || [],
-        configs: configsResult?.data || [],
-        notes: notesResult?.data || [],
-      },
-      { status: 200 },
-    );
-  } catch (error: unknown) {
-    console.error(error);
-    const errorMessage = (error as PostgrestError).message || 'Unknown error';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
-  }
+      if (statBooks.length > 0) {
+        const rows = statBooks.map((b: StatBookRecord) => ({
+          userId: user.id,
+          bookHash: b.book_hash,
+          title: b.title,
+          authors: b.authors,
+          updatedAt: new Date().toISOString(),
+          deletedAt: b.deleted_at ?? null,
+        }));
+        await db
+          .insert(schema.statBooks)
+          .values(rows)
+          .onConflictDoUpdate({
+            target: [schema.statBooks.userId, schema.statBooks.bookHash],
+            set: {
+              title: sql`excluded.title`,
+              authors: sql`excluded.authors`,
+              updatedAt: sql`excluded.updated_at`,
+              deletedAt: sql`excluded.deleted_at`,
+            },
+          });
+      }
+
+      if (statPages.length > 0) {
+        // Batched so a single push cannot blow past Postgres' bind-parameter
+        // limit: the existing-row fetch takes two IN lists and the upsert nine
+        // columns per row.
+        const BATCH = 500;
+        for (let off = 0; off < statPages.length; off += BATCH) {
+          const batch = statPages.slice(off, off + BATCH);
+          const bookHashes = [...new Set(batch.map((p) => p.book_hash))];
+          const startTimes = [...new Set(batch.map((p) => p.start_time))];
+          // Scoped to this batch's (book_hash, start_time) values rather than a
+          // book's whole history, so "longer-duration-wins" is decided against
+          // exactly the rows the batch could collide with.
+          const existing = await db
+            .select(STAT_PAGE_COLUMNS)
+            .from(schema.statPages)
+            .where(
+              and(
+                eq(schema.statPages.userId, user.id),
+                inArray(schema.statPages.bookHash, bookHashes),
+                inArray(schema.statPages.startTime, startTimes),
+              ),
+            );
+          const serverMap = new Map<string, StatPageRecord>();
+          existing.forEach((r) =>
+            serverMap.set(pageKey(r as unknown as StatPageRecord), r as unknown as StatPageRecord),
+          );
+          const { toUpsert } = pickWinningPages(batch, serverMap);
+          const rows = toUpsert.map((p) => ({
+            userId: user.id,
+            bookHash: p.book_hash,
+            page: p.page,
+            startTime: p.start_time,
+            duration: p.duration,
+            totalPages: p.total_pages,
+            ext: p.ext ?? null,
+            updatedAt: new Date().toISOString(),
+            deletedAt: p.deleted_at ?? null,
+          }));
+          if (rows.length > 0) {
+            await db
+              .insert(schema.statPages)
+              .values(rows)
+              .onConflictDoUpdate({
+                target: [
+                  schema.statPages.userId,
+                  schema.statPages.bookHash,
+                  schema.statPages.page,
+                  schema.statPages.startTime,
+                ],
+                set: {
+                  duration: sql`excluded.duration`,
+                  totalPages: sql`excluded.total_pages`,
+                  ext: sql`excluded.ext`,
+                  updatedAt: sql`excluded.updated_at`,
+                  deletedAt: sql`excluded.deleted_at`,
+                },
+              });
+          }
+        }
+      }
+
+      return NextResponse.json(
+        {
+          books: booksResult?.data || [],
+          configs: configsResult?.data || [],
+          notes: notesResult?.data || [],
+        },
+        { status: 200 },
+      );
+    } catch (error: unknown) {
+      console.error(error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
+    }
+  });
 }
 
 const handler = async (req: NextApiRequest, res: NextApiResponse) => {

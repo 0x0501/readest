@@ -97,3 +97,4 @@ docs/superpowers
 # Cloudflare Workers local secrets
 .dev.vars
 .dev.vars.*
+.env.prod

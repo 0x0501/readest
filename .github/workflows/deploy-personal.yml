@@ -93,25 +93,13 @@ jobs:
             printf "%s='%s'\n" "$v" "$value" >> .env.prod
           done
 
+      # The same check `pnpm deploy` runs locally, so a missing secret fails here
+      # rather than on whichever machine happens to deploy. It names what each
+      # value does, because none of them fail in a way that looks like a
+      # configuration problem.
       - name: Fail fast on missing deployment config
         working-directory: apps/readest-app
-        # Each of these fails in a way that does not look like a config problem.
-        # A wrong NEXT_PUBLIC_WEB_BASE_URL leaves the site working and every
-        # sign-in returning 403 INVALID_ORIGIN. A missing BETTER_AUTH_SECRET
-        # makes Better Auth throw on the first request. An empty
-        # SIGNUP_ALLOWED_EMAILS admits nobody, so on a fresh database the
-        # operator cannot create their own account. Missing R2 credentials leave
-        # a site that reads fine and cannot upload a book.
-        run: |
-          missing=0
-          for v in NEXT_PUBLIC_WEB_BASE_URL NEXT_PUBLIC_API_BASE_URL BETTER_AUTH_SECRET \
-                   SIGNUP_ALLOWED_EMAILS R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
-            if ! grep -qE "^$v=.+" .env.prod; then
-              echo "::error::$v is not set — add it to the repository secrets or variables"
-              missing=1
-            fi
-          done
-          [ "$missing" -eq 0 ]
+        run: pnpm check-env-prod
 
       - run: pnpm install --frozen-lockfile
 

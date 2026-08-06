@@ -13,10 +13,6 @@ vi.mock('@/libs/auth/client', () => ({
   mintAccessToken: mintMock,
 }));
 
-vi.mock('posthog-js', () => ({
-  default: { identify: vi.fn() },
-}));
-
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 
 const SESSION = {

@@ -23,15 +23,6 @@ vi.mock('@/context/EnvContext', () => ({
   useEnv: () => ({ appService: { hasUpdater: true } }),
 }));
 
-vi.mock('@/store/settingsStore', () => ({
-  useSettingsStore: () => ({ settings: { updateChannel: 'stable' } }),
-}));
-
-vi.mock('@/helpers/updater', () => ({
-  checkForAppUpdates: vi.fn(),
-  checkAppReleaseNotes: vi.fn(),
-}));
-
 vi.mock('@/utils/ua', () => ({
   parseWebViewInfo: () => 'Chrome 148',
 }));
@@ -52,8 +43,6 @@ vi.mock('next/image', () => ({
   default: ({ alt }: { alt: string }) => <span>{alt}</span>,
 }));
 
-vi.mock('@/components/SupportLinks', () => ({ default: () => null }));
-vi.mock('@/components/LegalLinks', () => ({ default: () => null }));
 vi.mock('@/components/Link', () => ({
   default: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
@@ -122,5 +111,45 @@ describe('AboutWindow version label', () => {
 
     expect(label.tagName).toBe('BUTTON');
     expect(label.getAttribute('title')).toBe('Copy');
+  });
+});
+
+/**
+ * What the dialog claims about itself.
+ *
+ * This deployment is not the published Readest app, and About is the only place
+ * that says so. It is also where the AGPL §13 obligation is discharged — the
+ * source link has to reach the fork that is actually running, not upstream — so
+ * these are load-bearing strings rather than decoration.
+ */
+describe('AboutWindow provenance', () => {
+  afterEach(() => cleanup());
+
+  it('says it is a self-hosted deployment, unaffiliated with the project', async () => {
+    await openDialog();
+
+    expect(screen.getByText(/self-hosted deployment/i)).toBeTruthy();
+    expect(screen.getByText(/not affiliated with the Readest project/i)).toBeTruthy();
+  });
+
+  it('links to the fork, which is what AGPL §13 requires, and not upstream', async () => {
+    await openDialog();
+
+    expect(screen.getByText(/github\.com\/0x0501\/readest/)).toBeTruthy();
+    expect(screen.queryByText(/github\.com\/readest\/readest/)).toBeNull();
+  });
+
+  it('states the licence', async () => {
+    await openDialog();
+
+    expect(screen.getByText(/GNU Affero General Public License v3\.0/)).toBeTruthy();
+  });
+
+  it('offers no update check, and claims no company owns it', async () => {
+    await openDialog();
+
+    expect(screen.queryByText(/Check Update/i)).toBeNull();
+    expect(screen.queryByText(/Bilingify/i)).toBeNull();
+    expect(screen.queryByText(/All rights reserved/i)).toBeNull();
   });
 });

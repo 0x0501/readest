@@ -86,8 +86,14 @@ named. These are the load-bearing ones:
 ```bash
 grep -n "NEXT_PUBLIC_WEB_BASE_URL" apps/readest-app/src/services/constants.ts
 grep -n "PAYMENTS_ENABLED = " apps/readest-app/src/utils/access.ts
-grep -n "providers={\['github'\]}" apps/readest-app/src/app/auth/page.tsx
+grep -n "useTurnstile\|signIn.passkey\|forgot-password" apps/readest-app/src/app/auth/page.tsx
+grep -n "self-hosted deployment" apps/readest-app/src/components/AboutWindow.tsx
 ```
+
+The sign-in page is a rewrite, not an edit: upstream's version is built on its own
+provider components and this one on Better Auth's client, with passkeys, a captcha
+and a reset link that upstream has no equivalent of. Expect to take this side whole
+and re-read upstream's diff for anything worth porting by hand.
 
 ## 3. Adopt new upstream migrations
 
@@ -147,7 +153,8 @@ $P "select count(*) from pg_constraint c join pg_class t on t.oid=c.confrelid
 ```
 
 The counts grow as upstream adds migrations; the last figure is the one that must
-not move. Reference point at the last sync: 21 migrations, 18 tables, 0.
+not move. Reference point at the last sync: 22 migrations, 19 tables, 0. The 22nd is
+`local_004_passkey.sql`; the 19th table is `passkey`.
 
 ## 5. Regenerate the schema
 
@@ -158,6 +165,15 @@ git diff --stat src/libs/db/schema.ts
 
 An empty diff means upstream changed no DDL. A diff means it did — read it, because
 that is upstream moving the data model under the application.
+
+`db:pull` can also stop with a list of columns it says nothing in the generated
+schema matches. That is not a false alarm: drizzle-kit camel-cases a column name
+into the property key and then lets the key stand in for the column, so a name it
+mangles addresses a column that is not there — and Better Auth's Drizzle adapter
+drops a `where` condition whose column it cannot find instead of raising. Add a
+repair to `scripts/db-pull.mjs` beside the `credentialID` one and re-run; the guard
+exists because this failure is otherwise invisible until a query quietly returns
+the wrong row.
 
 ## 6. Gates
 
@@ -196,10 +212,19 @@ Each of these is checkable, and each has been wrong at least once:
 - If upstream touched `.github/workflows/`, `ci-personal.yml` was re-checked
   against it — node/pnpm versions especially.
 
-## When the data layer lands
+## The parts that are a hard fork now
 
-The Supabase teardown is at Phase 0: the schema tooling moved, but the application
-still calls `@supabase/supabase-js`. When later phases replace those call sites,
-roughly forty more files — `sync.ts` and everything under `pages/api/` — become a
-hard fork whose upstream changes need porting rather than merging. Add them to
-`references/divergences.md` as it happens.
+Supabase is gone — client, helpers, and every call site. What replaced it is a
+fork-owned data and auth layer that upstream has no counterpart for, so these
+directories are ported by hand rather than merged, and an upstream change inside
+them is a rewrite request rather than a conflict:
+
+- `src/pages/api/**` and `src/pages/api/sync.ts` — Drizzle rewrites of what were
+  PostgREST call chains.
+- `src/libs/auth/**` and `src/context/AuthContext.tsx` — Better Auth, including
+  the mailer, the allow-list request hook, passkeys and the captcha.
+- `src/app/auth/**` — three screens upstream does not have, and one it does but
+  which shares no code with this version.
+
+`references/divergences.md` carries the per-file resolutions. Add to it as this
+list grows.

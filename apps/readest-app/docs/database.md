@@ -263,6 +263,10 @@ mode is invisible to a mocked query: it lives in the driver.
 
 ### ADR-015: Account recovery and email change are gone, not stubbed
 
+**Superseded in part by ADR-016.** Its premise — that this deployment has no
+sender — stopped being true. The half about email change stands, and ADR-017
+now enforces it at the request boundary as well as by deleting the route.
+
 **Context.** `/auth/recovery` finished a password reset that GoTrue started by
 mailing a link, and `/auth/update` changed an account's email by mailing a
 confirmation to both addresses. This deployment configures no outbound mail —
@@ -280,3 +284,74 @@ the database. That is defensible for an instance whose sign-up is an
 `SIGNUP_ALLOWED_EMAILS` allow-list. Dropping the email change also closes a gap
 that list left open: the allow-list gates account *creation*, so an account
 could otherwise move itself to an address that was never invited.
+
+### ADR-016: Password reset returns, on a Worker mail binding
+
+**Context.** ADR-015 removed the reset flow because nothing here could send
+mail. Cloudflare Email Sending gives the Worker a `send_email` binding, which
+lifts that constraint without a third-party provider or an API key to rotate.
+Better Auth offers two link-shaped flows on top of it: the magic-link plugin,
+whose verify step mints a session, and the core `emailAndPassword` reset, whose
+verify step hands the page a validated token.
+
+**Decision.** The core reset, not magic link. `POST /request-password-reset`
+mails a link, `GET /reset-password/:token` verifies it and redirects to
+`/auth/reset-password?token=…`, `POST /reset-password` writes the new password.
+The binding is read out of the Cloudflare context while the auth instance is
+being constructed — which happens inside the request — and closed over, because
+Better Auth may deliver the mail from `waitUntil`, where that context's
+async-local storage is no longer in scope. `/auth/recovery` keeps its
+change-password form for the case where the caller is signed in.
+
+**Consequences.** Magic link would have left the account worse off than it
+started: signed in, holding a password nobody knows, with `changePassword`
+demanding it. Two flows exist because their preconditions differ — one needs the
+old password, the other needs the mailbox. `next dev` has no binding, so its
+absence is not an error there; the link goes to the server log instead, which is
+what makes the flow testable without a Worker. In production a missing
+`AUTH_EMAIL_FROM` fails `check-env-prod`, not the first reset attempt.
+
+### ADR-017: The allow-list is enforced at the request boundary, not only at user creation
+
+**Context.** `SIGNUP_ALLOWED_EMAILS` was checked in
+`databaseHooks.user.create.before`, which runs after Better Auth has parsed the
+body, hashed the password and queried for an existing user. Hashing is the most
+expensive step in the request, and every uninvited attempt reached it.
+
+**Decision.** A global `hooks.before` middleware rejects any request whose body
+carries an `email` that is not on the list, before a route handler runs. The rule
+keys on the field rather than on a list of paths, so `/change-email` is covered
+by construction — the gap ADR-015 closed by deleting a route is now also closed
+by the rule, and an endpoint added upstream inherits it. The `databaseHooks`
+check stays: a GitHub callback carries no email in its body, and only that hook
+sees the address the provider returned. The rejection says what happened — the
+instance is invite-only, and this address is not on the list.
+
+**Consequences.** That message makes allow-list membership discoverable: someone
+can learn that an address is invited. Accepted. Nothing follows from knowing it,
+since they still need the password or the mailbox, and the alternative costs the
+operator the ability to tell a typo from a lockout without reading Worker logs.
+Turnstile is registered only when its secret is configured, so a deployment that
+forgets the key fails open rather than shut — `check-env-prod` treats the key as
+required, which is where that is meant to be caught.
+
+### ADR-018: The passkey rpID is the site's own host, set explicitly
+
+**Context.** A WebAuthn credential is bound to the Relying Party ID it was
+created under. The choice is between the host the site is served on and its
+registrable parent domain, which one credential could then authenticate every
+subdomain of.
+
+**Decision.** `PASSKEY_RP_ID`, defaulting to the hostname of
+`NEXT_PUBLIC_WEB_BASE_URL`. The parent domain is not used.
+
+**Consequences.** This is the one setting here that cannot be corrected
+afterwards: changing it does not migrate credentials, it invalidates them, and
+every device enrols again. The narrow value costs nothing today — no second
+subdomain shares this session — and keeps an XSS anywhere else under the parent
+domain from reaching these credentials. It is a variable rather than a
+derivation alone so that moving the deployment to another domain stays a
+configuration change; the default keeps it right under `next dev`, where the host
+is `localhost`. The passkey UI is hidden outside the web platform: Tauri's
+webviews load from a custom scheme, and WebAuthn's origin check cannot be
+satisfied from one.

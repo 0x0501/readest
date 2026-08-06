@@ -183,7 +183,6 @@ export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
   openLastBooks: false,
   lastOpenBooks: [],
   autoImportBooksOnOpen: false,
-  telemetryEnabled: true,
   discordRichPresenceEnabled: false,
   libraryViewMode: 'grid',
   librarySortBy: LibrarySortByType.Updated,
@@ -864,8 +863,6 @@ export const CJK_FONTS_PATTENS = new RegExp(
 
 export const BOOK_IDS_SEPARATOR = '+';
 
-export const DOWNLOAD_READEST_URL = 'https://readest.com?utm_source=readest_web';
-
 // Self-hosted deployments serve the web app from their own domain, so share
 // links, annotation deep links and OG image URLs must point there instead of
 // readest.com. `API_BASE_URL` and `NEXT_PUBLIC_NODE_BASE_URL` are already
@@ -873,6 +870,12 @@ export const DOWNLOAD_READEST_URL = 'https://readest.com?utm_source=readest_web'
 export const READEST_WEB_BASE_URL =
   process.env['NEXT_PUBLIC_WEB_BASE_URL'] ?? 'https://web.readest.com';
 export const READEST_NODE_BASE_URL = 'https://node.readest.com';
+
+// The repository this deployment's source actually lives in. Shown in About,
+// where it is not merely attribution: AGPL §13 requires that anyone interacting
+// with a modified version over a network be offered the corresponding source of
+// *that* version, so it has to point at the fork rather than upstream.
+export const FORK_REPO_URL = 'https://github.com/0x0501/readest';
 
 export const SHARE_BASE_URL = `${READEST_WEB_BASE_URL}/s`;
 export const SHARE_EXPIRATION_DAYS = [1, 3, 7] as const;

@@ -13,13 +13,14 @@ import { useUserActions } from '@/hooks/useUserActions';
 import { navigateToLibrary } from '@/utils/nav';
 import { getPlanDetails } from './utils/plan';
 import { Toast } from '@/components/Toast';
-import LegalLinks from '@/components/LegalLinks';
 import Spinner from '@/components/Spinner';
 import ProfileHeader from './components/Header';
 import UserInfo from './components/UserInfo';
 import UsageStats from './components/UsageStats';
 import AccountActions from './components/AccountActions';
 import StorageManager from './components/StorageManager';
+import { isWebAppPlatform } from '@/services/environment';
+import { PasskeySection } from './components/PasskeySection';
 import SharedLinksSection from './components/SharedLinksSection';
 import { SyncPassphraseSection } from './components/SyncPassphraseSection';
 import { SyncCategoriesSection } from './components/SyncCategoriesSection';
@@ -38,6 +39,7 @@ const ProfilePage = () => {
   const [showSyncManager, setShowSyncManager] = useState(
     () => searchParams?.get('section') === 'sync',
   );
+  const [showPasskeyManager, setShowPasskeyManager] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -67,6 +69,8 @@ const ProfilePage = () => {
       setShowSharedLinksManager(false);
     } else if (showSyncManager) {
       setShowSyncManager(false);
+    } else if (showPasskeyManager) {
+      setShowPasskeyManager(false);
     } else {
       navigateToLibrary(router);
     }
@@ -85,6 +89,9 @@ const ProfilePage = () => {
   };
   const handleManageSync = () => {
     setShowSyncManager(true);
+  };
+  const handleManagePasskeys = () => {
+    setShowPasskeyManager(true);
   };
 
   if (!mounted) {
@@ -139,9 +146,10 @@ const ProfilePage = () => {
                     planDetails={userPlanDetails}
                   />
 
-                  {!showStorageManager && !showSharedLinksManager && !showSyncManager && (
-                    <UsageStats quotas={quotas} />
-                  )}
+                  {!showStorageManager &&
+                    !showSharedLinksManager &&
+                    !showSyncManager &&
+                    !showPasskeyManager && <UsageStats quotas={quotas} />}
                 </div>
 
                 {showStorageManager ? (
@@ -157,6 +165,10 @@ const ProfilePage = () => {
                     <SyncCategoriesSection />
                     <SyncPassphraseSection />
                   </div>
+                ) : showPasskeyManager ? (
+                  <div className='flex flex-col gap-y-8 px-6'>
+                    <PasskeySection />
+                  </div>
                 ) : (
                   <>
                     <div className='flex flex-col gap-y-8 px-6'>
@@ -167,12 +179,13 @@ const ProfilePage = () => {
                         onManageStorage={handleManageStorage}
                         onManageSharedLinks={handleManageSharedLinks}
                         onManageSync={handleManageSync}
+                        // Web only: Tauri webviews serve from a custom scheme,
+                        // which WebAuthn's origin check rejects.
+                        onManagePasskeys={isWebAppPlatform() ? handleManagePasskeys : undefined}
                       />
                     </div>
                   </>
                 )}
-
-                <LegalLinks />
               </div>
             </div>
           }

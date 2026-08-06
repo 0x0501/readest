@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { IoAlertCircleOutline, IoBookOutline, IoOpenOutline } from 'react-icons/io5';
-import { DOWNLOAD_READEST_URL, READEST_WEB_BASE_URL } from '@/services/constants';
+import { READEST_WEB_BASE_URL } from '@/services/constants';
 import { useTranslation } from '@/hooks/useTranslation';
 import { buildAnnotationAppUrl } from '@/utils/deeplink';
 import { BrandHeader } from '@/components/landing/BrandHeader';
@@ -183,17 +183,6 @@ const OpenAnnotationLanding = () => {
             <IoOpenOutline className='h-5 w-5' aria-hidden='true' />
             {_('Continue in browser')}
           </a>
-          <p className='text-base-content/60 mt-3 text-center text-xs'>
-            {_("Don't have Readest?")}{' '}
-            <a
-              href={DOWNLOAD_READEST_URL}
-              target='_blank'
-              rel='noopener'
-              className='text-primary font-medium hover:underline'
-            >
-              {_('Download')}
-            </a>
-          </p>
         </div>
       </Card>
       <PageFooter tagline={_('Open-source ebook reader for everyone, on every device.')} />

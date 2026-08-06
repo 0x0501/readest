@@ -50,6 +50,8 @@ interface AccountActionsProps {
   onManageStorage?: () => void;
   onManageSharedLinks?: () => void;
   onManageSync?: () => void;
+  /** Absent off the web, where WebAuthn cannot run. */
+  onManagePasskeys?: () => void;
 }
 
 const AccountActions: React.FC<AccountActionsProps> = ({
@@ -59,6 +61,7 @@ const AccountActions: React.FC<AccountActionsProps> = ({
   onManageStorage,
   onManageSharedLinks,
   onManageSync,
+  onManagePasskeys,
 }) => {
   const _ = useTranslation();
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
@@ -104,6 +107,14 @@ const AccountActions: React.FC<AccountActionsProps> = ({
             className='w-full rounded-lg bg-purple-100 px-6 py-3 font-medium text-purple-600 transition-colors hover:bg-purple-200 md:w-auto'
           >
             {_('Manage Shared Links')}
+          </button>
+        )}
+        {onManagePasskeys && (
+          <button
+            onClick={onManagePasskeys}
+            className='w-full rounded-lg bg-blue-100 px-6 py-3 font-medium text-blue-600 transition-colors hover:bg-blue-200 md:w-auto'
+          >
+            {_('Manage Passkeys')}
           </button>
         )}
         <button

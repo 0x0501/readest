@@ -49,6 +49,14 @@ id = "fe2eeafa8f554a8aad8313cc5a0f51d1"
 # CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE.
 localConnectionString = "postgresql://postgres:postgres@127.0.0.1:5432/postgres"
 
+# Outbound mail, used only by the password-reset flow (ADR-016). The `from`
+# address in AUTH_EMAIL_FROM has to sit on a domain onboarded with
+# `wrangler email sending enable <domain>`, or every send returns
+# E_SENDER_NOT_VERIFIED. Nothing else here sends mail — `workers/send-email` is
+# the inbound Email Routing Worker and is unrelated.
+[[send_email]]
+name = "EMAIL"
+
 # Required by the r2IncrementalCache override registered in open-next.config.ts,
 # even though `dangerous.disableIncrementalCache` keeps it unused at runtime.
 # The bucket still has to exist — wrangler validates bindings at deploy time.

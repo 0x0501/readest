@@ -1,11 +1,16 @@
+import { passkeyClient } from '@better-auth/passkey/client';
 import { createAuthClient } from 'better-auth/react';
 
 /**
  * The browser half of Better Auth. No base URL: the catch-all handler is at
  * `/api/auth` on this same origin, so the session cookie is first-party and
  * there is no second host to keep in step with the server's `baseURL`.
+ *
+ * The passkey plugin is registered here rather than called through `$fetch`
+ * because its endpoints are not plain requests — it has to run the WebAuthn
+ * ceremony in the browser between them.
  */
-export const authClient = createAuthClient();
+export const authClient = createAuthClient({ plugins: [passkeyClient()] });
 
 export type AuthUser = typeof authClient.$Infer.Session.user;
 

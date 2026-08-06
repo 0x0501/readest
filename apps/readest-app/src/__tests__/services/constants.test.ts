@@ -64,7 +64,6 @@ import {
   CJK_EXCLUDE_PATTENS,
   CJK_FONTS_PATTENS,
   BOOK_IDS_SEPARATOR,
-  DOWNLOAD_READEST_URL,
   READEST_WEB_BASE_URL,
   READEST_NODE_BASE_URL,
   READEST_UPDATER_FILE,
@@ -234,7 +233,6 @@ describe('services/constants', () => {
       expect(typeof DEFAULT_SYSTEM_SETTINGS.autohideCursor).toBe('boolean');
       expect(typeof DEFAULT_SYSTEM_SETTINGS.openLastBooks).toBe('boolean');
       expect(typeof DEFAULT_SYSTEM_SETTINGS.autoImportBooksOnOpen).toBe('boolean');
-      expect(typeof DEFAULT_SYSTEM_SETTINGS.telemetryEnabled).toBe('boolean');
       expect(typeof DEFAULT_SYSTEM_SETTINGS.discordRichPresenceEnabled).toBe('boolean');
     });
 
@@ -873,10 +871,6 @@ describe('services/constants', () => {
     it('BOOK_IDS_SEPARATOR is a single character', () => {
       expect(typeof BOOK_IDS_SEPARATOR).toBe('string');
       expect(BOOK_IDS_SEPARATOR.length).toBe(1);
-    });
-
-    it('DOWNLOAD_READEST_URL is a valid URL', () => {
-      expect(DOWNLOAD_READEST_URL).toMatch(/^https:\/\//);
     });
 
     it('READEST_WEB_BASE_URL is a valid URL', () => {

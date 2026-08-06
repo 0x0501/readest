@@ -14,7 +14,6 @@ import {
   isReadestCloudEnabled,
   getActiveFileSyncBackends,
 } from '@/services/sync/cloudSyncProvider';
-import { isDemoBook } from '@/services/demoBooks';
 import { isFeedBook } from '@/services/rss/feedBookUrl';
 import { ensureFeedBookCover } from '@/services/rss/feedBook';
 import { runFileLibrarySyncPass } from '@/services/sync/file/runLibrarySync';
@@ -39,9 +38,6 @@ export const useBooksSync = () => {
     if (!user) return {};
     const library = useLibraryStore.getState().library;
     const newBooks = library
-      // Demo books are the sample shelf we hand anonymous web visitors, not the
-      // user's content — they never go to the cloud (issue #5049).
-      .filter((book) => !isDemoBook(book))
       .filter(
         (book) =>
           !book.syncedAt ||
@@ -174,18 +170,7 @@ export const useBooksSync = () => {
   const updateLibrary = useCallback(async () => {
     if (!syncedBooks?.length) return;
 
-    // A cloud row for a demo book can only be a stale one pushed before #5049.
-    // Merging it back would write over the local demo row — and, because a
-    // delete doesn't bump `updatedAt`, the not-deleted cloud row wins the LWW
-    // tie and clears `deletedAt`, resurrecting a book the user just deleted
-    // (coverless, since its cover was never uploaded either).
-    const demoHashes = new Set(
-      useLibraryStore
-        .getState()
-        .library.filter(isDemoBook)
-        .map((book) => book.hash),
-    );
-    const cloudBooks = syncedBooks.filter((book) => !demoHashes.has(book.hash));
+    const cloudBooks = syncedBooks;
     if (!cloudBooks.length) return;
 
     // Process old books first so that when we update the library the order is preserved

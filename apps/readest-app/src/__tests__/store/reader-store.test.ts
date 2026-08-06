@@ -212,6 +212,84 @@ describe('readerStore', () => {
   });
 
   describe('setViewSettings / getViewSettings', () => {
+    // foliate emits a relocate before pagination finishes whose page count is
+    // NaN. It used to flow straight through: into the TOC row that React then
+    // warned about, into the library percentage, and — worst — into
+    // `config.progress`, which the sync push JSON-stringifies, turning NaN into
+    // a null the next device reads back as a missing page.
+    test('setProgress ignores a relocate whose page count is not a number', () => {
+      const key = 'napkin-0';
+      seedViewState(key);
+      useBookDataStore.setState({
+        booksData: {
+          napkin: {
+            id: 'napkin',
+            book: null,
+            file: null,
+            config: { updatedAt: 1, progress: [3, 100] },
+            bookDoc: null,
+            isFixedLayout: false,
+          },
+        },
+      });
+
+      useReaderStore
+        .getState()
+        .setProgress(
+          key,
+          'epubcfi(/6/4!/4/2)',
+          { label: 'Act I', href: 'act1.html' } as never,
+          null,
+          { current: 0, next: 1, total: 8 } as never,
+          { current: Number.NaN, next: Number.NaN, total: Number.NaN } as never,
+          {} as never,
+          {} as never,
+          0.1,
+        );
+
+      const config = (
+        useBookDataStore.getState().booksData['napkin'] as { config: { progress: number[] } }
+      ).config;
+      expect(config.progress).toEqual([3, 100]);
+      expect(JSON.stringify(config.progress)).not.toContain('null');
+    });
+
+    test('setProgress records the page once pagination reports one', () => {
+      const key = 'paged-0';
+      seedViewState(key);
+      useBookDataStore.setState({
+        booksData: {
+          paged: {
+            id: 'paged',
+            book: null,
+            file: null,
+            config: { updatedAt: 1 },
+            bookDoc: null,
+            isFixedLayout: false,
+          },
+        },
+      });
+
+      useReaderStore
+        .getState()
+        .setProgress(
+          key,
+          'epubcfi(/6/4!/4/2)',
+          { label: 'Act I', href: 'act1.html' } as never,
+          null,
+          { current: 0, next: 1, total: 8 } as never,
+          { current: 26, next: 27, total: 393 } as never,
+          {} as never,
+          {} as never,
+          0.1,
+        );
+
+      const config = (
+        useBookDataStore.getState().booksData['paged'] as { config: { progress: number[] } }
+      ).config;
+      expect(config.progress).toEqual([27, 393]);
+    });
+
     test('getViewSettings returns null for missing key', () => {
       expect(useReaderStore.getState().getViewSettings('missing')).toBeNull();
     });

@@ -412,13 +412,21 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
     if (!viewState || !bookData) return;
 
     const pageInfo = bookData.isFixedLayout ? section : pageinfo;
+    // foliate relocates once before it has finished paginating, and that event
+    // carries NaN page counts. Nothing numeric downstream survives it: the
+    // library percentage becomes NaN, the TOC's current-position row renders
+    // `NaN` (React warns), and `config.progress` — which the sync push
+    // JSON-stringifies — becomes `[null, null]` for the next device to read
+    // back. Let the position through, since location and section are real, and
+    // wait for the next event to say where in the book we are.
+    const isPaginated = Number.isFinite(pageInfo.current) && Number.isFinite(pageInfo.total);
     const progress: [number, number] = [pageInfo.current + 1, pageInfo.total];
     const progressPercentage = Math.round((progress[0] / progress[1]) * 100);
 
     // Lightweight library update — O(1) lookup, no array copy, no refreshGroups
     const { getBookByHash, updateBookProgress } = useLibraryStore.getState();
     const existingBook = getBookByHash(id);
-    if (existingBook) {
+    if (isPaginated && existingBook) {
       let newReadingStatus = existingBook.readingStatus;
       if (existingBook.readingStatus === 'unread') {
         newReadingStatus = undefined;
@@ -433,7 +441,7 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
     // config — secondary views in a parallel layout shouldn't overwrite
     // it. Skip the bookDataStore write entirely when not primary to spare
     // its subscribers a re-render.
-    if (viewState.isPrimary) {
+    if (isPaginated && viewState.isPrimary) {
       useBookDataStore.setState((state) => {
         const existing = state.booksData[id];
         if (!existing) return state;
@@ -469,7 +477,7 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
       fraction,
       index: section.current,
       range,
-      page: pageInfo.current + 1,
+      ...(isPaginated ? { page: pageInfo.current + 1 } : {}),
     } as BookProgress);
   },
   setBookmarkRibbonVisibility: (key: string, visible: boolean) =>

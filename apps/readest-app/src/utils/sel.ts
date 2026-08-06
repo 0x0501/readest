@@ -25,7 +25,9 @@ export interface Position {
 export interface TextSelection {
   key: string;
   text: string;
-  page: number;
+  // Absent when the selection was made before foliate finished paginating.
+  // Annotator backfills it on the next relocate that reports a page.
+  page?: number;
   range: Range;
   index: number;
   cfi?: string;

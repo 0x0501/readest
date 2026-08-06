@@ -240,6 +240,14 @@ describe('buildTOCDisplayItems', () => {
     expect(isCurrentPositionItem(result[3]!)).toBe(true);
   });
 
+  // foliate emits a relocate event before pagination finishes, and its page
+  // number is NaN. `currentPage == null` does not catch that, so the row used to
+  // render `{NaN}` and React warned about it on every book open.
+  it('returns the original list when the current page is not a number', () => {
+    const flat = makeFlat(3);
+    expect(buildTOCDisplayItems(flat, 'ch1.html', Number.NaN)).toBe(flat);
+  });
+
   it('returns the original list when no item matches the active href', () => {
     const flat = makeFlat(3);
     const result = buildTOCDisplayItems(flat, 'missing.html', 5);

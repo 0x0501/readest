@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
-import { validateUserAndToken } from '@/utils/access';
+import { validateRequestUser } from '@/libs/auth/verify';
 import { isBlockedHost } from '@/utils/network';
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { user } = await validateUserAndToken(req.headers['authorization']);
+  const { user } = await validateRequestUser(req.headers['authorization']);
   if (!user) {
     return res.status(403).json({ error: 'Not authenticated' });
   }

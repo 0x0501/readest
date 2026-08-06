@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { embed, embedMany, createGateway } from 'ai';
-import { validateUserAndToken } from '@/utils/access';
+import { validateRequestUser } from '@/libs/auth/verify';
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const { user, token } = await validateUserAndToken(req.headers.get('authorization'));
+    const { user, token } = await validateRequestUser(req.headers.get('authorization'));
     if (!user || !token) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
     }

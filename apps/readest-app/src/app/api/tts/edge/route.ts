@@ -5,7 +5,7 @@ import {
   serializeWordBoundaries,
   WORD_BOUNDARIES_HEADER,
 } from '@/libs/edgeTTS';
-import { validateUserAndToken } from '@/utils/access';
+import { validateRequestUser } from '@/libs/auth/verify';
 
 const getLangFromVoice = (voiceId: string): string => {
   const match = voiceId.match(/^([a-z]{2}-[A-Z]{2})/);
@@ -17,7 +17,7 @@ const isValidVoice = (voiceId: string): boolean => {
 };
 
 export async function POST(request: NextRequest) {
-  const { user, token } = await validateUserAndToken(request.headers.get('authorization'));
+  const { user, token } = await validateRequestUser(request.headers.get('authorization'));
   if (!user || !token) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
   }
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const { user, token } = await validateUserAndToken(request.headers.get('authorization'));
+  const { user, token } = await validateRequestUser(request.headers.get('authorization'));
   if (!user || !token) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
   }

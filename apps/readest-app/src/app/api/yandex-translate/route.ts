@@ -5,7 +5,7 @@ import {
   YANDEX_TRANSLATE_URL,
   YANDEX_USER_AGENT,
 } from '@/services/translators/providers/yandexShared';
-import { validateUserAndToken } from '@/utils/access';
+import { validateRequestUser } from '@/libs/auth/verify';
 
 /**
  * Same-origin proxy for the Yandex Translate web API, used by the `yandex`
@@ -39,7 +39,7 @@ const upstreamTimeoutMs = () => {
 const NULL_BODY_STATUSES = new Set([204, 205, 304]);
 
 export async function POST(request: NextRequest) {
-  const { user, token } = await validateUserAndToken(request.headers.get('authorization'));
+  const { user, token } = await validateRequestUser(request.headers.get('authorization'));
   if (!user || !token) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
   }

@@ -4,9 +4,17 @@
 // a different realm — signing throws there for reasons that have nothing to do
 // with this module. It only ever runs in the Worker anyway.
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Db } from '@/libs/db';
-import { validateUserAndToken, verifyAccessToken } from '@/libs/auth/verify';
+import { validateRequestUser, validateUserAndToken, verifyAccessToken } from '@/libs/auth/verify';
+
+// `validateRequestUser` is the only thing here that opens a connection; the rest
+// take one as an argument.
+const withDbMock = vi.hoisted(() => vi.fn());
+vi.mock('@/libs/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/libs/db')>()),
+  withDb: withDbMock,
+}));
 
 // `READEST_WEB_BASE_URL` falls back to this when NEXT_PUBLIC_WEB_BASE_URL is
 // unset, which is the case under vitest.
@@ -128,5 +136,26 @@ describe('validateUserAndToken', () => {
 
   it('returns nothing when the token does not verify', async () => {
     expect(await validateUserAndToken(stubDb({}), 'Bearer nope')).toEqual({});
+  });
+});
+
+describe('validateRequestUser', () => {
+  it('verifies against a connection it opens and gives back', async () => {
+    const token = await signToken();
+    withDbMock.mockImplementation((fn) => fn(stubDb({ [KEY_ID]: publicJwk })));
+
+    const result = await validateRequestUser(`Bearer ${token}`);
+
+    expect(result.user?.id).toBe(USER_ID);
+    expect(withDbMock).toHaveBeenCalledOnce();
+  });
+
+  // The routes behind this helper are unauthenticated far more often than not —
+  // any page load without a session hits them. Connecting first and finding no
+  // header second would spend a Hyperdrive connection to learn nothing.
+  it('does not connect when there is no header', async () => {
+    withDbMock.mockClear();
+    expect(await validateRequestUser(null)).toEqual({});
+    expect(withDbMock).not.toHaveBeenCalled();
   });
 });

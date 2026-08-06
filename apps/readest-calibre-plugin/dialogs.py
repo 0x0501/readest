@@ -5,23 +5,18 @@ from qt.core import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QThread,
-    QUrl,
     QVBoxLayout,
-    pyqtSignal,
 )
 
-from calibre.gui2 import error_dialog, open_url
+from calibre.gui2 import error_dialog
 
 from calibre_plugins.readest.api import ReadestAPIError
-from calibre_plugins.readest.oauth import PROVIDERS, OAuthCallbackServer, build_authorize_url
 from calibre_plugins.readest.worker import (
     CHECK_LABELS,
     STATUS_LABELS,
@@ -29,34 +24,15 @@ from calibre_plugins.readest.worker import (
     StatusWorker,
 )
 
-OAUTH_WAIT_SECONDS = 300
-
-
-class _OAuthWaiter(QThread):
-    got_tokens = pyqtSignal(dict)
-    timed_out = pyqtSignal()
-
-    def __init__(self, parent, server):
-        QThread.__init__(self, parent)
-        self.server = server
-
-    def run(self):
-        tokens = self.server.wait(OAUTH_WAIT_SECONDS)
-        if tokens:
-            self.got_tokens.emit(tokens)
-        else:
-            self.timed_out.emit()
 
 
 class LoginDialog(QDialog):
-    """Email/password login plus browser OAuth (Google, Apple, GitHub, Discord)."""
+    """Email and password against Better Auth."""
 
     def __init__(self, parent, client):
         QDialog.__init__(self, parent)
         self.client = client
         self.user = None
-        self.oauth_server = None
-        self.oauth_waiter = None
 
         self.setWindowTitle('Log in to Readest')
         layout = QVBoxLayout()
@@ -74,13 +50,6 @@ class LoginDialog(QDialog):
         self.login_btn.clicked.connect(self.password_login)
         layout.addWidget(self.login_btn)
 
-        layout.addWidget(QLabel('Or sign in with your browser:'))
-        providers_layout = QHBoxLayout()
-        for provider in PROVIDERS:
-            btn = QPushButton(provider.capitalize(), self)
-            btn.clicked.connect(lambda _=False, p=provider: self.oauth_login(p))
-            providers_layout.addWidget(btn)
-        layout.addLayout(providers_layout)
 
         self.status_label = QLabel('')
         self.status_label.setWordWrap(True)
@@ -105,57 +74,6 @@ class LoginDialog(QDialog):
             self.login_btn.setEnabled(True)
             return
         self.accept()
-
-    def oauth_login(self, provider):
-        self.stop_oauth()
-        self.oauth_server = OAuthCallbackServer()
-        port = self.oauth_server.start()
-        self.oauth_waiter = _OAuthWaiter(self, self.oauth_server)
-        self.oauth_waiter.got_tokens.connect(self.oauth_finished)
-        self.oauth_waiter.timed_out.connect(
-            lambda: self.status_label.setText('Browser login timed out. Try again.')
-        )
-        self.oauth_waiter.start()
-        self.status_label.setText('Waiting for the browser login to complete…')
-        open_url(QUrl(build_authorize_url(self.client.supabase_url, provider, port)))
-
-    def oauth_finished(self, tokens):
-        if tokens.get('error'):
-            self.status_label.setText(
-                'Login failed: %s' % (tokens.get('error_description') or tokens['error'])
-            )
-            return
-        if not tokens.get('access_token') or not tokens.get('refresh_token'):
-            self.status_label.setText('Login failed: the browser callback carried no session.')
-            return
-        self.client.set_session(tokens)
-        try:
-            self.user = self.client.get_user()
-        except ReadestAPIError as err:
-            self.status_label.setText('Login failed: %s' % err)
-            return
-        self.accept()
-
-    def stop_oauth(self):
-        # Disconnect before stopping: stop() wakes the waiter thread, and its
-        # signals must not fire into a dialog that is going away.
-        if self.oauth_waiter:
-            try:
-                self.oauth_waiter.got_tokens.disconnect()
-                self.oauth_waiter.timed_out.disconnect()
-            except TypeError:
-                pass
-        if self.oauth_server:
-            self.oauth_server.stop()
-            self.oauth_server = None
-        if self.oauth_waiter:
-            self.oauth_waiter.wait(2000)
-            self.oauth_waiter = None
-
-    def done(self, result):
-        self.stop_oauth()
-        QDialog.done(self, result)
-
 
 class _RunDialog(QDialog):
     """Per-book status table for one worker run, modeled on BookFusion's sync log."""

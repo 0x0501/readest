@@ -3,35 +3,38 @@
 Symptom first, because that is what you arrive with. Each of these has bitten
 someone.
 
-## Local testing silently reads and writes upstream's production Supabase
+## Nothing runs locally until Hyperdrive has a connection string
 
-**Symptom:** none. That is what makes it the worst one here.
+**Symptom:** `next dev` boots fine, then every request that touches the database
+throws `Neither the HYPERDRIVE binding nor DATABASE_URL is set` — as an unhandled
+rejection, before any of your code runs.
 
-The tracked `apps/readest-app/.env` carries base64 fallbacks resolving to
-`https://readest.supabase.co` — upstream's **production** project. Sign-in simply
-works, against someone else's backend.
-
-Pin it somewhere dead before any local run that touches auth or sync. `.env.local`
-is gitignored:
+`getConnectionString()` asks OpenNext for the Hyperdrive binding first and only
+falls back to `DATABASE_URL`. In `next dev` the binding exists but is unpopulated,
+and OpenNext throws asking to be told what it proxies. `.env.local` is gitignored;
+a working one looks like:
 
 ```bash
 cat > apps/readest-app/.env.local <<'EOF'
-NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=local-dummy-anon-key
 DATABASE_URL=postgresql://postgres:testpw@127.0.0.1:55432/postgres
+CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgresql://postgres:testpw@127.0.0.1:55432/postgres
 BETTER_AUTH_SECRET=local-only-not-a-real-key
 SIGNUP_ALLOWED_EMAILS=you@example.com
 NEXT_PUBLIC_WEB_BASE_URL=http://localhost:3000
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
 EOF
 ```
 
-Then confirm the override took, rather than assuming — one command:
+`NEXT_PUBLIC_WEB_BASE_URL` has to be the dev server's own origin or every sign-in
+returns 403 `INVALID_ORIGIN` while the rest of the site works.
 
-```bash
-agent-browser network requests | grep -i supabase
-```
+Uploads need object storage, which R2 is not locally. Point the S3 backend at a
+MinIO container instead — `NEXT_PUBLIC_OBJECT_STORAGE_TYPE=s3`,
+`OBJECT_STORAGE_TYPE=s3`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`,
+`S3_SECRET_ACCESS_KEY`, `S3_BUCKET_NAME` — and create the bucket before the first
+upload, because a presign against a missing bucket fails at PUT time, not at
+presign time.
 
-Every hit should be `127.0.0.1`. A `readest.supabase.co` means stop.
 
 ## One migration takes the whole chain down
 

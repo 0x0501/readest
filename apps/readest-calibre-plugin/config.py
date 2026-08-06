@@ -4,13 +4,12 @@ __copyright__ = '2026, Bilingify LLC'
 from calibre.utils.config import JSONConfig
 from qt.core import QCheckBox, QLabel, QLineEdit, QVBoxLayout, QWidget
 
-from calibre_plugins.readest.api import DEFAULT_API_BASE, DEFAULT_SUPABASE_URL
+from calibre_plugins.readest.api import DEFAULT_API_BASE
 
 prefs = JSONConfig('plugins/readest')
 
 prefs.defaults['api_base'] = DEFAULT_API_BASE
-prefs.defaults['supabase_url'] = DEFAULT_SUPABASE_URL
-prefs.defaults['tokens'] = None  # {access_token, refresh_token, expires_at, expires_in}
+prefs.defaults['tokens'] = None  # {access_token, session_cookie, expires_at}
 prefs.defaults['user_email'] = None
 prefs.defaults['include_custom_columns'] = True
 

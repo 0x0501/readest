@@ -1,3 +1,5 @@
+import base64
+import email.message
 import io
 import json
 import os
@@ -17,8 +19,13 @@ from api import (  # noqa: E402
 )
 
 API_BASE = 'https://web.example.com/api'
-SUPABASE = 'https://sb.example.com'
-ANON_KEY = 'anon-key'
+SESSION_COOKIE = 'better-auth.session_token=sess-1'
+
+
+def jwt(exp):
+    """A JWT whose only interesting part is `exp` — the one field the client reads."""
+    payload = base64.urlsafe_b64encode(json.dumps({'exp': exp}).encode()).decode().rstrip('=')
+    return 'header.%s.signature' % payload
 
 
 class FakeTransport:
@@ -28,8 +35,8 @@ class FakeTransport:
         self.requests = []
         self.responses = []
 
-    def queue(self, status, body):
-        self.responses.append((status, body))
+    def queue(self, status, body, set_cookie=None):
+        self.responses.append((status, body, set_cookie))
 
     def __call__(self, request, timeout):
         data = request.data
@@ -43,9 +50,12 @@ class FakeTransport:
                 'body': data,
             }
         )
-        status, body = self.responses.pop(0)
+        status, body, set_cookie = self.responses.pop(0)
         payload = body if isinstance(body, bytes) else json.dumps(body).encode('utf-8')
-        return status, payload
+        headers = email.message.Message()
+        if set_cookie:
+            headers['Set-Cookie'] = set_cookie
+        return status, payload, headers
 
 
 def make_client(transport, tokens=None, saved=None):
@@ -55,8 +65,6 @@ def make_client(transport, tokens=None, saved=None):
 
     return ReadestClient(
         api_base=API_BASE,
-        supabase_url=SUPABASE,
-        anon_key=ANON_KEY,
         tokens=tokens,
         on_tokens=on_tokens,
         transport=transport,
@@ -66,77 +74,94 @@ def make_client(transport, tokens=None, saved=None):
 def valid_tokens(expires_in=3600):
     return {
         'access_token': 'at',
-        'refresh_token': 'rt',
+        'session_cookie': SESSION_COOKIE,
         'expires_at': int(time.time()) + expires_in,
-        'expires_in': expires_in,
     }
 
 
 class SignInTest(unittest.TestCase):
-    def test_password_sign_in_stores_tokens(self):
+    def test_password_sign_in_stores_cookie_and_token(self):
         transport = FakeTransport()
         saved = []
+        # Signing in yields the session; the JWT is a second call against it.
         transport.queue(
             200,
-            {
-                'access_token': 'new-at',
-                'refresh_token': 'new-rt',
-                'expires_at': 1234,
-                'expires_in': 3600,
-                'user': {'id': 'u1', 'email': 'a@b.c'},
-            },
+            {'user': {'id': 'u1', 'email': 'a@b.c'}},
+            set_cookie=SESSION_COOKIE + '; Path=/; HttpOnly; SameSite=Lax',
         )
+        transport.queue(200, {'token': jwt(int(time.time()) + 604800)})
         client = make_client(transport, saved=saved)
         user = client.sign_in_password('a@b.c', 'pw')
 
         req = transport.requests[0]
         self.assertEqual(req['method'], 'POST')
-        self.assertEqual(req['url'], f'{SUPABASE}/auth/v1/token?grant_type=password')
-        self.assertEqual(req['headers']['apikey'], ANON_KEY)
+        self.assertEqual(req['url'], f'{API_BASE}/auth/sign-in/email')
         self.assertEqual(json.loads(req['body']), {'email': 'a@b.c', 'password': 'pw'})
+
+        mint = transport.requests[1]
+        self.assertEqual(mint['url'], f'{API_BASE}/auth/token')
+        self.assertEqual(mint['headers']['cookie'], SESSION_COOKIE)
+
         self.assertEqual(user['id'], 'u1')
-        self.assertEqual(saved[-1]['access_token'], 'new-at')
+        self.assertEqual(saved[-1]['session_cookie'], SESSION_COOKIE)
+        self.assertTrue(saved[-1]['access_token'])
 
     def test_failed_sign_in_raises_with_message(self):
         transport = FakeTransport()
-        transport.queue(400, {'error_description': 'Invalid login credentials'})
+        transport.queue(401, {'message': 'Invalid email or password'})
         client = make_client(transport)
         with self.assertRaises(ReadestAPIError) as ctx:
             client.sign_in_password('a@b.c', 'bad')
-        self.assertIn('Invalid login credentials', str(ctx.exception))
+        self.assertIn('Invalid email or password', str(ctx.exception))
+
+    # A 200 with no Set-Cookie leaves nothing to authenticate with later, so it
+    # must not read as a successful login.
+    def test_sign_in_without_a_session_cookie_fails(self):
+        transport = FakeTransport()
+        transport.queue(200, {'user': {'id': 'u1'}})
+        client = make_client(transport)
+        with self.assertRaises(ReadestAPIError):
+            client.sign_in_password('a@b.c', 'pw')
 
 
 class TokenRefreshTest(unittest.TestCase):
-    def test_fresh_token_not_refreshed(self):
+    def test_fresh_token_not_reminted(self):
         transport = FakeTransport()
         transport.queue(200, {'books': []})
         client = make_client(transport, tokens=valid_tokens())
         client.pull_books()
-        self.assertEqual(len(transport.requests), 1)  # no refresh round-trip
+        self.assertEqual(len(transport.requests), 1)  # no mint round-trip
 
-    def test_expiring_token_refreshed_before_call(self):
+    def test_expiring_token_reminted_before_call(self):
         transport = FakeTransport()
         saved = []
-        transport.queue(
-            200,
-            {'access_token': 'at2', 'refresh_token': 'rt2', 'expires_at': 99, 'expires_in': 3600},
-        )
+        transport.queue(200, {'token': jwt(int(time.time()) + 604800)})
         transport.queue(200, {'books': []})
         tokens = valid_tokens()
-        tokens['expires_at'] = int(time.time()) + 10  # nearly expired
+        tokens['expires_at'] = int(time.time()) + 10  # inside the five-minute margin
         client = make_client(transport, tokens=tokens, saved=saved)
         client.pull_books()
 
+        self.assertEqual(transport.requests[0]['url'], f'{API_BASE}/auth/token')
+        self.assertEqual(transport.requests[0]['headers']['cookie'], SESSION_COOKIE)
         self.assertEqual(
-            transport.requests[0]['url'],
-            f'{SUPABASE}/auth/v1/token?grant_type=refresh_token',
+            transport.requests[1]['headers']['authorization'],
+            'Bearer ' + saved[-1]['access_token'],
         )
-        self.assertEqual(json.loads(transport.requests[0]['body']), {'refresh_token': 'rt'})
-        self.assertEqual(transport.requests[1]['headers']['authorization'], 'Bearer at2')
-        self.assertEqual(saved[-1]['access_token'], 'at2')
+        # The cookie outlives the JWT; only the JWT was replaced.
+        self.assertEqual(saved[-1]['session_cookie'], SESSION_COOKIE)
 
     def test_no_tokens_raises_auth_required(self):
         client = make_client(FakeTransport())
+        with self.assertRaises(AuthRequiredError):
+            client.pull_books()
+
+    def test_expired_session_cookie_raises_auth_required(self):
+        transport = FakeTransport()
+        transport.queue(401, {'message': 'Session expired'})
+        tokens = valid_tokens()
+        tokens['expires_at'] = int(time.time()) + 10
+        client = make_client(transport, tokens=tokens)
         with self.assertRaises(AuthRequiredError):
             client.pull_books()
 

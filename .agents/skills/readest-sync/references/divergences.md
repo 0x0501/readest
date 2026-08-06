@@ -33,6 +33,16 @@ resolution is to delete it again, not to wire it up.
 | `src/app/auth/utils/appleIdAuth.ts`, `src/app/auth/components/ProviderLogin.tsx` | The Tauri OAuth path. `nativeAuth.ts` survived — Drive and OneDrive still use it — and moved to `src/services/sync/providers/oauth/` |
 | `workers/iap-reconcile/**` | Swept subscription tables that never existed |
 
+## What the fork does not maintain
+
+`docker/` is upstream's self-host bundle: a whole Supabase stack — Kong, GoTrue,
+PostgREST, Studio — wired together by compose. This fork deploys to Cloudflare
+Workers against any Postgres, so none of it is used, none of it is tested here,
+and it still names `SUPABASE_*` variables throughout. Take upstream's side
+wholesale and do not try to reconcile it with the rest of this tree; rewriting it
+would only create a permanent conflict surface for a product this fork does not
+ship.
+
 ## Fork-only files — cannot conflict
 
 Nothing upstream has these paths, so they rebase silently. Listed so you recognise
@@ -69,6 +79,7 @@ of whatever upstream changed rather than discarding either side.
 | `src/pages/api/sync.ts` | The whole data layer is Drizzle. Merge logic is upstream's, verbatim | Port merge changes into the resolvers; leave the query shape alone. See ADR-014 before touching a jsonb column |
 | `src/services/runtimeConfig.ts` | `githubSignIn` instead of the Supabase URL and anon key | Keep |
 | `workers/send-email/**` | Reads the app's Drizzle schema over Hyperdrive; no service-role key, no plan gate | Port mail-handling changes; the queries are not upstream's |
+| `apps/readest-calibre-plugin/{api,config,dialogs,ui}.py` | Signs in through Better Auth (session cookie + minted JWT) rather than GoTrue; `oauth.py` and its browser flow are deleted | Port sync/wire changes; leave the auth block alone |
 | `src/app/reader/components/sidebar/SearchBar.tsx` | A skipped (cloud-only) book says "Download this book to search inside it" rather than "Search failed" | Keep the extra branch; its test pins both messages |
 | `src/app/api/share/[token]/og.png/route.ts` | Resolves the share and presigns the cover, then hands off to the SHARE_OG service binding. The fork **deleted** the sibling `render.tsx`; upstream draws inline with `next/og` | Keep the hand-off. If upstream restyles the card, port the JSX into `workers/share-og/src/card.tsx` — same shape, minus the `ImageResponse` wrapper |
 | `wrangler.toml` | This deployment's zone, routes, R2/KV/Hyperdrive/SHARE_OG bindings, vars | Almost always take the fork's side; upstream's is a different account |

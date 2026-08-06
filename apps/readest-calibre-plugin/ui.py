@@ -15,7 +15,6 @@ from calibre_plugins.readest.wire import merge_marks
 def make_client():
     return ReadestClient(
         api_base=prefs['api_base'],
-        supabase_url=prefs['supabase_url'],
         tokens=prefs['tokens'],
         on_tokens=save_tokens,
     )

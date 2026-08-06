@@ -5,10 +5,11 @@ __copyright__ = '2026, Bilingify LLC'
 
 Standard-library only (no calibre / Qt imports) so it can be unit-tested
 outside calibre. The endpoints and shapes mirror the ones already consumed by
-readest.koplugin (readest-sync-api.json / supabase-auth-api.json) and served
+readest.koplugin (readest-sync-api.json) and served
 by apps/readest-app/src/pages/api/.
 """
 
+import base64
 import hashlib
 import json
 import time
@@ -19,14 +20,6 @@ import urllib.request
 from datetime import datetime, timezone
 
 DEFAULT_API_BASE = 'https://web.readest.com/api'
-DEFAULT_SUPABASE_URL = 'https://readest.supabase.co'
-# Public anon key, same one readest.koplugin ships (base64-encoded in main.lua).
-DEFAULT_ANON_KEY = (
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.'
-    'eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZic3l4ZnVzampxZHhranFseXNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3'
-    'MzQxMjM2NzEsImV4cCI6MjA0OTY5OTY3MX0.'
-    '3U5Uqaou_1SgrVe1eo9rApc0uKjqhpQdUXhvwUHmUfg'
-)
 
 TIMEOUT = 30
 UPLOAD_TIMEOUT = 600
@@ -150,11 +143,17 @@ def meta_hash(title, authors, identifiers):
 
 
 def _default_transport(request, timeout):
+    """Returns (status, body, headers).
+
+    Headers are part of the contract because Better Auth keeps the session in a
+    cookie: signing in only tells you the credentials were good, and the thing
+    you have to keep is in Set-Cookie.
+    """
     try:
         with urllib.request.urlopen(request, timeout=timeout) as res:
-            return res.status, res.read()
+            return res.status, res.read(), res.headers
     except urllib.error.HTTPError as err:
-        return err.code, err.read()
+        return err.code, err.read(), err.headers
 
 
 class ReadestClient:
@@ -169,15 +168,11 @@ class ReadestClient:
     def __init__(
         self,
         api_base=DEFAULT_API_BASE,
-        supabase_url=DEFAULT_SUPABASE_URL,
-        anon_key=DEFAULT_ANON_KEY,
         tokens=None,
         on_tokens=None,
         transport=None,
     ):
         self.api_base = api_base.rstrip('/')
-        self.supabase_url = supabase_url.rstrip('/')
-        self.anon_key = anon_key
         self.tokens = dict(tokens) if tokens else None
         self.on_tokens = on_tokens
         self.transport = transport or _default_transport
@@ -190,14 +185,14 @@ class ReadestClient:
             data = json.dumps(body).encode('utf-8')
             headers = dict(headers, **{'Content-Type': 'application/json'})
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
-        status, payload = self.transport(request, timeout)
+        status, payload, response_headers = self.transport(request, timeout)
         parsed = None
         if payload:
             try:
                 parsed = json.loads(payload.decode('utf-8'))
             except (ValueError, UnicodeDecodeError):
                 parsed = None
-        return status, parsed, payload
+        return status, parsed, payload, response_headers
 
     @staticmethod
     def _error_message(parsed, payload, fallback):
@@ -210,84 +205,114 @@ class ReadestClient:
             return payload.decode('utf-8', 'replace')[:200]
         return fallback
 
-    # -- Supabase auth ------------------------------------------------------
+    # -- Better Auth --------------------------------------------------------
+    #
+    # Two credentials, and they are not interchangeable. The session cookie is
+    # what `/auth/*` accepts and what this client stores long-term; the JWT is
+    # what every other route verifies against the JWKS, and it is minted from
+    # the cookie on demand. There is no refresh token — a JWT that has expired
+    # is replaced by asking for another one.
 
-    def _auth_headers(self):
-        return {'apikey': self.anon_key, 'Accept': 'application/json'}
+    @staticmethod
+    def _session_cookie(headers):
+        """The session cookie out of a Set-Cookie, or None."""
+        if headers is None:
+            return None
+        values = headers.get_all('Set-Cookie') if hasattr(headers, 'get_all') else None
+        if values is None:
+            raw = headers.get('Set-Cookie') if hasattr(headers, 'get') else None
+            values = [raw] if raw else []
+        for value in values:
+            pair = value.split(';')[0].strip()
+            if pair.startswith('better-auth.session_token='):
+                return pair
+        return None
 
-    def _store_tokens(self, body):
+    @staticmethod
+    def _jwt_expiry(token):
+        """`exp` out of a JWT, or 0 when it cannot be read."""
+        try:
+            payload = token.split('.')[1]
+            payload += '=' * (-len(payload) % 4)
+            return int(json.loads(base64.urlsafe_b64decode(payload)).get('exp') or 0)
+        except Exception:
+            return 0
+
+    def _store_tokens(self, access_token, session_cookie):
         self.tokens = {
-            'access_token': body.get('access_token'),
-            'refresh_token': body.get('refresh_token'),
-            'expires_at': body.get('expires_at'),
-            'expires_in': body.get('expires_in'),
+            'access_token': access_token,
+            'session_cookie': session_cookie,
+            'expires_at': self._jwt_expiry(access_token),
         }
         if self.on_tokens:
             self.on_tokens(dict(self.tokens))
 
+    def _cookie_headers(self):
+        cookie = (self.tokens or {}).get('session_cookie')
+        headers = {'Accept': 'application/json'}
+        if cookie:
+            headers['Cookie'] = cookie
+        return headers
+
+    def _mint_access_token(self, session_cookie):
+        status, parsed, payload, _ = self._request(
+            'GET',
+            self.api_base + '/auth/token',
+            {'Accept': 'application/json', 'Cookie': session_cookie},
+        )
+        if status != 200 or not isinstance(parsed, dict) or not parsed.get('token'):
+            raise AuthRequiredError(
+                self._error_message(parsed, payload, 'Could not obtain an access token'), status
+            )
+        return parsed['token']
+
     def sign_in_password(self, email, password):
-        status, parsed, payload = self._request(
+        status, parsed, payload, headers = self._request(
             'POST',
-            self.supabase_url + '/auth/v1/token?grant_type=password',
-            self._auth_headers(),
+            self.api_base + '/auth/sign-in/email',
+            {'Accept': 'application/json'},
             body={'email': email, 'password': password},
         )
         if status != 200 or not isinstance(parsed, dict):
             raise ReadestAPIError(self._error_message(parsed, payload, 'Login failed'), status)
-        self._store_tokens(parsed)
+        cookie = self._session_cookie(headers)
+        if not cookie:
+            raise ReadestAPIError('Sign-in returned no session', status)
+        self._store_tokens(self._mint_access_token(cookie), cookie)
         return parsed.get('user') or {}
 
-    def set_session(self, tokens):
-        """Adopt tokens obtained externally (browser OAuth callback)."""
-        self._store_tokens(tokens)
-
     def refresh(self):
-        refresh_token = self.tokens and self.tokens.get('refresh_token')
-        if not refresh_token:
+        cookie = (self.tokens or {}).get('session_cookie')
+        if not cookie:
             raise AuthRequiredError('Not logged in')
-        status, parsed, payload = self._request(
-            'POST',
-            self.supabase_url + '/auth/v1/token?grant_type=refresh_token',
-            self._auth_headers(),
-            body={'refresh_token': refresh_token},
-        )
-        if status != 200 or not isinstance(parsed, dict):
-            raise AuthRequiredError(
-                self._error_message(parsed, payload, 'Session expired, please log in again'),
-                status,
-            )
-        self._store_tokens(parsed)
+        self._store_tokens(self._mint_access_token(cookie), cookie)
 
     def ensure_fresh_token(self):
-        # Mirrors readest_syncauth.lua: refresh once less than half the TTL
-        # remains; a token past its final minute is unusable without refresh.
+        # Re-mint inside the last five minutes rather than on expiry: the JWT
+        # lasts a week, so there is no reason to cut it fine, and a token that
+        # expires mid-upload fails a long request for nothing.
         if not self.tokens or not self.tokens.get('access_token'):
             raise AuthRequiredError('Not logged in')
-        expires_at = self.tokens.get('expires_at') or 0
-        expires_in = self.tokens.get('expires_in') or 3600
-        if expires_at < time.time() + max(60, expires_in / 2):
+        if (self.tokens.get('expires_at') or 0) < time.time() + 300:
             self.refresh()
 
     def get_user(self):
-        self.ensure_fresh_token()
-        headers = dict(self._auth_headers())
-        headers['Authorization'] = 'Bearer ' + self.tokens['access_token']
-        status, parsed, payload = self._request(
-            'GET', self.supabase_url + '/auth/v1/user', headers
+        status, parsed, payload, _ = self._request(
+            'GET', self.api_base + '/auth/get-session', self._cookie_headers()
         )
-        if status != 200 or not isinstance(parsed, dict):
+        user = parsed.get('user') if isinstance(parsed, dict) else None
+        if status != 200 or not user:
             raise AuthRequiredError(self._error_message(parsed, payload, 'Not logged in'), status)
-        return parsed
+        return user
 
     def sign_out(self):
-        if not self.tokens or not self.tokens.get('access_token'):
-            return
-        headers = dict(self._auth_headers())
-        headers['Authorization'] = 'Bearer ' + self.tokens['access_token']
-        try:
-            self._request('POST', self.supabase_url + '/auth/v1/logout', headers, body={})
-        except Exception:
-            pass  # best-effort; local tokens are cleared regardless
+        if self.tokens and self.tokens.get('session_cookie'):
+            try:
+                self._request(
+                    'POST', self.api_base + '/auth/sign-out', self._cookie_headers(), body={}
+                )
+            except Exception:
+                pass  # best-effort; local tokens are cleared regardless
         self.tokens = None
         if self.on_tokens:
             self.on_tokens(None)
@@ -300,7 +325,7 @@ class ReadestClient:
             'Authorization': 'Bearer ' + self.tokens['access_token'],
             'Accept': 'application/json',
         }
-        status, parsed, payload = self._request(method, self.api_base + path, headers, body=body)
+        status, parsed, payload, _ = self._request(method, self.api_base + path, headers, body=body)
         if status in (401, 403):
             message = self._error_message(parsed, payload, 'Not authenticated')
             if 'quota' in message.lower():
@@ -390,7 +415,7 @@ class ReadestClient:
             headers={'Content-Length': str(size)},
             method='PUT',
         )
-        status, payload = self.transport(request, UPLOAD_TIMEOUT)
+        status, payload, _ = self.transport(request, UPLOAD_TIMEOUT)
         if status not in (200, 201, 204):
             message = 'Upload failed (%s)' % status
             if payload:

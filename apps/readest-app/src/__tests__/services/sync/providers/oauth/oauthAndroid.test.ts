@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
-vi.mock('@/app/auth/utils/nativeAuth', () => ({
+vi.mock('@/services/sync/providers/oauth/nativeAuth', () => ({
   authWithCustomTab: vi.fn(async ({ authUrl }: { authUrl: string }) => {
     // The native Custom Tab echoes the redirect, with the exact `state` the
     // flow put on the consent URL.
@@ -12,7 +12,7 @@ vi.mock('@/app/auth/utils/nativeAuth', () => ({
 }));
 
 import { runAndroidOAuth } from '@/services/sync/providers/oauth/oauthAndroid';
-import { authWithCustomTab } from '@/app/auth/utils/nativeAuth';
+import { authWithCustomTab } from '@/services/sync/providers/oauth/nativeAuth';
 import type { FetchFn } from '@/services/sync/providers/oauth/tokenEndpoint';
 import type { OAuthClientConfig } from '@/services/sync/providers/oauth/oauthFlow';
 

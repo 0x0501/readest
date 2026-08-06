@@ -60,7 +60,6 @@ const ProfilePage = () => {
   const {
     handleLogout,
     handleResetPassword,
-    handleUpdateEmail,
     handleConfirmDelete,
     handleDeleteAllBooks,
   } = useUserActions();
@@ -116,8 +115,8 @@ const ProfilePage = () => {
     );
   }
 
-  const avatarUrl = user?.user_metadata?.['picture'] || user?.user_metadata?.['avatar_url'];
-  const userFullName = user?.user_metadata?.['full_name'] || '-';
+  const avatarUrl = user?.image ?? undefined;
+  const userFullName = user?.name || '-';
   const userEmail = user?.email || '';
   const userPlanDetails = getPlanDetails(userProfilePlan) || getPlanDetails('free');
 
@@ -176,7 +175,6 @@ const ProfilePage = () => {
                       <AccountActions
                         onLogout={handleLogout}
                         onResetPassword={handleResetPassword}
-                        onUpdateEmail={handleUpdateEmail}
                         onConfirmDelete={handleDeleteWithMessage}
                         onConfirmDeleteAllBooks={handleDeleteAllBooksWithMessage}
                         onManageStorage={handleManageStorage}

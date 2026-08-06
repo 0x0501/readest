@@ -1,86 +1,90 @@
 'use client';
 
-import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
-import { useThemeStore } from '@/store/themeStore';
+import { useState } from 'react';
+import { IoArrowBack } from 'react-icons/io5';
 import { useTranslation } from '@/hooks/useTranslation';
-import { ThemeSupa } from '@supabase/auth-ui-shared';
-import { Auth } from '@supabase/auth-ui-react';
-import { supabase } from '@/utils/supabase';
+import { authClient } from '@/libs/auth/client';
 
-export default function ResetPasswordPage() {
+/**
+ * Changing a password, not recovering one. A forgotten-password flow needs a
+ * link mailed to the address on file, and this deployment configures no outbound
+ * mail — so the only version that can work is the one that asks for the password
+ * the caller already has.
+ */
+export default function ChangePasswordPage() {
   const _ = useTranslation();
   const router = useRouter();
-  const { login } = useAuth();
-  const { isDarkMode } = useThemeStore();
 
-  const getAuthLocalization = () => {
-    return {
-      variables: {
-        update_password: {
-          password_label: _('New Password'),
-          password_input_placeholder: _('Your new password'),
-          button_label: _('Update password'),
-          loading_button_label: _('Updating password ...'),
-          confirmation_text: _('Your password has been updated'),
-        },
-      },
-    };
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    // Other sessions go with it: a password change is what someone does after
+    // they suspect one of them is not theirs.
+    const { error: authError } = await authClient.changePassword({
+      currentPassword,
+      newPassword,
+      revokeOtherSessions: true,
+    });
+    setBusy(false);
+    if (authError) {
+      setError(authError.message ?? _('Failed to update password'));
+      return;
+    }
+    setDone(true);
+    setCurrentPassword('');
+    setNewPassword('');
   };
 
-  useEffect(() => {
-    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.access_token && session.user && event === 'USER_UPDATED') {
-        login(session.access_token, session.user);
-        const redirectTo = new URLSearchParams(window.location.search).get('redirect');
-        router.push(redirectTo ?? '/library');
-      }
-    });
-
-    return () => {
-      subscription?.subscription.unsubscribe();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
-
   return (
-    <div className='flex min-h-screen items-center justify-center'>
-      <div className='w-full max-w-md p-8'>
-        <Auth
-          supabaseClient={supabase}
-          view='update_password'
-          appearance={{ theme: ThemeSupa }}
-          theme={isDarkMode ? 'dark' : 'light'}
-          magicLink={false}
-          providers={[]}
-          localization={getAuthLocalization()}
-        />
+    <div className='bg-base-100 flex min-h-screen items-center justify-center'>
+      <button
+        aria-label={_('Go Back')}
+        onClick={() => router.back()}
+        className='btn btn-ghost absolute left-6 top-6 h-8 min-h-8 w-8 p-0'
+      >
+        <IoArrowBack className='text-base-content' />
+      </button>
 
-        <button
-          onClick={() => router.back()}
-          className={`mt-6 flex w-full items-center justify-center gap-2 rounded-md border px-4 py-2.5 text-sm transition-colors ${
-            isDarkMode
-              ? 'border-gray-600 text-gray-300 hover:bg-gray-800'
-              : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-          }`}
-        >
-          <svg
-            xmlns='http://www.w3.org/2000/svg'
-            className='h-4 w-4'
-            fill='none'
-            viewBox='0 0 24 24'
-            stroke='currentColor'
-          >
-            <path
-              strokeLinecap='round'
-              strokeLinejoin='round'
-              strokeWidth={2}
-              d='M15 19l-7-7 7-7'
-            />
-          </svg>
-          {_('Back')}
-        </button>
+      <div className='w-full max-w-sm px-8'>
+        <h1 className='text-base-content mb-6 text-center text-xl font-bold'>
+          {_('Update password')}
+        </h1>
+
+        <form onSubmit={handleSubmit} className='flex flex-col gap-3'>
+          <input
+            type='password'
+            autoComplete='current-password'
+            required
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            placeholder={_('Your password')}
+            className='input input-bordered eink-bordered w-full'
+          />
+          <input
+            type='password'
+            autoComplete='new-password'
+            required
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder={_('Your new password')}
+            className='input input-bordered eink-bordered w-full'
+          />
+          {error && <p className='text-error text-sm'>{error}</p>}
+          {done && (
+            <p className='text-base-content text-sm'>{_('Your password has been updated')}</p>
+          )}
+          <button type='submit' disabled={busy} className='btn btn-contrast w-full'>
+            {busy ? _('Updating password ...') : _('Update password')}
+          </button>
+        </form>
       </div>
     </div>
   );

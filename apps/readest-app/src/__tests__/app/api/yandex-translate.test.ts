@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const validateUserAndTokenMock = vi.hoisted(() => vi.fn());
-vi.mock('@/utils/access', () => ({
-  validateUserAndToken: (...args: unknown[]) => validateUserAndTokenMock(...args),
+vi.mock('@/libs/auth/verify', () => ({
+  validateRequestUser: (...args: unknown[]) => validateUserAndTokenMock(...args),
 }));
 
 import { POST } from '@/app/api/yandex-translate/route';

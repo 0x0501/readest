@@ -6,7 +6,7 @@ import { deleteAllBooks } from '@/services/deleteLibraryService';
 import { useLibraryStore } from '@/store/libraryStore';
 import { eventDispatcher } from '@/utils/event';
 import { saveSysSettings } from '@/helpers/settings';
-import { navigateToLibrary, navigateToResetPassword, navigateToUpdatePassword } from '@/utils/nav';
+import { navigateToLibrary, navigateToResetPassword } from '@/utils/nav';
 
 export const useUserActions = () => {
   const router = useRouter();
@@ -21,10 +21,6 @@ export const useUserActions = () => {
 
   const handleResetPassword = () => {
     navigateToResetPassword(router);
-  };
-
-  const handleUpdateEmail = () => {
-    navigateToUpdatePassword(router);
   };
 
   const handleConfirmDelete = async (errorMessage: string) => {
@@ -60,7 +56,6 @@ export const useUserActions = () => {
 
   return {
     handleLogout,
-    handleUpdateEmail,
     handleResetPassword,
     handleConfirmDelete,
     handleDeleteAllBooks,

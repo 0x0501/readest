@@ -45,6 +45,13 @@ jobs:
       - name: lint and typecheck
         run: pnpm -C apps/readest-app lint
 
+      # `pnpm lint` typechecks with tsgo, which is five times faster and, at
+      # least once, more permissive: it accepted a Better Auth call that tsc
+      # rejected, so CI went green and `next build` failed at deploy. This is
+      # the checker the build actually uses.
+      - name: typecheck with tsc, which is what next build runs
+        run: pnpm -C apps/readest-app exec tsc --noEmit
+
       # Both Workers have their own tsconfig and are outside the app's tsgo run,
       # so nothing else typechecks them. send-email imports the app's Drizzle
       # schema, so a column rename would otherwise surface at deploy time.

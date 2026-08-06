@@ -39,18 +39,38 @@ jobs:
       # root package.json, so this does not drift when upstream bumps it.
       - run: corepack enable
 
-      - name: Fail fast on missing deployment config
+      # `.env.prod` is gitignored, so CI reconstructs it from one secret holding
+      # the whole file. Local and CI deploys then run the identical `pnpm
+      # deploy`, rather than CI maintaining its own parallel list of variables
+      # that drifts from the file everyone else edits.
+      - name: Write .env.prod from the ENV_PROD secret
+        working-directory: apps/readest-app
         env:
-          NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
-          NEXT_PUBLIC_WEB_BASE_URL: ${{ vars.NEXT_PUBLIC_WEB_BASE_URL }}
-        # NEXT_PUBLIC_WEB_BASE_URL is what Better Auth checks the Origin header
-        # against and what the JWTs are issued for, and it falls back to
-        # web.readest.com. Unset, this deploys a site whose every sign-in is
-        # rejected and whose share links point at someone else's host.
+          ENV_PROD: ${{ secrets.ENV_PROD }}
+        run: |
+          if [ -z "$ENV_PROD" ]; then
+            echo "::error::the ENV_PROD secret is empty — see apps/readest-app/.env.prod.example"
+            exit 1
+          fi
+          printf '%s' "$ENV_PROD" > .env.prod
+
+      - name: Fail fast on missing deployment config
+        working-directory: apps/readest-app
+        # Each of these fails in a way that does not look like a config problem.
+        # A wrong NEXT_PUBLIC_WEB_BASE_URL leaves the site working and every
+        # sign-in returning 403 INVALID_ORIGIN. A missing BETTER_AUTH_SECRET
+        # makes Better Auth throw on the first request. An empty
+        # SIGNUP_ALLOWED_EMAILS admits nobody, so on a fresh database the
+        # operator cannot create their own account. Missing R2 credentials leave
+        # a site that reads fine and cannot upload a book.
         run: |
           missing=0
-          for v in NEXT_PUBLIC_API_BASE_URL NEXT_PUBLIC_WEB_BASE_URL; do
-            if [ -z "${!v}" ]; then echo "::error::$v is not set"; missing=1; fi
+          for v in NEXT_PUBLIC_WEB_BASE_URL NEXT_PUBLIC_API_BASE_URL BETTER_AUTH_SECRET \
+                   SIGNUP_ALLOWED_EMAILS R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+            if ! grep -qE "^$v=.+" .env.prod; then
+              echo "::error::$v is missing or empty in .env.prod"
+              missing=1
+            fi
           done
           [ "$missing" -eq 0 ]
 
@@ -69,19 +89,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm run deploy
 
+      # `pnpm deploy` reads .env.prod itself — the build for the NEXT_PUBLIC_*
+      # values it bakes into the bundle, then `wrangler deploy --secrets-file`
+      # for the Worker's runtime secrets.
       - name: Build and deploy
         working-directory: apps/readest-app
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Baked into the client bundle at build time. Process env wins over
-          # the tracked .env / .env.tauri files, so these override the defaults.
-          NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
-          NEXT_PUBLIC_WEB_BASE_URL: ${{ vars.NEXT_PUBLIC_WEB_BASE_URL }}
-          NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL: ${{ vars.NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL }}
-          NEXT_PUBLIC_PUBLIC_STORAGE_BASE_URL: ${{ vars.NEXT_PUBLIC_PUBLIC_STORAGE_BASE_URL }}
-          NEXT_PUBLIC_SEND_EMAIL_DOMAIN: ${{ vars.NEXT_PUBLIC_SEND_EMAIL_DOMAIN }}
-          NEXT_PUBLIC_OBJECT_STORAGE_TYPE: r2
         # `run deploy`, not `pnpm deploy` — the latter resolves to pnpm's own
         # built-in deploy command instead of the package script.
         #

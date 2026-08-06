@@ -40,7 +40,7 @@ binding = "ASSETS"
 # `wrangler hyperdrive create readest-db --connection-string=…`.
 [[hyperdrive]]
 binding = "HYPERDRIVE"
-id = "REPLACE_WITH_HYPERDRIVE_CONFIG_ID"
+id = "fe2eeafa8f554a8aad8313cc5a0f51d1"
 
 # Required by the r2IncrementalCache override registered in open-next.config.ts,
 # even though `dangerous.disableIncrementalCache` keeps it unused at runtime.

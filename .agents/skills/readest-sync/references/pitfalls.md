@@ -77,6 +77,35 @@ and fail further from the cause.
 
 Only journal entries run. Add the entry to `drizzle/meta/_journal.json`.
 
+## A table the code queries is in no migration at all
+
+**Symptom:** a feature has always been broken, quietly. The query returns
+nothing, a `catch` logs, and a default takes over.
+
+`docker/volumes/db/migrations/` is the part of the schema upstream chose to
+publish, not the whole of it. Their hosted project holds more, and the
+application code depends on it. Three separate cases turned up:
+
+| What was missing | What it broke |
+| --- | --- |
+| `increment_daily_usage`, `get_current_usage` | The DeepL daily quota counted nothing (ADR-013) |
+| `get_storage_by_book_hash` | Every call fell through to a full-table scan |
+| `payments`, `subscriptions`, `plans`, `customers`, and both IAP tables | 36 queries against six tables that do not exist |
+
+So when upstream ships a feature, "the code queries this table" does not imply
+"a migration creates it". Check each new table and function against the
+migration directory before assuming a green test run means anything:
+
+```bash
+grep -rhoE "from\('([a-z_]+)'\)|\.rpc\('([a-z_]+)'" apps/readest-app/src | sort -u
+docker exec readest-pg psql -U postgres -d postgres -tAc \
+  "select tablename from pg_tables where schemaname='public' order by 1"
+```
+
+A name in the first list and not the second is a feature that cannot work here.
+Either write the missing SQL as a `local_*.sql` migration, or delete the feature
+— but do not leave it looking supported.
+
 ## Foreign keys pointing at a table that never holds a row
 
 **Symptom:** inserts fail on `user_id`, or rows vanish.

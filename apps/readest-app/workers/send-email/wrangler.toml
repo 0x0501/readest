@@ -21,7 +21,9 @@ INBOX_PENDING_LIMIT = "50"
 binding = "INBOX_BUCKET"
 bucket_name = "readest-send-inbox"
 
-# Secrets (set with `wrangler secret put`):
-#   SUPABASE_URL
-#   SUPABASE_SERVICE_ROLE_KEY
-#   APPROVE_LINK_BASE   e.g. https://web.readest.com/settings/send
+# The same Postgres the web Worker reads, reached the same way. Point this at
+# the config `wrangler hyperdrive create readest-db` printed for the main
+# deployment — one database, two Workers.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "REPLACE_WITH_HYPERDRIVE_CONFIG_ID"

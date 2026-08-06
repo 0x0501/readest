@@ -41,18 +41,15 @@ jobs:
 
       - name: Fail fast on missing deployment config
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
           NEXT_PUBLIC_WEB_BASE_URL: ${{ vars.NEXT_PUBLIC_WEB_BASE_URL }}
-        # The tracked apps/readest-app/.env carries base64 defaults pointing at
-        # UPSTREAM's Supabase project, and utils/supabase.ts falls back to them
-        # when the explicit vars are unset. Without this guard a misconfigured
-        # run would deploy a site that silently talks to someone else's backend.
+        # NEXT_PUBLIC_WEB_BASE_URL is what Better Auth checks the Origin header
+        # against and what the JWTs are issued for, and it falls back to
+        # web.readest.com. Unset, this deploys a site whose every sign-in is
+        # rejected and whose share links point at someone else's host.
         run: |
           missing=0
-          for v in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY \
-                   NEXT_PUBLIC_API_BASE_URL NEXT_PUBLIC_WEB_BASE_URL; do
+          for v in NEXT_PUBLIC_API_BASE_URL NEXT_PUBLIC_WEB_BASE_URL; do
             if [ -z "${!v}" ]; then echo "::error::$v is not set"; missing=1; fi
           done
           [ "$missing" -eq 0 ]
@@ -79,8 +76,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # Baked into the client bundle at build time. Process env wins over
           # the tracked .env / .env.tauri files, so these override the defaults.
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
           NEXT_PUBLIC_WEB_BASE_URL: ${{ vars.NEXT_PUBLIC_WEB_BASE_URL }}
           NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL: ${{ vars.NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL }}

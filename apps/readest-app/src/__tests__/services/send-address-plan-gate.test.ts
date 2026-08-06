@@ -107,7 +107,7 @@ describe('/api/send/address — plan gate', () => {
       plan: 'free',
       requiredPlans: ['plus', 'pro', 'purchase'],
     });
-    // Critically: no Supabase access on the gate-blocked path. A free
+    // Critically: no database access on the gate-blocked path. A free
     // user must never get a row allocated in `send_addresses`.
     expect(dbTouched).not.toHaveBeenCalled();
   });
@@ -130,8 +130,8 @@ describe('/api/send/address — plan gate', () => {
     getUserProfilePlanMock.mockReturnValue(plan);
     const res = makeRes();
     await addressHandler(makeReq('GET'), res as unknown as NextApiResponse);
-    // The gate is past — Supabase was touched. We don't care here what
-    // the eventual response is (the Supabase mock returns no row).
+    // The gate is past — the database was touched. We don't care here what
+    // the eventual response is (the stub returns no row).
     expect(dbTouched).toHaveBeenCalled();
     expect(res._status).not.toBe(403);
   });

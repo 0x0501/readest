@@ -57,8 +57,8 @@ export function useInboxDrainer(): void {
       const device = getDeviceId();
       const apiBase = getAPIBaseUrl();
 
-      // All inbox state changes route through /api/send/* rather than calling
-      // Supabase directly.
+      // All inbox state changes route through /api/send/* rather than touching
+      // the database from the client.
       const postJSON = async (path: string, body: object) => {
         const res = await fetchWithAuth(`${apiBase}${path}`, {
           method: 'POST',

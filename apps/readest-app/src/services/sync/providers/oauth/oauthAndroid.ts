@@ -9,7 +9,7 @@
  * redirect back to the app.
  *
  * Consent opens in a CHROME CUSTOM TAB via Readest's native bridge command
- * `auth_with_custom_tab` (the same one the Supabase login uses), NOT an external
+ * `auth_with_custom_tab`, NOT an external
  * browser: a separate browser app backgrounds the single Tauri Activity and the
  * OS can destroy it under memory pressure, tearing down the in-flight promise +
  * redirect listener (observed on-device: first attempt fails, second succeeds). A

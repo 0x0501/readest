@@ -11,9 +11,6 @@ vi.mock('isomorphic-ws', () => ({
   },
 }));
 
-// Stub the Supabase client so importing edgeTTS.ts (transitively via
-// @/utils/fetch -> @/utils/access) does not instantiate a real GoTrueClient.
-
 type GlobalWithWsPair = typeof globalThis & { WebSocketPair?: unknown };
 
 describe('EdgeSpeechTTS on Cloudflare Workers', () => {

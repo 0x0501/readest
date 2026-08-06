@@ -6,7 +6,7 @@ export interface AuthRequest {
   authUrl: string;
   /**
    * iOS `ASWebAuthenticationSession` callback scheme. Defaults to `readest`
-   * natively (the Supabase login); the Google Drive flow passes its reverse-DNS
+   * natively; the Google Drive flow passes its reverse-DNS
    * scheme so the session intercepts that redirect instead.
    */
   callbackScheme?: string;

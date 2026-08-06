@@ -223,7 +223,7 @@ describe('transformBookNote with global flag', () => {
     expect(legacyDb.global).toBeUndefined();
     // The destructure-spread inside transformBookNoteToDB assigns
     // global=undefined as an own property, but JSON.stringify drops keys
-    // whose value is undefined. So the wire payload sent to Supabase has
+    // whose value is undefined. So the payload that reaches the sync route has
     // no `global` column, and the server-side merge preserves whatever is
     // already stored — which is exactly what we want for legacy clients.
     expect(Object.hasOwn(legacyDb, 'global')).toBe(true);

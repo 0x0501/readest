@@ -40,8 +40,8 @@ const fromMock = vi.fn(() => makeBuilder());
 vi.mock('@/utils/supabase', () => ({
   createSupabaseClient: () => ({ from: fromMock }),
 }));
-vi.mock('@/utils/access', () => ({
-  validateUserAndToken: async () => ({ user: { id: 'u1' }, token: 'tok' }),
+vi.mock('@/libs/auth/verify', () => ({
+  validateRequestUser: async () => ({ user: { id: 'u1' }, token: 'tok' }),
 }));
 
 import { GET } from '@/pages/api/sync';

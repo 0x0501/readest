@@ -22,7 +22,7 @@
  * Adapted from ratatabananana-bit/Readest-google-drive-mod-patcher (AGPL-3.0),
  * used with the author's explicit permission.
  */
-import { authWithSafari } from '@/app/auth/utils/nativeAuth';
+import { authWithSafari } from '@/services/sync/providers/oauth/nativeAuth';
 import { createPkcePair } from './pkce';
 import { runOAuthFlow, type OAuthClientConfig } from './oauthFlow';
 import { exchangeCode, type FetchFn, type TokenSet } from './tokenEndpoint';

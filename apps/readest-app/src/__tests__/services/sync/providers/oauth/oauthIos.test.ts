@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
-vi.mock('@/app/auth/utils/nativeAuth', () => ({
+vi.mock('@/services/sync/providers/oauth/nativeAuth', () => ({
   authWithSafari: vi.fn(async ({ authUrl }: { authUrl: string; callbackScheme?: string }) => {
     // The native web-auth session echoes the redirect, with the exact `state`
     // the flow put on the consent URL.
@@ -12,7 +12,7 @@ vi.mock('@/app/auth/utils/nativeAuth', () => ({
 }));
 
 import { runIosOAuth } from '@/services/sync/providers/oauth/oauthIos';
-import { authWithSafari } from '@/app/auth/utils/nativeAuth';
+import { authWithSafari } from '@/services/sync/providers/oauth/nativeAuth';
 import type { FetchFn } from '@/services/sync/providers/oauth/tokenEndpoint';
 import type { OAuthClientConfig } from '@/services/sync/providers/oauth/oauthFlow';
 

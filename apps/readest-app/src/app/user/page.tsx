@@ -57,8 +57,7 @@ const ProfilePage = () => {
   useTheme({ systemUIVisible: false });
 
   const { quotas, userProfilePlan = 'free' } = useQuotaStats();
-  const { handleLogout, handleResetPassword, handleUpdateEmail, handleConfirmDelete } =
-    useUserActions();
+  const { handleLogout, handleResetPassword, handleConfirmDelete } = useUserActions();
 
   const handleGoBack = () => {
     if (showStorageManager) {
@@ -104,8 +103,8 @@ const ProfilePage = () => {
     );
   }
 
-  const avatarUrl = user?.user_metadata?.['picture'] || user?.user_metadata?.['avatar_url'];
-  const userFullName = user?.user_metadata?.['full_name'] || '-';
+  const avatarUrl = user?.image ?? undefined;
+  const userFullName = user?.name || '-';
   const userEmail = user?.email || '';
   const userPlanDetails = getPlanDetails(userProfilePlan) || getPlanDetails('free');
 
@@ -164,7 +163,6 @@ const ProfilePage = () => {
                       <AccountActions
                         onLogout={handleLogout}
                         onResetPassword={handleResetPassword}
-                        onUpdateEmail={handleUpdateEmail}
                         onConfirmDelete={handleDeleteWithMessage}
                         onManageStorage={handleManageStorage}
                         onManageSharedLinks={handleManageSharedLinks}

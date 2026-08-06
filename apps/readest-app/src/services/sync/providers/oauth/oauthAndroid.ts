@@ -28,7 +28,7 @@
  * Adapted from ratatabananana-bit/Readest-google-drive-mod-patcher (AGPL-3.0),
  * used with the author's explicit permission.
  */
-import { authWithCustomTab } from '@/app/auth/utils/nativeAuth';
+import { authWithCustomTab } from '@/services/sync/providers/oauth/nativeAuth';
 import { createPkcePair } from './pkce';
 import { runOAuthFlow, type OAuthClientConfig } from './oauthFlow';
 import { exchangeCode, type FetchFn, type TokenSet } from './tokenEndpoint';

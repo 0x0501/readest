@@ -255,9 +255,8 @@ const SettingsMenu: React.FC<SettingsMenuProps> = ({ onPullLibrary, setIsDropdow
     setIsDropdownOpen?.(false);
   };
 
-  const avatarUrl = user?.user_metadata?.['picture'] || user?.user_metadata?.['avatar_url'];
-  const userFullName = user?.user_metadata?.['full_name'];
-  const userDisplayName = userFullName ? userFullName.split(' ')[0] : null;
+  const avatarUrl = user?.image;
+  const userDisplayName = user?.name ? user.name.split(' ')[0] : null;
   const themeModeLabel =
     themeMode === 'dark'
       ? _('Dark Mode')

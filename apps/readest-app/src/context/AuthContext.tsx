@@ -1,5 +1,6 @@
 'use client';
 
+import posthog from 'posthog-js';
 import {
   createContext,
   useState,
@@ -9,111 +10,85 @@ import {
   ReactNode,
   useEffect,
 } from 'react';
-import { User } from '@supabase/supabase-js';
-import { supabase } from '@/utils/supabase';
-import posthog from 'posthog-js';
+import { type AuthUser, authClient } from '@/libs/auth/client';
 
 interface AuthContextType {
   token: string | null;
-  user: User | null;
-  login: (token: string, user: User) => void;
+  user: AuthUser | null;
   logout: () => void;
   refresh: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const storedUser = (): AuthUser | null => {
+  if (typeof window === 'undefined') return null;
+  const json = localStorage.getItem('user');
+  return json ? (JSON.parse(json) as AuthUser) : null;
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('token');
-    }
-    return null;
-  });
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window !== 'undefined') {
-      const userJson = localStorage.getItem('user');
-      return userJson ? JSON.parse(userJson) : null;
-    }
-    return null;
-  });
+  const { data: session, isPending } = authClient.useSession();
+  const [token, setToken] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : localStorage.getItem('token'),
+  );
+  const [user, setUser] = useState<AuthUser | null>(storedUser);
 
-  useEffect(() => {
-    const syncSession = (
-      session: { access_token: string; refresh_token: string; user: User } | null,
-    ) => {
-      if (session) {
-        console.log('Syncing session');
-        const { access_token, refresh_token, user } = session;
-        localStorage.setItem('token', access_token);
-        localStorage.setItem('refresh_token', refresh_token);
-        localStorage.setItem('user', JSON.stringify(user));
-        posthog.identify(user.id);
-        setToken(access_token);
-        setUser(user);
-      } else {
-        localStorage.removeItem('token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user');
-        setToken(null);
-        setUser(null);
-      }
-    };
-    const refreshSession = async () => {
-      try {
-        await supabase.auth.refreshSession();
-      } catch {
-        syncSession(null);
-      }
-    };
-
-    const { data: subscription } = supabase.auth.onAuthStateChange((_, session) => {
-      syncSession(session);
-    });
-
-    refreshSession();
-    return () => {
-      subscription?.subscription.unsubscribe();
-    };
-  }, []);
-
-  // setToken / setUser from useState are stable across renders, so the empty
-  // deps array is correct. Wrapping in useCallback (and only including stable
-  // refs in the deps) is what makes the useMemo below actually memoize the
-  // context value — without this, login/logout/refresh would be recreated on
-  // every render and the memo would always invalidate.
-  const login = useCallback((newToken: string, newUser: User) => {
-    console.log('Logging in');
-    setToken(newToken);
-    setUser(newUser);
-    localStorage.setItem('token', newToken);
-    localStorage.setItem('user', JSON.stringify(newUser));
-  }, []);
-
-  const logout = useCallback(async () => {
-    console.log('Logging out');
-    try {
-      await supabase.auth.refreshSession();
-    } catch {
-    } finally {
-      await supabase.auth.signOut();
+  // localStorage is the app's actual view of who is signed in: `getAccessToken`
+  // reads it on every API call and `getUserID` wherever a row is scoped. The
+  // React state here is the copy that re-renders, and it is seeded from the same
+  // place so a reload does not blank the UI while the session request is in
+  // flight.
+  const store = useCallback((nextToken: string | null, nextUser: AuthUser | null) => {
+    if (nextToken && nextUser) {
+      localStorage.setItem('token', nextToken);
+      localStorage.setItem('user', JSON.stringify(nextUser));
+      posthog.identify(nextUser.id);
+    } else {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      setToken(null);
-      setUser(null);
     }
+    setToken(nextToken);
+    setUser(nextUser);
   }, []);
 
+  // The cookie is the session. The JWT is a derivative of it that API routes
+  // verify against the JWKS, so it is minted whenever the session changes and
+  // dropped the moment it does not. `useSession` returns a stable object from
+  // its nanostore, so this does not re-run on unrelated renders.
+  useEffect(() => {
+    if (isPending) return;
+    if (!session) {
+      store(null, null);
+      return;
+    }
+    let active = true;
+    authClient.token().then(({ data }) => {
+      if (active && data?.token) store(data.token, session.user);
+    });
+    return () => {
+      active = false;
+    };
+  }, [isPending, session, store]);
+
+  const logout = useCallback(async () => {
+    // Clear locally first: signOut is a round trip, and every gated screen reads
+    // `token` synchronously.
+    store(null, null);
+    await authClient.signOut();
+  }, [store]);
+
+  // Claims go stale in place — `storage_usage_bytes` is baked into the token, so
+  // deleting a book leaves the quota bar reading the old figure until a fresh
+  // one is minted. Only the token changes; the user did not.
   const refresh = useCallback(async () => {
-    try {
-      await supabase.auth.refreshSession();
-    } catch {}
+    const { data } = await authClient.token();
+    if (!data?.token) return;
+    localStorage.setItem('token', data.token);
+    setToken(data.token);
   }, []);
 
-  const value = useMemo(
-    () => ({ token, user, login, logout, refresh }),
-    [token, user, login, logout, refresh],
-  );
+  const value = useMemo(() => ({ token, user, logout, refresh }), [token, user, logout, refresh]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 

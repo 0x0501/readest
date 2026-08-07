@@ -5,6 +5,10 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 preview_urls = false
 
+[placement]
+mode = "targeted"
+region = "gcp:asia-east1"
+
 [[routes]]
 pattern = "read.sumku.cc/*"
 zone_name = "sumku.cc"

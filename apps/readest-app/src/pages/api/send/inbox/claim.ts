@@ -5,6 +5,7 @@ import { withDb } from '@/libs/db';
 import { withUserContext } from '@/libs/db/rpc';
 import type { DBSendInboxItem } from '@/types/sendRecords';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
+import { clientSafeMessage } from '@/libs/errors';
 
 /**
  * Claim the oldest drainable inbox item for the caller, via the
@@ -38,9 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const row = result.rows[0] as DBSendInboxItem | undefined;
       return res.status(200).json({ item: row?.id ? row : null });
     } catch (error) {
-      return res
-        .status(500)
-        .json({ error: error instanceof Error ? error.message : 'Could not claim item' });
+      return res.status(500).json({ error: clientSafeMessage(error, 'Could not claim item') });
     }
   });
 }

@@ -5,6 +5,7 @@ import { validateUserAndToken } from '@/libs/auth/verify';
 import { withDb } from '@/libs/db';
 import { withUserContext } from '@/libs/db/rpc';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
+import { clientSafeMessage } from '@/libs/errors';
 
 const SUPPORTED_ALGS = new Set<string>(['pbkdf2-600k-sha256']);
 
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ rows: rows.map(toResponseRow) }, { status: 200 });
     } catch (error) {
       console.error('replica_keys_list failed', { userId: user.id, error });
-      return errorResponse(500, 'SERVER', error instanceof Error ? error.message : 'Failed');
+      return errorResponse(500, 'SERVER', clientSafeMessage(error, 'Failed'));
     }
   });
 }
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ row: toResponseRow(row) }, { status: 201 });
     } catch (error) {
       console.error('replica_keys_create failed', { userId: user.id, error });
-      return errorResponse(500, 'SERVER', error instanceof Error ? error.message : 'Failed');
+      return errorResponse(500, 'SERVER', clientSafeMessage(error, 'Failed'));
     }
   });
 }
@@ -106,7 +107,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ ok: true }, { status: 200 });
     } catch (error) {
       console.error('replica_keys_forget failed', { userId: user.id, error });
-      return errorResponse(500, 'SERVER', error instanceof Error ? error.message : 'Failed');
+      return errorResponse(500, 'SERVER', clientSafeMessage(error, 'Failed'));
     }
   });
 }

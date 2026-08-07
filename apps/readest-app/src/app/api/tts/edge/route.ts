@@ -6,6 +6,7 @@ import {
   WORD_BOUNDARIES_HEADER,
 } from '@/libs/edgeTTS';
 import { validateRequestUser } from '@/libs/auth/verify';
+import { clientSafeMessage } from '@/libs/errors';
 
 const getLangFromVoice = (voiceId: string): string => {
   const match = voiceId.match(/^([a-z]{2}-[A-Z]{2})/);
@@ -95,7 +96,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: {
-          message: error instanceof Error ? error.message : 'Internal server error',
+          message: clientSafeMessage(error, 'Internal server error'),
           type: 'internal_error',
         },
       },

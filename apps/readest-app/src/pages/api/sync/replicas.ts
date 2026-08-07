@@ -6,6 +6,7 @@ import { type Db, schema, withDb } from '@/libs/db';
 import { runMiddleware, corsAllMethods } from '@/utils/cors';
 import { validatePullBatch, validatePullParams, validatePushBatch } from '@/libs/replicaSyncServer';
 import type { ReplicaRow } from '@/types/replica';
+import { clientSafeMessage } from '@/libs/errors';
 
 const errorResponse = (status: number, code: string, message: string, offendingIndex?: number) =>
   NextResponse.json(
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ results }, { status: 200 });
       } catch (error) {
         console.error('batch pull replicas failed', { cursors, error });
-        const message = error instanceof Error ? error.message : 'unknown error';
+        const message = clientSafeMessage(error, 'unknown error');
         return errorResponse(500, 'SERVER', message);
       }
     }
@@ -136,11 +137,7 @@ export async function POST(req: NextRequest) {
         if (data) merged.push(data);
       } catch (error) {
         console.error('crdt_merge_replica failed', { row, error });
-        return errorResponse(
-          500,
-          'SERVER',
-          error instanceof Error ? error.message : 'Merge failed',
-        );
+        return errorResponse(500, 'SERVER', clientSafeMessage(error, 'Merge failed'));
       }
     }
 
@@ -167,7 +164,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ rows }, { status: 200 });
     } catch (error) {
       console.error('pull replicas failed', { kind, since, error });
-      return errorResponse(500, 'SERVER', error instanceof Error ? error.message : 'Pull failed');
+      return errorResponse(500, 'SERVER', clientSafeMessage(error, 'Pull failed'));
     }
   });
 }

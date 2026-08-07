@@ -10,6 +10,7 @@ import {
 import { parseSubjectTag } from '@/services/send/sendAddress';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
 import { deleteObject, putObject } from '@/utils/object';
+import { clientSafeMessage } from '@/libs/errors';
 
 /**
  * `kind='file'` inbox endpoint for the browser extension. The extension
@@ -114,9 +115,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .where(and(mine, inArray(schema.sendInbox.status, ['pending', 'claimed'])));
       pendingCount = pending?.value ?? 0;
     } catch (error) {
-      return res
-        .status(500)
-        .json({ error: error instanceof Error ? error.message : 'Could not check the inbox' });
+      return res.status(500).json({ error: clientSafeMessage(error, 'Could not check the inbox') });
     }
     if (pendingCount >= SEND_INBOX_PENDING_LIMIT) {
       return res
@@ -154,7 +153,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } catch (error) {
       return res
         .status(500)
-        .json({ error: error instanceof Error ? error.message : 'Could not create inbox item' });
+        .json({ error: clientSafeMessage(error, 'Could not create inbox item') });
     }
     if (!row) return res.status(500).json({ error: 'Could not create inbox item' });
 
@@ -185,7 +184,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
       return res
         .status(500)
-        .json({ error: error instanceof Error ? error.message : 'Could not record the upload' });
+        .json({ error: clientSafeMessage(error, 'Could not record the upload') });
     }
 
     return res.status(200).json({ id: row.id });

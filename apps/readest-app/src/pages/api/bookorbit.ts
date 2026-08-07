@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
 import { isLanAddress } from '@/utils/network';
 import type { BookOrbitProxyPayload } from '@/types/bookorbit';
+import { clientSafeMessage } from '@/libs/errors';
 
 const validEndpoints = [
   /^\/users\/auth$/,
@@ -80,7 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   } catch (error) {
     console.error('[BOOKORBIT PROXY] Error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    const errorMessage = clientSafeMessage(error, 'An unknown error occurred');
     res.status(500).json({ error: 'Proxy request failed', details: errorMessage });
   }
 }

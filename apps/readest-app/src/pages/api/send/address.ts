@@ -12,6 +12,7 @@ import {
 } from '@/services/send/sendAddress';
 import { EMAIL_IN_PLANS, getUserProfilePlan, isEmailInPlan } from '@/utils/access';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
+import { clientSafeMessage } from '@/libs/errors';
 
 const MAX_COLLISION_RETRIES = 5;
 
@@ -116,9 +117,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         } catch (error) {
           // Someone else already holds this local part — draw another.
           if (!isUniqueViolation(error)) {
-            return res
-              .status(500)
-              .json({ error: error instanceof Error ? error.message : 'Rotation failed' });
+            return res.status(500).json({ error: clientSafeMessage(error, 'Rotation failed') });
           }
         }
       }

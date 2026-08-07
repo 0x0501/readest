@@ -1,4 +1,3 @@
-import { getRuntimeConfig } from '@/services/runtimeConfig';
 import { isCJKEnv } from '@/utils/misc';
 import { getFilename } from '@/utils/path';
 import { md5Fingerprint } from '@/utils/md5';
@@ -36,32 +35,23 @@ const getAdditionalBasicFontLinks = () => `
     .join('&')}&display=swap" crossorigin="anonymous">
 `;
 
-// CJK bundles Readest serves itself. The default CDN only answers CORS for
-// readest.com origins, so a self-hosted deployment on a custom domain gets each
-// of these blocked unless it points FONT_BASE_URL at a host it controls (#5550).
-const hostedCJKFonts = [
-  'Huiwen-MinchoGBK',
-  'KingHwa_OldSong',
-  'Source Han Serif CN',
-  'GuanKiapTsingKhai-T',
-];
-
-const DEFAULT_FONT_BASE_URL = 'https://storage.readest.com/public/font/dist';
-
-const getFontBaseUrl = () =>
-  (getRuntimeConfig()?.fontBaseUrl || DEFAULT_FONT_BASE_URL).replace(/\/+$/, '');
-
+// Upstream serves these four CJK bundles from FONT_BASE_URL and expects a
+// self-hoster to point that at a host it controls (#5550). This deployment
+// cannot: three of them have no CORS-open publication at a usable size. Only
+// Source Han Serif survives, from a CDN that publishes it properly subsetted.
 const getAdditionalCJKFontLinks = () => {
-  const fontBaseUrl = getFontBaseUrl();
   return `
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/misans-webfont@1.0.4/misans-l3/misans-l3/result.min.css" crossorigin="anonymous" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lxgw-wenkai-screen-web/1.520.0/lxgwwenkaigbscreen/result.css" crossorigin="anonymous" />
-  ${hostedCJKFonts
-    .map(
-      (family) =>
-        `<link rel='stylesheet' href='${fontBaseUrl}/${encodeURIComponent(family)}/result.css' crossorigin="anonymous" />`,
-    )
-    .join('\n  ')}
+  <!-- storage.readest.com answers 200 with no Access-Control-Allow-Origin, so
+       these subsets load on readest.com's own origins and nowhere else. The
+       stylesheets that used to be fetched from there — Huiwen-MinchoGBK,
+       KingHwa_OldSong, GuanKiapTsingKhai-T — have no CORS-open publication at a
+       usable size (npm carries only unsubsetted 20+ MB TTFs), so they are gone
+       rather than requested and rejected on every book. Source Han Serif is
+       kept: chinese-fonts-CDN publishes the same typeface properly subsetted,
+       1270 unicode-range slices, served with an open Access-Control-Allow-Origin. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cn-fontsource-source-han-serif-sc-vf@1.0.9/font.css" crossorigin="anonymous" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?${cjkGoogleFonts
     .map(
       ({ family, weights }) =>

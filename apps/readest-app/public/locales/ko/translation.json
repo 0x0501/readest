@@ -224,7 +224,6 @@
   "Descending": "내림차순",
   "Sort by...": "정렬 기준...",
   "Added": "추가됨",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
   "Description": "설명",
   "No description available": "설명 없음",
   "List": "목록",
@@ -299,9 +298,6 @@
   "Reset {{settings}}": "{{settings}} 재설정",
   "Reset Settings": "설정 재설정",
   "{{count}} pages left in chapter_other": "<1>남은 페이지 </1><0>{{count}}</0><1>장</1>",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Go to Library": "라이브러리로 이동",
   "Free Plan": "무료 요금제",
   "month": "월",
@@ -1923,5 +1919,6 @@
   "Unnamed passkey": "이름 없는 패스키",
   "Adding a passkey...": "패스키를 추가하는 중...",
   "Add a passkey": "패스키 추가",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "이것은 Readest의 자체 호스팅 배포판입니다. 공식 Readest 앱이나 서비스가 아니며, Readest 프로젝트나 관리자와 제휴 관계가 없습니다."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "이것은 Readest의 자체 호스팅 배포판입니다. 공식 Readest 앱이나 서비스가 아니며, Readest 프로젝트나 관리자와 제휴 관계가 없습니다.",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

@@ -920,10 +920,6 @@
   "Navigation": "ניווט",
   "LXGW WenKai GB Screen": "LXGW WenKai GB Screen",
   "LXGW WenKai TC": "LXGW WenKai TC",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
-  "Source Han Serif CN": "Source Han Serif CN",
-  "Huiwen-MinchoGBK": "Huiwen-MinchoGBK",
-  "KingHwa_OldSong": "KingHwa_OldSong",
   "Google Books": "Google Books",
   "Open Library": "Open Library",
   "Book not found in library": "הספר לא נמצא בספרייה",
@@ -2015,5 +2011,6 @@
   "Unnamed passkey": "מפתח גישה ללא שם",
   "Adding a passkey...": "מוסיף מפתח גישה...",
   "Add a passkey": "הוספת מפתח גישה",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "זוהי התקנה עצמאית של Readest. אין זו האפליקציה או השירות הרשמיים של Readest, ואין לה כל קשר לפרויקט Readest או למתחזקיו."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "זוהי התקנה עצמאית של Readest. אין זו האפליקציה או השירות הרשמיים של Readest, ואין לה כל קשר לפרויקט Readest או למתחזקיו.",
+  "Source Han Serif SC VF": "Source Han Serif CN"
 }

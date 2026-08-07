@@ -224,7 +224,6 @@
   "Descending": "Turun",
   "Sort by...": "Urutkan berdasarkan...",
   "Added": "Ditambahkan",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
   "Description": "Deskripsi",
   "No description available": "Tidak ada deskripsi yang tersedia",
   "List": "Daftar",
@@ -299,9 +298,6 @@
   "Reset {{settings}}": "Atur Ulang {{settings}}",
   "Reset Settings": "Atur Ulang Pengaturan",
   "{{count}} pages left in chapter_other": "<0>{{count}}</0><1> halaman tersisa di bab ini</1>",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Go to Library": "Pergi ke Perpustakaan",
   "Free Plan": "Paket Gratis",
   "month": "bulan",
@@ -1923,5 +1919,6 @@
   "Unnamed passkey": "Kunci sandi tanpa nama",
   "Adding a passkey...": "Menambahkan kunci sandi...",
   "Add a passkey": "Tambah kunci sandi",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Ini adalah penerapan Readest yang di-hosting sendiri. Ini bukan aplikasi atau layanan Readest resmi, dan tidak berafiliasi dengan proyek Readest maupun para pengelolanya."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Ini adalah penerapan Readest yang di-hosting sendiri. Ini bukan aplikasi atau layanan Readest resmi, dan tidak berafiliasi dengan proyek Readest maupun para pengelolanya.",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

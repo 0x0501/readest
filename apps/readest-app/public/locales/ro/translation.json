@@ -1023,10 +1023,6 @@
   "Actions": "Acțiuni",
   "LXGW WenKai GB Screen": "LXGW WenKai GB Screen",
   "LXGW WenKai TC": "LXGW WenKai TC",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
-  "Source Han Serif CN": "Source Han Serif CN",
-  "Huiwen-MinchoGBK": "Huiwen-MinchoGBK",
-  "KingHwa_OldSong": "KingHwa_OldSong",
   "No chapters detected": "Nu au fost detectate capitole",
   "Failed to parse the EPUB file": "Nu s-a putut parsa fișierul EPUB",
   "This book format is not supported": "Acest format de carte nu este acceptat",
@@ -2015,5 +2011,6 @@
   "Unnamed passkey": "Cheie de acces fără nume",
   "Adding a passkey...": "Se adaugă o cheie de acces...",
   "Add a passkey": "Adaugă o cheie de acces",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Aceasta este o instalare Readest găzduită de tine. Nu este aplicația sau serviciul oficial Readest și nu este afiliată proiectului Readest sau întreținătorilor săi."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Aceasta este o instalare Readest găzduită de tine. Nu este aplicația sau serviciul oficial Readest și nu este afiliată proiectului Readest sau întreținătorilor săi.",
+  "Source Han Serif SC VF": "Source Han Serif CN"
 }

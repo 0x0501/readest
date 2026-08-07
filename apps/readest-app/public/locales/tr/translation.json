@@ -224,7 +224,6 @@
   "Descending": "Azalan",
   "Sort by...": "Şuna göre sırala...",
   "Added": "Eklenme",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
   "Description": "Tanım",
   "No description available": "Tanım mevcut değil",
   "List": "Liste",
@@ -303,9 +302,6 @@
   "Reset Settings": "Ayarları Sıfırla",
   "{{count}} pages left in chapter_one": "<1>Bu bölümde </1><0>{{count}}</0><1> sayfa kaldı</1>",
   "{{count}} pages left in chapter_other": "<1>Bu bölümde </1><0>{{count}}</0><1> sayfa kaldı</1>",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Go to Library": "Kütüphaneye Git",
   "Free Plan": "Ücretsiz Plan",
   "month": "ay",
@@ -1969,5 +1965,6 @@
   "Unnamed passkey": "Adsız geçiş anahtarı",
   "Adding a passkey...": "Geçiş anahtarı ekleniyor...",
   "Add a passkey": "Geçiş anahtarı ekle",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Bu, Readest’in kendi kendine barındırılan bir kurulumudur. Resmî Readest uygulaması veya hizmeti değildir ve Readest projesiyle ya da yürütücüleriyle bağlantılı değildir."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Bu, Readest’in kendi kendine barındırılan bir kurulumudur. Resmî Readest uygulaması veya hizmeti değildir ve Readest projesiyle ya da yürütücüleriyle bağlantılı değildir.",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

@@ -223,7 +223,6 @@
   "Software Update": "Software-update",
   "LXGW WenKai GB Screen": "LXGW WenKai GB Scherm",
   "LXGW WenKai TC": "LXGW WenKai TC",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
   "Gray": "Grijs",
   "Sepia": "Sepia",
   "Grass": "Gras",
@@ -303,9 +302,6 @@
   "Reset Settings": "Instellingen resetten",
   "{{count}} pages left in chapter_one": "<1>Nog </1><0>{{count}}</0><1> pagina in hoofdstuk</1>",
   "{{count}} pages left in chapter_other": "<1>Nog </1><0>{{count}}</0><1> pagina’s in hoofdstuk</1>",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Go to Library": "Ga naar bibliotheek",
   "Free Plan": "Gratis abonnement",
   "month": "maand",
@@ -1969,5 +1965,6 @@
   "Unnamed passkey": "Naamloze toegangssleutel",
   "Adding a passkey...": "Toegangssleutel toevoegen...",
   "Add a passkey": "Toegangssleutel toevoegen",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Dit is een zelf gehoste installatie van Readest. Het is niet de officiële Readest-app of -dienst en is niet verbonden aan het Readest-project of zijn beheerders."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Dit is een zelf gehoste installatie van Readest. Het is niet de officiële Readest-app of -dienst en is niet verbonden aan het Readest-project of zijn beheerders.",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

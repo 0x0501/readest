@@ -1202,10 +1202,6 @@
   "Actions": "Ações",
   "LXGW WenKai GB Screen": "LXGW WenKai SC",
   "LXGW WenKai TC": "LXGW WenKai TC",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Open the search result in your browser:": "Abrir o resultado da pesquisa no seu navegador:",
   "Open in {{name}}": "Abrir em {{name}}",
   "Read on Wikipedia →": "Leia na Wikipédia →",
@@ -2015,5 +2011,6 @@
   "Unnamed passkey": "Chave de acesso sem nome",
   "Adding a passkey...": "Adicionando uma chave de acesso...",
   "Add a passkey": "Adicionar chave de acesso",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Esta é uma instalação do Readest hospedada por conta própria. Não é o aplicativo nem o serviço oficial do Readest e não tem vínculo com o projeto Readest ou seus mantenedores."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Esta é uma instalação do Readest hospedada por conta própria. Não é o aplicativo nem o serviço oficial do Readest e não tem vínculo com o projeto Readest ou seus mantenedores.",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

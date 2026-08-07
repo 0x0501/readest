@@ -223,7 +223,6 @@
   "Descending": "Absteigend",
   "Sort by...": "Sortieren nach...",
   "Added": "Hinzugefügt",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
   "Description": "Beschreibung",
   "No description available": "Keine Beschreibung verfügbar",
   "List": "Liste",
@@ -302,9 +301,6 @@
   "Reset Settings": "Einstellungen zurücksetzen",
   "{{count}} pages left in chapter_one": "<0>{{count}}</0><1> Seite verbleibend im Kapitel</1>",
   "{{count}} pages left in chapter_other": "<0>{{count}}</0><1> Seiten verbleibend im Kapitel</1>",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Go to Library": "Zur Bibliothek",
   "Free Plan": "Gratis-Tarif",
   "month": "Monat",
@@ -1969,5 +1965,6 @@
   "Unnamed passkey": "Unbenannter Passkey",
   "Adding a passkey...": "Passkey wird hinzugefügt ...",
   "Add a passkey": "Passkey hinzufügen",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Dies ist eine selbst gehostete Installation von Readest. Es ist weder die offizielle Readest-App noch der offizielle Dienst und steht in keiner Verbindung zum Readest-Projekt oder dessen Betreuern."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Dies ist eine selbst gehostete Installation von Readest. Es ist weder die offizielle Readest-App noch der offizielle Dienst und steht in keiner Verbindung zum Readest-Projekt oder dessen Betreuern.",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

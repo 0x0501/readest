@@ -529,13 +529,15 @@ export const SERIF_FONTS = [
 
 export const NON_FREE_FONTS = ['Georgia', 'Times New Roman'];
 
+// Only what the reader can actually load. The three that are gone were served
+// from readest.com's own bucket, which returns no CORS header — on any other
+// deployment they were four failed requests and three picker entries that could
+// never render. `Source Han Serif SC VF` is the family name declared by the
+// CORS-open subset that replaced the old `Source Han Serif CN` link.
 export const CJK_SERIF_FONTS = [
   _('LXGW WenKai GB Screen'),
   _('LXGW WenKai TC'),
-  _('GuanKiapTsingKhai-T'),
-  _('Source Han Serif CN'),
-  _('Huiwen-MinchoGBK'),
-  _('KingHwa_OldSong'),
+  _('Source Han Serif SC VF'),
 ];
 
 export const CJK_SANS_SERIF_FONTS = ['Noto Sans SC', 'Noto Sans TC'];

@@ -560,10 +560,6 @@
   "Daily translation quota reached. Upgrade your plan to continue using AI translations.": "Kuota terjemahan harian dicapai. Naik taraf pelan anda untuk terus menggunakan terjemahan AI.",
   "LXGW WenKai GB Screen": "LXGW WenKai GB Screen",
   "LXGW WenKai TC": "LXGW WenKai TC",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
-  "Source Han Serif CN": "Source Han Serif CN",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa_OldSong",
   "Google Books": "Google Books",
   "Open Library": "Open Library",
   "Azure Translator": "Azure Translator",
@@ -1923,5 +1919,6 @@
   "Unnamed passkey": "Kunci laluan tanpa nama",
   "Adding a passkey...": "Menambah kunci laluan...",
   "Add a passkey": "Tambah kunci laluan",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Ini ialah pemasangan Readest yang dihoskan sendiri. Ia bukan aplikasi atau perkhidmatan Readest rasmi, dan tidak bergabung dengan projek Readest atau penyelenggaranya."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Ini ialah pemasangan Readest yang dihoskan sendiri. Ia bukan aplikasi atau perkhidmatan Readest rasmi, dan tidak bergabung dengan projek Readest atau penyelenggaranya.",
+  "Source Han Serif SC VF": "Source Han Serif CN"
 }

@@ -959,10 +959,6 @@
   "Navigation": "Navigacija",
   "LXGW WenKai GB Screen": "LXGW WenKai GB zaslon",
   "LXGW WenKai TC": "LXGW WenKai TC",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
-  "Source Han Serif CN": "Source Han Serif CN",
-  "Huiwen-MinchoGBK": "Huiwen-MinchoGBK",
-  "KingHwa_OldSong": "KingHwa_OldSong",
   "Google Books": "Google Books",
   "Open Library": "Open Library",
   "Book not found in library": "Knjiga ni najdena v knjižnici",
@@ -2061,5 +2057,6 @@
   "Unnamed passkey": "Neimenovan ključ za dostop",
   "Adding a passkey...": "Dodajanje ključa za dostop...",
   "Add a passkey": "Dodaj ključ za dostop",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "To je samostojno gostovana namestitev Readest. Ni uradna aplikacija ali storitev Readest in ni povezana s projektom Readest ali njegovimi vzdrževalci."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "To je samostojno gostovana namestitev Readest. Ni uradna aplikacija ali storitev Readest in ni povezana s projektom Readest ali njegovimi vzdrževalci.",
+  "Source Han Serif SC VF": "Source Han Serif CN"
 }

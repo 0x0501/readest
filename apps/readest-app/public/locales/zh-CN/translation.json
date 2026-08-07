@@ -225,7 +225,6 @@
   "Descending": "降序",
   "Sort by...": "排序方式...",
   "Added": "添加日期",
-  "GuanKiapTsingKhai-T": "原俠正楷-T",
   "Description": "简介",
   "No description available": "暂无简介",
   "List": "列表",
@@ -300,9 +299,6 @@
   "Reset {{settings}}": "重置{{settings}}",
   "Reset Settings": "重置设置",
   "{{count}} pages left in chapter_other": "<1>本章剩余 </1><0>{{count}}</0><1> 页</1>",
-  "Source Han Serif CN": "思源宋体",
-  "Huiwen-MinchoGBK": "汇文明朝体",
-  "KingHwa_OldSong": "京华老宋体",
   "Go to Library": "前往书库",
   "Free Plan": "免费套餐",
   "month": "月",
@@ -1923,5 +1919,6 @@
   "Unnamed passkey": "未命名的通行密钥",
   "Adding a passkey...": "正在添加通行密钥…",
   "Add a passkey": "添加通行密钥",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "这是自部署的 Readest 实例，不是官方的 Readest 应用或服务，与 Readest 项目及其维护者无关。"
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "这是自部署的 Readest 实例，不是官方的 Readest 应用或服务，与 Readest 项目及其维护者无关。",
+  "Source Han Serif SC VF": "思源宋体"
 }

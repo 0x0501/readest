@@ -223,7 +223,6 @@
   "Descending": "نزولی",
   "Sort by...": "مرتب‌سازی بر اساس...",
   "Added": "افزوده شده",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
   "Description": "توضیحات",
   "No description available": "هیچ توضیحی موجود نیست",
   "List": "لیست",
@@ -302,9 +301,6 @@
   "Reset Settings": "بازنشانی تنظیمات",
   "{{count}} pages left in chapter_one": "<0>{{count}}</0><1> صفحه تا انتهای فصل</1>",
   "{{count}} pages left in chapter_other": "<0>{{count}}</0><1> صفحه تا انتهای فصل</1>",
-  "Source Han Serif CN": "Source Han Serif CN",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa_OldSong",
   "Go to Library": "رفتن به کتابخانه",
   "Free Plan": "طرح رایگان",
   "month": "ماه",
@@ -1969,5 +1965,6 @@
   "Unnamed passkey": "کلید عبور بی‌نام",
   "Adding a passkey...": "در حال افزودن کلید عبور...",
   "Add a passkey": "افزودن کلید عبور",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "این یک استقرار خودمیزبان از Readest است. برنامه یا سرویس رسمی Readest نیست و هیچ وابستگی‌ای به پروژهٔ Readest یا نگهدارندگان آن ندارد."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "این یک استقرار خودمیزبان از Readest است. برنامه یا سرویس رسمی Readest نیست و هیچ وابستگی‌ای به پروژهٔ Readest یا نگهدارندگان آن ندارد.",
+  "Source Han Serif SC VF": "Source Han Serif CN"
 }

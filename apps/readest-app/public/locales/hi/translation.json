@@ -224,7 +224,6 @@
   "Descending": "अवरोही",
   "Sort by...": "द्वारा क्रमबद्ध करें...",
   "Added": "जोड़ा गया",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
   "Description": "विवरण",
   "No description available": "कोई विवरण उपलब्ध नहीं है",
   "List": "सूची",
@@ -303,9 +302,6 @@
   "Reset Settings": "सेटिंग्स रीसेट करें",
   "{{count}} pages left in chapter_one": "<1>इस अध्याय में </1><0>{{count}}</0><1> पृष्ठ शेष हैं</1>",
   "{{count}} pages left in chapter_other": "<1>इस अध्याय में </1><0>{{count}}</0><1> पृष्ठ शेष हैं</1>",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Go to Library": "लाइब्रेरी पर जाएँ",
   "Free Plan": "मुफ्त योजना",
   "month": "महीना",
@@ -1969,5 +1965,6 @@
   "Unnamed passkey": "बिना नाम की पासकी",
   "Adding a passkey...": "पासकी जोड़ी जा रही है...",
   "Add a passkey": "पासकी जोड़ें",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "यह Readest की स्व-होस्ट की गई तैनाती है। यह आधिकारिक Readest ऐप या सेवा नहीं है, और Readest परियोजना या उसके अनुरक्षकों से संबद्ध नहीं है।"
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "यह Readest की स्व-होस्ट की गई तैनाती है। यह आधिकारिक Readest ऐप या सेवा नहीं है, और Readest परियोजना या उसके अनुरक्षकों से संबद्ध नहीं है।",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

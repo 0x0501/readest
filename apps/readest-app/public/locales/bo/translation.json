@@ -224,7 +224,6 @@
   "Descending": "འཕྲི་རིམ།",
   "Sort by...": "རིམ་སྒྲིག་བྱེད་སྟངས།...",
   "Added": "ཁ་སྣོན་བྱས་པའི་ཚེས་གྲངས།",
-  "GuanKiapTsingKhai-T": "ཡོན་ཞ་ཀྲིང་ཁའེ་-T",
   "Description": "ངོ་སྤྲོད་བསྡུས་དོན།",
   "No description available": "ད་རེས་ངོ་སྤྲོད་བསྡུས་དོན་མེད།",
   "List": "ཐོ་རེའུ།",
@@ -299,9 +298,6 @@
   "Reset {{settings}}": "{{settings}} བསྐྱར་སྒྲིག",
   "Reset Settings": "སྒྲིག་བཀོད་བསྐྱར་སྒྲིག",
   "{{count}} pages left in chapter_other": "<1>ལེའུ་འདིར་ད་དུང་ </1><0>{{count}}</0><1> ཤོག་ལྷེ་ལྷག་ཡོད།</1>",
-  "Source Han Serif CN": "སི་ཡོན་སུང་ཐི།",
-  "Huiwen-MinchoGBK": "ཧུའེ་ཝུན་མིང་ཁྲའོ་ཐི།",
-  "KingHwa_OldSong": "ཅིང་ཧྭ་ལའོ་སུང་ཐི།",
   "Go to Library": "དཔེ་མཛོད་ལ་འགྲོ།",
   "Free Plan": "རིན་མེད་ཐུམ་སྒྲིལ།",
   "month": "ཟླ་བ།",
@@ -1923,5 +1919,6 @@
   "Unnamed passkey": "མིང་མེད་ལྡེ་མིག",
   "Adding a passkey...": "ལྡེ་མིག་སྣོན་བཞིན་པ...",
   "Add a passkey": "ལྡེ་མིག་སྣོན།",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "འདི་ནི་Readest་རང་ཉིད་ཀྱིས་བཀོད་སྒྲིག་བྱས་པའི་ཞབས་ཞུ་ཞིག་ཡིན། Readest་ཀྱི་དངོས་གཞིའི་མཉེན་ཆས་སམ་ཞབས་ཞུ་མིན་ལ། Readest་ལས་གཞི་དང་དེའི་སྐྱོང་མཁན་དང་འབྲེལ་བ་མེད།"
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "འདི་ནི་Readest་རང་ཉིད་ཀྱིས་བཀོད་སྒྲིག་བྱས་པའི་ཞབས་ཞུ་ཞིག་ཡིན། Readest་ཀྱི་དངོས་གཞིའི་མཉེན་ཆས་སམ་ཞབས་ཞུ་མིན་ལ། Readest་ལས་གཞི་དང་དེའི་སྐྱོང་མཁན་དང་འབྲེལ་བ་མེད།",
+  "Source Han Serif SC VF": "སི་ཡོན་སུང་ཐི།"
 }

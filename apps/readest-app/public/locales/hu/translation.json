@@ -1042,10 +1042,6 @@
   "Actions": "Műveletek",
   "LXGW WenKai GB Screen": "LXGW WenKai GB Screen",
   "LXGW WenKai TC": "LXGW WenKai TC",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
-  "Source Han Serif CN": "Source Han Serif CN",
-  "Huiwen-MinchoGBK": "Huiwen-MinchoGBK",
-  "KingHwa_OldSong": "KingHwa_OldSong",
   "No chapters detected": "Nem találhatók fejezetek",
   "Failed to parse the EPUB file": "Az EPUB fájl feldolgozása sikertelen",
   "This book format is not supported": "Ez a könyvformátum nem támogatott",
@@ -1969,5 +1965,6 @@
   "Unnamed passkey": "Névtelen azonosítókulcs",
   "Adding a passkey...": "Azonosítókulcs hozzáadása...",
   "Add a passkey": "Azonosítókulcs hozzáadása",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Ez a Readest saját üzemeltetésű telepítése. Nem a hivatalos Readest alkalmazás vagy szolgáltatás, és nem áll kapcsolatban a Readest projekttel vagy annak karbantartóival."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Ez a Readest saját üzemeltetésű telepítése. Nem a hivatalos Readest alkalmazás vagy szolgáltatás, és nem áll kapcsolatban a Readest projekttel vagy annak karbantartóival.",
+  "Source Han Serif SC VF": "Source Han Serif CN"
 }

@@ -223,7 +223,6 @@
   "Descending": "تنازلي",
   "Sort by...": "ترتيب حسب...",
   "Added": "تاريخ الإضافة",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
   "Description": "الوصف",
   "No description available": "لا يوجد وصف متاح",
   "List": "قائمة",
@@ -318,9 +317,6 @@
   "{{count}} pages left in chapter_few": "<1>تبقّت </1><0>{{count}}</0><1> صفحات في هذا الفصل</1>",
   "{{count}} pages left in chapter_many": "<1>تبقّت </1><0>{{count}}</0><1> صفحة في هذا الفصل</1>",
   "{{count}} pages left in chapter_other": "<1>تبقّى </1><0>{{count}}</0><1> صفحة في هذا الفصل</1>",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Go to Library": "الانتقال إلى المكتبة",
   "Free Plan": "الخطة المجانية",
   "month": "شهر",
@@ -2153,5 +2149,6 @@
   "Unnamed passkey": "مفتاح مرور بلا اسم",
   "Adding a passkey...": "جارٍ إضافة مفتاح مرور...",
   "Add a passkey": "إضافة مفتاح مرور",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "هذا نشر ذاتي الاستضافة لـ Readest. ليس تطبيق Readest الرسمي ولا خدمته، وليس له أي ارتباط بمشروع Readest أو القائمين عليه."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "هذا نشر ذاتي الاستضافة لـ Readest. ليس تطبيق Readest الرسمي ولا خدمته، وليس له أي ارتباط بمشروع Readest أو القائمين عليه.",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

@@ -224,7 +224,6 @@
   "Descending": "Giảm dần",
   "Sort by...": "Sắp xếp theo...",
   "Added": "Đã thêm",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
   "Description": "Miêu tả",
   "No description available": "Không có mô tả nào",
   "List": "Danh sách",
@@ -299,9 +298,6 @@
   "Reset {{settings}}": "Đặt lại {{settings}}",
   "Reset Settings": "Đặt lại cài đặt",
   "{{count}} pages left in chapter_other": "<1>Còn </1><0>{{count}}</0><1> trang trong chương</1>",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Go to Library": "Đi đến Thư viện",
   "Free Plan": "Gói miễn phí",
   "month": "tháng",
@@ -1923,5 +1919,6 @@
   "Unnamed passkey": "Khóa truy cập chưa đặt tên",
   "Adding a passkey...": "Đang thêm khóa truy cập...",
   "Add a passkey": "Thêm khóa truy cập",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Đây là bản Readest tự lưu trữ. Đây không phải ứng dụng hay dịch vụ Readest chính thức, và không liên kết với dự án Readest hoặc những người duy trì dự án."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Đây là bản Readest tự lưu trữ. Đây không phải ứng dụng hay dịch vụ Readest chính thức, và không liên kết với dự án Readest hoặc những người duy trì dự án.",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

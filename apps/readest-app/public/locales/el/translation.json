@@ -224,7 +224,6 @@
   "Descending": "Φθίνουσα",
   "Sort by...": "Ταξινόμηση κατά...",
   "Added": "Προστέθηκε",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
   "Description": "Περιγραφή",
   "No description available": "Δεν είναι διαθέσιμη καμία περιγραφή",
   "List": "Λίστα",
@@ -303,9 +302,6 @@
   "Reset Settings": "Επαναφορά ρυθμίσεων",
   "{{count}} pages left in chapter_one": "<1>Μένει </1><0>{{count}}</0><1> σελίδα</1>",
   "{{count}} pages left in chapter_other": "<1>Μένουν </1><0>{{count}}</0><1> σελίδες</1>",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Go to Library": "Μετάβαση στη βιβλιοθήκη",
   "Free Plan": "Δωρεάν πρόγραμμα",
   "month": "μήνας",
@@ -1969,5 +1965,6 @@
   "Unnamed passkey": "Κλειδί πρόσβασης χωρίς όνομα",
   "Adding a passkey...": "Προσθήκη κλειδιού πρόσβασης...",
   "Add a passkey": "Προσθήκη κλειδιού πρόσβασης",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Αυτή είναι μια αυτοφιλοξενούμενη εγκατάσταση του Readest. Δεν είναι η επίσημη εφαρμογή ή υπηρεσία Readest και δεν σχετίζεται με το έργο Readest ή τους συντηρητές του."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Αυτή είναι μια αυτοφιλοξενούμενη εγκατάσταση του Readest. Δεν είναι η επίσημη εφαρμογή ή υπηρεσία Readest και δεν σχετίζεται με το έργο Readest ή τους συντηρητές του.",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

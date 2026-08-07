@@ -1178,10 +1178,6 @@
   "Actions": "Amallar",
   "LXGW WenKai GB Screen": "LXGW WenKai SC",
   "LXGW WenKai TC": "LXGW WenKai TC",
-  "GuanKiapTsingKhai-T": "GuanKiapTsingKhai-T",
-  "Source Han Serif CN": "Source Han Serif",
-  "Huiwen-MinchoGBK": "Huiwen Mincho",
-  "KingHwa_OldSong": "KingHwa Song",
   "Open the search result in your browser:": "Qidiruv natijasini brauzeringizda oching:",
   "Open in {{name}}": "{{name}} da ochish",
   "Read on Wikipedia →": "Wikipedia-da oʻqish →",
@@ -1969,5 +1965,6 @@
   "Unnamed passkey": "Nomsiz kirish kaliti",
   "Adding a passkey...": "Kirish kaliti qo‘shilmoqda...",
   "Add a passkey": "Kirish kaliti qo‘shish",
-  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Bu Readest ilovasining mustaqil joylashtirilgan nusxasi. U rasmiy Readest ilovasi yoki xizmati emas va Readest loyihasi hamda uning ishlab chiquvchilari bilan bog‘liq emas."
+  "This is a self-hosted deployment of Readest. It is not the official Readest app or service, and is not affiliated with the Readest project or its maintainers.": "Bu Readest ilovasining mustaqil joylashtirilgan nusxasi. U rasmiy Readest ilovasi yoki xizmati emas va Readest loyihasi hamda uning ishlab chiquvchilari bilan bog‘liq emas.",
+  "Source Han Serif SC VF": "Source Han Serif"
 }

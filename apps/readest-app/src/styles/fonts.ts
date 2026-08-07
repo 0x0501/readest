@@ -38,10 +38,15 @@ const getAdditionalBasicFontLinks = () => `
 const getAdditionalCJKFontLinks = () => `
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/misans-webfont@1.0.4/misans-l3/misans-l3/result.min.css" crossorigin="anonymous" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lxgw-wenkai-screen-web/1.520.0/lxgwwenkaigbscreen/result.css" crossorigin="anonymous" />
-  <link rel='stylesheet' href='https://storage.readest.com/public/font/dist/Huiwen-MinchoGBK/result.css' crossorigin="anonymous" />
-  <link rel='stylesheet' href='https://storage.readest.com/public/font/dist/KingHwa_OldSong/result.css' crossorigin="anonymous" />
-  <link rel='stylesheet' href='https://storage.readest.com/public/font/dist/Source%20Han%20Serif%20CN/result.css' crossorigin="anonymous" />
-  <link rel='stylesheet' href='https://storage.readest.com/public/font/dist/GuanKiapTsingKhai-T/result.css' crossorigin="anonymous" />
+  <!-- storage.readest.com answers 200 with no Access-Control-Allow-Origin, so
+       these subsets load on readest.com's own origins and nowhere else. The
+       stylesheets that used to be fetched from there — Huiwen-MinchoGBK,
+       KingHwa_OldSong, GuanKiapTsingKhai-T — have no CORS-open publication at a
+       usable size (npm carries only unsubsetted 20+ MB TTFs), so they are gone
+       rather than requested and rejected on every book. Source Han Serif is
+       kept: chinese-fonts-CDN publishes the same typeface properly subsetted,
+       1270 unicode-range slices, served with an open Access-Control-Allow-Origin. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cn-fontsource-source-han-serif-sc-vf@1.0.9/font.css" crossorigin="anonymous" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?${cjkGoogleFonts
     .map(
       ({ family, weights }) =>

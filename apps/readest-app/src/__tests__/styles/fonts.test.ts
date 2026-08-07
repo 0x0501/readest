@@ -334,6 +334,23 @@ describe('mountAdditionalFonts', () => {
     expect(hrefs.some((h) => h.includes('fonts.googleapis.com'))).toBe(true);
   });
 
+  // storage.readest.com answers 200 with no Access-Control-Allow-Origin, so a
+  // stylesheet fetched from there loads on readest.com's own origins and is
+  // blocked everywhere else — a fork gets four failed requests per book and
+  // three font choices that can never render. Every remaining CJK source has to
+  // be one that serves cross-origin.
+  it('mounts no CJK stylesheet from a host that refuses cross-origin reads', async () => {
+    vi.mocked(isCJKEnv).mockReturnValue(true);
+
+    await mountAdditionalFonts(document, true);
+
+    const hrefs = Array.from(document.head.querySelectorAll('link[rel="stylesheet"]')).map(
+      (l) => l.getAttribute('href') ?? '',
+    );
+    expect(hrefs.length).toBeGreaterThan(0);
+    expect(hrefs.filter((h) => h.includes('storage.readest.com'))).toEqual([]);
+  });
+
   it('should set crossOrigin on link tags', async () => {
     await mountAdditionalFonts(document);
 

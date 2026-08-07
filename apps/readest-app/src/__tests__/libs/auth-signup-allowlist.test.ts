@@ -77,3 +77,20 @@ describe('isSignupAllowed', () => {
     expect(allowed('example.com')).toBe(false);
   });
 });
+
+// Memory rate limits are per-isolate and evaporate on cold start on Workers, so
+// the auth limiter has to write to the database (ADR-020). A silent drift back
+// to memory would look fine in tests and be off in production.
+describe('auth rate limiting', () => {
+  it('uses database storage and keys on the Cloudflare client IP', async () => {
+    const auth = (await loadAuth())({} as never);
+    expect(auth.options.rateLimit).toMatchObject({
+      enabled: true,
+      storage: 'database',
+    });
+    expect(auth.options.advanced?.ipAddress?.ipAddressHeaders).toEqual([
+      'cf-connecting-ip',
+      'x-forwarded-for',
+    ]);
+  });
+});

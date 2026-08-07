@@ -152,7 +152,27 @@ export const createAuth = (db: Db, { sendMail }: { sendMail?: SendMail } = {}) =
     // Better Auth's default is a random text id. UUID keeps `public."user".id`
     // compatible with the twelve `user_id uuid` foreign keys upstream declares
     // and with the `${user.id}/${fileName}` object-storage key layout.
-    advanced: { database: { generateId: 'uuid' } },
+    //
+    // `ipAddressHeaders` is what rate limiting keys on. On Cloudflare the only
+    // address that cannot be spoofed by the client is `cf-connecting-ip`
+    // (ADR-020); without it every request collapses into one shared bucket.
+    advanced: {
+      database: { generateId: 'uuid' },
+      ipAddress: { ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'] },
+    },
+
+    // Auth endpoints are the highest-value target on a public Worker: credential
+    // stuffing, reset-mail flooding, and passkey ceremony spam all land here.
+    // Memory storage is the Better Auth default and is useless across Worker
+    // isolates, so counters live in Postgres next to the rest of the auth tables
+    // (ADR-020). Built-in special rules already tighten sign-in / sign-up
+    // (3 per 10s) and password-reset (3 per 60s); the global window is a backstop.
+    rateLimit: {
+      enabled: true,
+      window: 60,
+      max: 100,
+      storage: 'database',
+    },
 
     emailAndPassword: {
       enabled: true,

@@ -162,6 +162,13 @@
       "when": 24,
       "tag": "local_004_passkey",
       "breakpoints": false
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 25,
+      "tag": "local_005_rate_limit",
+      "breakpoints": false
     }
   ]
 }

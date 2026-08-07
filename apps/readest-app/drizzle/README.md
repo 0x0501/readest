@@ -19,6 +19,7 @@ listed there, in that order, and nothing else in this directory is applied.
 | `000_base_schema.sql` | Ours, but a copy of upstream's `docker/volumes/db/init/schema.sql` (the DDL for a fresh install) minus its two `ALTER FUNCTION auth.* OWNER` lines. Upstream ships that file but never applies it as a migration. |
 | `local_001_better_auth.sql` | Ours, generated. Better Auth's six tables. |
 | `local_002_repoint_user_fks.sql` | Ours. Moves the twelve `user_id` foreign keys off the `auth.users` stub and onto `public."user"`. |
+| `local_005_rate_limit.sql` | Ours. Better Auth's `rateLimit` counters (ADR-020) — database storage so limits hold across Worker isolates. |
 
 Symlinking rather than copying means upstream's SQL stays the single source of
 truth for the schema, and no DDL is ever translated by hand (ADR-003).

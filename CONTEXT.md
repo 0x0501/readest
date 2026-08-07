@@ -45,3 +45,9 @@ _Avoid_: biometric login, Face ID login, security key
 A single-use Turnstile token attached to a sign-in, sign-up or reset request.
 Spent on first verification, so a retry needs a fresh one.
 _Avoid_: challenge, captcha response
+
+**Auth rate limit**:
+The Cloudflare `AUTH_RATE_LIMITER` binding on `/api/auth/*`, keyed by client IP
+before any database work, plus Better Auth's database-backed path rules (sign-in
+3/10s, password-reset 3/60s).
+_Avoid_: throttle, quota (those mean storage/translation plan ceilings)

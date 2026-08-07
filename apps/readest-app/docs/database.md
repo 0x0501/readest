@@ -355,3 +355,23 @@ configuration change; the default keeps it right under `next dev`, where the hos
 is `localhost`. The passkey UI is hidden outside the web platform: Tauri's
 webviews load from a custom scheme, and WebAuthn's origin check cannot be
 satisfied from one.
+
+### ADR-020: Rate limiting is only on `/api/auth/*`
+
+**Context.** This is a single-operator Worker. The attack surface worth
+throttling is credential endpoints: stuffing, reset-mail floods, passkey spam.
+Better Auth's default rate limiter is in-memory, which on Workers is per-isolate
+and evaporates on cold start — effectively off under load.
+
+**Decision.** Two complementary limits on auth only:
+
+1. **Cloudflare Rate Limiting binding** `AUTH_RATE_LIMITER` (by IP, before any
+   DB open), via `src/libs/rateLimit.ts`.
+2. **Better Auth `rateLimit` with `storage: 'database'`**, keyed on
+   `cf-connecting-ip`. Path-specific special rules (3 sign-ins per 10s, 3
+   password-reset mails per 60s) run inside the handler on top of the Cloudflare
+   gate. The `rateLimit` table is `local_005_rate_limit.sql`.
+
+**Consequences.** Auth floods never open a Hyperdrive connection. Path-specific
+limits survive isolate churn because they live in Postgres. Outside the Worker
+(`next dev`, vitest) the Cloudflare binding is absent and the check is a no-op.

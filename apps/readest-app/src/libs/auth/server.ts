@@ -167,8 +167,11 @@ export const createAuth = (db: Db, { sendMail }: { sendMail?: SendMail } = {}) =
     // isolates, so counters live in Postgres next to the rest of the auth tables
     // (ADR-020). Built-in special rules already tighten sign-in / sign-up
     // (3 per 10s) and password-reset (3 per 60s); the global window is a backstop.
+    //
+    // `enabled` is left to Better Auth's production default. The auth-gate pg
+    // suite fires more sign-ups and resets than those special rules allow, and
+    // forcing the limiter on would turn later assertions into 429s.
     rateLimit: {
-      enabled: true,
       window: 60,
       max: 100,
       storage: 'database',

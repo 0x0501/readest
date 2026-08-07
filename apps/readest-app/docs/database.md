@@ -370,7 +370,9 @@ and evaporates on cold start — effectively off under load.
 2. **Better Auth `rateLimit` with `storage: 'database'`**, keyed on
    `cf-connecting-ip`. Path-specific special rules (3 sign-ins per 10s, 3
    password-reset mails per 60s) run inside the handler on top of the Cloudflare
-   gate. The `rateLimit` table is `local_005_rate_limit.sql`.
+   gate. The `rateLimit` table is `local_005_rate_limit.sql`. `enabled` is left
+   to Better Auth's production default so the auth-gate pg suite is not
+   throttled by the same special rules it exercises.
 
 **Consequences.** Auth floods never open a Hyperdrive connection. Path-specific
 limits survive isolate churn because they live in Postgres. Outside the Worker

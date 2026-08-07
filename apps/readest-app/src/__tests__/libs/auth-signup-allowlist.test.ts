@@ -80,12 +80,17 @@ describe('isSignupAllowed', () => {
 
 // Memory rate limits are per-isolate and evaporate on cold start on Workers, so
 // the auth limiter has to write to the database (ADR-020). A silent drift back
-// to memory would look fine in tests and be off in production.
+// to memory would look fine in tests and be off in production. `enabled` is
+// deliberately left unset so Better Auth's production default applies — the
+// auth-gate pg suite would otherwise exhaust the sign-up special rule.
 describe('auth rate limiting', () => {
   it('uses database storage and keys on the Cloudflare client IP', async () => {
     const auth = (await loadAuth())({} as never);
-    expect(auth.options.rateLimit).toMatchObject({
-      enabled: true,
+    // `enabled` is intentionally absent from the options object so Better Auth
+    // applies its production default — do not reintroduce a forced true here.
+    expect(auth.options.rateLimit).toEqual({
+      window: 60,
+      max: 100,
       storage: 'database',
     });
     expect(auth.options.advanced?.ipAddress?.ipAddressHeaders).toEqual([

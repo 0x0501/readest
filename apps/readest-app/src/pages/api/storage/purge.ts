@@ -4,6 +4,7 @@ import { validateUserAndToken } from '@/libs/auth/verify';
 import { schema, withDb } from '@/libs/db';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
 import { deleteObject } from '@/utils/object';
+import { clientSafeMessage } from '@/libs/errors';
 
 interface BulkDeleteResult {
   success: string[];
@@ -81,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return {
               fileKey: fileRecord.fileKey,
               success: false,
-              error: error instanceof Error ? error.message : 'Unknown error',
+              error: clientSafeMessage(error, 'Unknown error'),
             };
           }
         }),

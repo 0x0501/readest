@@ -6,6 +6,7 @@ import { EMAIL_IN_PLANS, getUserProfilePlan, isEmailInPlan } from '@/utils/acces
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
 import { normalizeSenderEmail } from '@/services/send/sendAddress';
 import type { DBSendAllowedSender } from '@/types/sendRecords';
+import { clientSafeMessage } from '@/libs/errors';
 
 // Linear-time email check: domain labels exclude '.' so there is no
 // quantifier ambiguity (a polynomial-backtracking ReDoS would need it).
@@ -92,9 +93,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       return res.status(405).json({ error: 'Method not allowed' });
     } catch (error) {
-      return res
-        .status(500)
-        .json({ error: error instanceof Error ? error.message : 'Request failed' });
+      return res.status(500).json({ error: clientSafeMessage(error, 'Request failed') });
     }
   });
 }

@@ -1,6 +1,7 @@
 import { validateRequestUser } from '@/libs/auth/verify';
 import { streamText, createGateway } from 'ai';
 import type { ModelMessage } from 'ai';
+import { clientSafeMessage } from '@/libs/errors';
 
 export async function POST(req: Request): Promise<Response> {
   try {
@@ -37,7 +38,7 @@ export async function POST(req: Request): Promise<Response> {
 
     return result.toTextStreamResponse();
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = clientSafeMessage(error, 'Unknown error');
     return new Response(JSON.stringify({ error: `Chat failed: ${errorMessage}` }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

@@ -4,6 +4,7 @@ import { validateUserAndToken } from '@/libs/auth/verify';
 import { withDb } from '@/libs/db';
 import { withUserContext } from '@/libs/db/rpc';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
+import { clientSafeMessage } from '@/libs/errors';
 
 /**
  * Drainer state transitions for a claimed inbox item — `renew` the lease,
@@ -50,9 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const value = Object.values(result.rows[0] ?? {})[0];
       return res.status(200).json({ ok: Boolean(value) });
     } catch (error) {
-      return res
-        .status(500)
-        .json({ error: error instanceof Error ? error.message : 'Transition failed' });
+      return res.status(500).json({ error: clientSafeMessage(error, 'Transition failed') });
     }
   });
 }

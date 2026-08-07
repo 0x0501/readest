@@ -119,12 +119,13 @@ export async function POST(request: NextRequest) {
     const responseTime = Date.now() - startTime;
     console.error('Search API error:', error);
 
-    let errorMessage = 'Internal server error';
+    const errorMessage = 'Internal server error';
     let statusCode = 500;
 
     if (error instanceof Error) {
-      errorMessage = error.message;
-
+      // Classified from the message but never carrying it: this route calls
+      // out to metadata providers, and a failed request's message can include
+      // the URL it was made to — which is where the provider API key lives.
       if (error.message.includes('rate limit')) {
         statusCode = 429;
       } else if (error.message.includes('forbidden') || error.message.includes('API key')) {

@@ -7,6 +7,7 @@ import { parseSubjectTag } from '@/services/send/sendAddress';
 import type { DBSendInboxItem } from '@/types/sendRecords';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
 import { putObject } from '@/utils/object';
+import { clientSafeMessage } from '@/libs/errors';
 
 const RECENT_LIMIT = 20;
 const MAX_CLIP_HTML_BYTES = 5 * 1024 * 1024;
@@ -150,9 +151,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       return res.status(200).json({ id: row.id });
     } catch (error) {
-      return res
-        .status(500)
-        .json({ error: error instanceof Error ? error.message : 'Request failed' });
+      return res.status(500).json({ error: clientSafeMessage(error, 'Request failed') });
     }
   });
 }

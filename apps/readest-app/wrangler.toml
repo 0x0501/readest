@@ -25,11 +25,16 @@ TEMP_STORAGE_PUBLIC_BUCKET_NAME = "readest-public"
 STORAGE_FIXED_QUOTA = "107374182400"
 TRANSLATION_FIXED_QUOTA = "10485760"
 
+# Every request, not a sample. Failures now tell the caller only that something
+# went wrong (ADR-019), so the log is the only place the reason exists — and a
+# 1% sample means the one failure worth reading is almost certainly the 99 that
+# were dropped. This is a single-operator instance; the volume is not the kind
+# sampling exists for.
 [observability]
 enabled = true
-head_sampling_rate = 0.01
-logs = { head_sampling_rate = 0.01 }
-traces = { head_sampling_rate = 0.01 }
+head_sampling_rate = 1.0
+logs = { head_sampling_rate = 1.0 }
+traces = { head_sampling_rate = 1.0 }
 
 [assets]
 directory = ".open-next/assets"

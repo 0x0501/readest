@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { embed, embedMany, createGateway } from 'ai';
 import { validateRequestUser } from '@/libs/auth/verify';
+import { clientSafeMessage } from '@/libs/errors';
 
 export async function POST(req: Request): Promise<Response> {
   try {
@@ -33,7 +34,7 @@ export async function POST(req: Request): Promise<Response> {
       return NextResponse.json({ embeddings });
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = clientSafeMessage(error, 'Unknown error');
     return NextResponse.json({ error: `Embedding failed: ${errorMessage}` }, { status: 500 });
   }
 }

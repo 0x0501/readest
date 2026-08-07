@@ -305,7 +305,11 @@ async function handleRequest(request: NextRequest, method: 'GET' | 'HEAD') {
 
       return NextResponse.json(
         {
-          error: error.message,
+          // Not `error.message`: a fetch failure carries resolution and
+          // connection detail about this deployment's own network, and the
+          // caller cannot act on any of it. They supplied the URL, so echoing
+          // that back is theirs already.
+          error: 'Could not fetch the OPDS feed',
           url: url,
           hint: 'Check if the OPDS URL is accessible and returns valid OPDS/Atom/JSON content',
         },

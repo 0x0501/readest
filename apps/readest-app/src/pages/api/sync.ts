@@ -18,6 +18,7 @@ import {
   StatPageRecord,
 } from '@/libs/sync';
 import { DBBook, DBBookConfig } from '@/types/records';
+import { clientSafeMessage, describeError, SyncError } from '@/libs/errors';
 
 const pageKey = (r: StatPageRecord) => `${r.book_hash}|${r.page}|${r.start_time}`;
 
@@ -529,8 +530,8 @@ export async function GET(req: NextRequest) {
       response.headers.delete('ETag');
       return response;
     } catch (error: unknown) {
-      console.error(error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('sync request failed:', describeError(error));
+      const errorMessage = clientSafeMessage(error, 'Unknown error');
       return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
   });
@@ -714,8 +715,17 @@ export async function POST(req: NextRequest) {
               .returning(wireColumnsOf(table))) as unknown as BookDataRecord[];
             batchAuthoritativeRecords.push(...inserted);
           } catch (error) {
-            console.log(`Failed to insert ${table} records:`, JSON.stringify(toInsert));
-            return { error: error instanceof Error ? error.message : 'Insert failed' };
+            // The reason has to be logged here: the caller is told something
+            // deliberately vague, and the rethrow above this carries only that
+            // vague message. Row keys rather than the rows themselves — the
+            // payload is the reader's own library, and this is the last place
+            // it should be copied into a log.
+            console.error(
+              `Failed to insert ${table} records`,
+              { keys: toInsert.map((row) => (row as { book_hash?: string }).book_hash) },
+              describeError(error),
+            );
+            return { error: clientSafeMessage(error, 'Insert failed') };
           }
         }
 
@@ -733,8 +743,12 @@ export async function POST(req: NextRequest) {
               .returning(wireColumnsOf(table))) as unknown as BookDataRecord[];
             batchAuthoritativeRecords.push(...updated);
           } catch (error) {
-            console.log(`Failed to update ${table} records:`, JSON.stringify(toUpdate));
-            return { error: error instanceof Error ? error.message : 'Update failed' };
+            console.error(
+              `Failed to update ${table} records`,
+              { keys: toUpdate.map((row) => (row as { book_hash?: string }).book_hash) },
+              describeError(error),
+            );
+            return { error: clientSafeMessage(error, 'Update failed') };
           }
         }
 
@@ -759,9 +773,12 @@ export async function POST(req: NextRequest) {
         notes as BookDataRecord[],
       );
 
-      if (booksResult?.error) throw new Error(booksResult.error);
-      if (configsResult?.error) throw new Error(configsResult.error);
-      if (notesResult?.error) throw new Error(notesResult.error);
+      // SyncError rather than Error: `upsertRecords` has already reduced the
+      // database's own message to something the caller may see, and the outer
+      // handler only forwards a message it can tell was written for them.
+      if (booksResult?.error) throw new SyncError('SERVER', booksResult.error);
+      if (configsResult?.error) throw new SyncError('SERVER', configsResult.error);
+      if (notesResult?.error) throw new SyncError('SERVER', notesResult.error);
 
       // Piggyback the per-book reading progress from the configs push onto the
       // matching `books` row. Other devices' library pull-to-refresh reads
@@ -911,8 +928,8 @@ export async function POST(req: NextRequest) {
         { status: 200 },
       );
     } catch (error: unknown) {
-      console.error(error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('sync request failed:', describeError(error));
+      const errorMessage = clientSafeMessage(error, 'Unknown error');
       return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
   });

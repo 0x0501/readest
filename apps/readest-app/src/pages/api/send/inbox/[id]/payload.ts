@@ -5,6 +5,7 @@ import { schema, withDb } from '@/libs/db';
 import { SEND_INBOX_BUCKET } from '@/services/constants';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
 import { getDownloadSignedUrl } from '@/utils/object';
+import { clientSafeMessage } from '@/libs/errors';
 
 const DOWNLOAD_TTL_SECONDS = 600;
 
@@ -41,9 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .where(and(eq(schema.sendInbox.id, id), eq(schema.sendInbox.userId, user.id)))
         .limit(1);
     } catch (error) {
-      return res
-        .status(500)
-        .json({ error: error instanceof Error ? error.message : 'Lookup failed' });
+      return res.status(500).json({ error: clientSafeMessage(error, 'Lookup failed') });
     }
     if (!item) {
       return res.status(404).json({ error: 'Inbox item not found' });

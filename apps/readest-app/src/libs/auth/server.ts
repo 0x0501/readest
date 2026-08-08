@@ -1,6 +1,6 @@
 import { apiKey } from '@better-auth/api-key';
 import { passkey } from '@better-auth/passkey';
-import { betterAuth } from 'better-auth';
+import { betterAuth } from 'better-auth/minimal';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { captcha } from 'better-auth/plugins';

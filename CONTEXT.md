@@ -47,7 +47,17 @@ Spent on first verification, so a retry needs a fresh one.
 _Avoid_: challenge, captcha response
 
 **Auth rate limit**:
-The Cloudflare `AUTH_RATE_LIMITER` binding on `/api/auth/*`, keyed by client IP
-before any database work, plus Better Auth's database-backed path rules (sign-in
-3/10s, password-reset 3/60s).
-_Avoid_: throttle, quota (those mean storage/translation plan ceilings)
+The Cloudflare `AUTH_RATE_LIMITER` binding on `/api/auth/*` only, keyed by
+client IP, evaluated before any database work. Better Auth's own rate limiter is
+disabled on this deployment (ADR-021). It is not Postgres, not Hyperdrive, and
+not a storage or translation ceiling.
+_Avoid_: throttle, quota (those mean storage/translation plan ceilings), Better
+Auth rate limit (as a name for what we run in production)
+
+**Session cookie cache**:
+A short-lived, signed cookie that holds a Better Auth session snapshot so
+`get-session` can answer without opening the database. Max age is ten minutes
+(ADR-022). Not a substitute for the session token cookie; not Hyperdrive query
+caching.
+_Avoid_: JWT, access token, session cookie (the signed session *token* is
+separate), HTTP cache

@@ -45,9 +45,17 @@ export type Db = ReturnType<typeof drizzle<typeof schema>>;
  * pools on its side, so a single connection per request is both required and
  * cheap. Taking a callback rather than returning the connection means no caller
  * can forget to release it.
+ *
+ * `connectionTimeoutMillis` fails fast when Hyperdrive/origin cannot hand out a
+ * socket (see docs/auth-perf-fix.md). Prefer a short 5xx over multi-minute hangs
+ * that burn Worker CPU and pin origin connections.
  */
 export const withDb = async <T>(fn: (db: Db) => Promise<T>): Promise<T> => {
-  const pool = new Pool({ connectionString: getConnectionString(), max: 1 });
+  const pool = new Pool({
+    connectionString: getConnectionString(),
+    max: 1,
+    connectionTimeoutMillis: 5_000,
+  });
   try {
     return await fn(drizzle(pool, { schema }));
   } finally {

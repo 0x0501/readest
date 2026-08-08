@@ -424,8 +424,8 @@ export const passkey = pgTable(
   ],
 );
 
-// Better Auth rate-limit counters (ADR-020). Storage is database rather than
-// memory so the limit holds across Worker isolates.
+// Better Auth rate-limit counters (historical ADR-020). Runtime no longer
+// writes here (ADR-021); table retained for migration history.
 export const rateLimit = pgTable('rateLimit', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   key: text().notNull().unique(),

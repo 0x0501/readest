@@ -85,9 +85,8 @@ service = "readest-share-og"
 # TRANSLATIONS_KV (DeepL response cache) is dropped: this deployment configures
 # no DeepL key, and the binding is optional at the call site.
 
-# Cloudflare Rate Limiting for /api/auth/* (ADR-020). `period` must be 10 or 60;
-# the limit is tokens per client IP per colo. Path-specific rules live in Better
-# Auth's database-backed limiter; this binding is the edge gate before any DB open.
+# Cloudflare Rate Limiting for /api/auth/* — the only auth rate limit (ADR-021).
+# `period` must be 10 or 60; tokens per client IP per colo, before any DB open.
 [[ratelimits]]
 name = "AUTH_RATE_LIMITER"
 namespace_id = "1001"

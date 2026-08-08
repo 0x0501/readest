@@ -356,24 +356,58 @@ is `localhost`. The passkey UI is hidden outside the web platform: Tauri's
 webviews load from a custom scheme, and WebAuthn's origin check cannot be
 satisfied from one.
 
-### ADR-020: Rate limiting is only on `/api/auth/*`
+### ADR-020: Rate limiting is only on `/api/auth/*` (superseded in part by ADR-021)
+
+**Status.** Superseded by **ADR-021** for *how* auth is limited. The scope
+decision — rate limiting applies only to `/api/auth/*`, not the whole API —
+still holds.
 
 **Context.** This is a single-operator Worker. The attack surface worth
 throttling is credential endpoints: stuffing, reset-mail floods, passkey spam.
 Better Auth's default rate limiter is in-memory, which on Workers is per-isolate
 and evaporates on cold start — effectively off under load.
 
-**Decision.** Two complementary limits on auth only:
+**Original decision (historical).** Two complementary limits on auth only:
+Cloudflare `AUTH_RATE_LIMITER` before any DB open, plus Better Auth
+`rateLimit` with `storage: 'database'` and path-specific special rules. The
+`rateLimit` table is `local_005_rate_limit.sql`.
 
-1. **Cloudflare Rate Limiting binding** `AUTH_RATE_LIMITER` (by IP, before any
-   DB open), via `src/libs/rateLimit.ts`.
-2. **Better Auth `rateLimit` with `storage: 'database'`**, keyed on
-   `cf-connecting-ip`. Path-specific special rules (3 sign-ins per 10s, 3
-   password-reset mails per 60s) run inside the handler on top of the Cloudflare
-   gate. The `rateLimit` table is `local_005_rate_limit.sql`. `enabled` is left
-   to Better Auth's production default so the auth-gate pg suite is not
-   throttled by the same special rules it exercises.
+**Why it was revisited.** Database-backed counters are a read-modify-write
+path. Under Hyperdrive query caching, stale `SELECT`s made CAS updates fail and
+retry without bound, producing ~10⁵ no-op `UPDATE`s on `"rateLimit"`, CPU
+timeouts, and multi-minute `/get-session` (see `docs/auth-perf-fix.md`).
 
-**Consequences.** Auth floods never open a Hyperdrive connection. Path-specific
-limits survive isolate churn because they live in Postgres. Outside the Worker
-(`next dev`, vitest) the Cloudflare binding is absent and the check is a no-op.
+### ADR-021: Auth rate limit is edge-only
+
+**Context.** ADR-020's Postgres-backed Better Auth limiter caused a Hyperdrive
+query storm and Worker CPU exhaustion on a single-operator instance that already
+had an edge rate limit and Turnstile.
+
+**Decision.** **Auth rate limit** is only the Cloudflare `AUTH_RATE_LIMITER`
+binding (20 requests / 60s / IP today), applied in `src/libs/rateLimit.ts`
+before `withDb`. Better Auth `rateLimit` is **`enabled: false`**. The
+`"rateLimit"` table DDL remains for migration history but is not used at
+runtime. Path-specific rules (e.g. sign-in 3/10s) are not reimplemented in this
+change; if needed later, add another edge binding or KV — not Postgres counters
+through Hyperdrive.
+
+**Consequences.** Auth floods still never open Hyperdrive when the edge limit
+trips. Isolate-local Better Auth memory limits are not relied on. Credential
+endpoints rely on edge quota + captcha + allow-list. Do not re-enable
+`storage: 'database'` without eliminating recursive CAS under cached reads.
+
+### ADR-022: Session cookie cache (10 minutes)
+
+**Context.** After stopping DB rate limits, every `get-session` still opened
+Postgres for session + user lookups. Better Auth's cookie cache stores a signed
+session snapshot so repeated checks skip the database.
+
+**Decision.** Enable `session.cookieCache` with **maxAge = 10 minutes**
+(compact strategy default). This is **session cookie cache**, not the JWT
+access token and not Hyperdrive query caching.
+
+**Consequences.** Most get-session calls avoid Hyperdrive when the cache cookie
+is valid. After server-side revoke or password change, a browser may still look
+signed-in until the cache maxAge elapses or cookies are cleared (sign-out clears
+them). Acceptable for this self-hosted single-operator deployment; shorten
+maxAge if revocation lag becomes a product issue.

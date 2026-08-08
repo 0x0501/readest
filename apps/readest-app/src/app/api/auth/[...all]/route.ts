@@ -10,9 +10,8 @@ import { allowAuthRateLimit, clientIp, rateLimitedResponse } from '@/libs/rateLi
 // Hyperdrive connection string is only readable inside a request (see
 // docs/database.md, ADR-004).
 //
-// The Cloudflare rate limit runs before `withDb` so a flood never opens a
-// Hyperdrive connection. Better Auth's own database-backed limiter (ADR-020)
-// still applies inside the handler for path-specific rules.
+// Auth rate limit is edge-only (ADR-021): AUTH_RATE_LIMITER runs before withDb
+// so a flood never opens Hyperdrive. Better Auth rate limiting is disabled.
 const handler = async (request: Request) => {
   if (!(await allowAuthRateLimit(clientIp(request.headers)))) {
     return rateLimitedResponse();

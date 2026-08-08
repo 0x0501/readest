@@ -7,8 +7,8 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
  * non-blocking — no network hop. Outside the Worker runtime (`next dev`,
  * vitest) there is no binding and the check is a no-op.
  *
- * Path-specific rules (sign-in 3/10s, password-reset 3/60s) still live in
- * Better Auth's database-backed limiter (ADR-020).
+ * This is the only auth rate limit in production (ADR-021). Better Auth's
+ * limiter is disabled.
  */
 
 interface RateLimit {

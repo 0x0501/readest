@@ -161,20 +161,20 @@ export const createAuth = (db: Db, { sendMail }: { sendMail?: SendMail } = {}) =
       ipAddress: { ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'] },
     },
 
-    // Auth endpoints are the highest-value target on a public Worker: credential
-    // stuffing, reset-mail flooding, and passkey ceremony spam all land here.
-    // Memory storage is the Better Auth default and is useless across Worker
-    // isolates, so counters live in Postgres next to the rest of the auth tables
-    // (ADR-020). Built-in special rules already tighten sign-in / sign-up
-    // (3 per 10s) and password-reset (3 per 60s); the global window is a backstop.
-    //
-    // `enabled` is left to Better Auth's production default. The auth-gate pg
-    // suite fires more sign-ups and resets than those special rules allow, and
-    // forcing the limiter on would turn later assertions into 429s.
+    // Auth rate limit is edge-only (ADR-021): AUTH_RATE_LIMITER runs before
+    // withDb. Do not use storage: 'database' — RMW counters through Hyperdrive
+    // caused a CAS livelock under query cache (docs/auth-perf-fix.md).
     rateLimit: {
-      window: 60,
-      max: 100,
-      storage: 'database',
+      enabled: false,
+    },
+
+    // Signed session snapshot so get-session skips Postgres when warm (ADR-022).
+    // Ten minutes is the staleness ceiling after revoke; sign-out clears cookies.
+    session: {
+      cookieCache: {
+        enabled: true,
+        maxAge: 60 * 10,
+      },
     },
 
     emailAndPassword: {

@@ -78,24 +78,27 @@ describe('isSignupAllowed', () => {
   });
 });
 
-// Memory rate limits are per-isolate and evaporate on cold start on Workers, so
-// the auth limiter has to write to the database (ADR-020). A silent drift back
-// to memory would look fine in tests and be off in production. `enabled` is
-// deliberately left unset so Better Auth's production default applies — the
-// auth-gate pg suite would otherwise exhaust the sign-up special rule.
+// Auth rate limit is edge-only (ADR-021). Database-backed Better Auth counters
+// livelocked under Hyperdrive query cache — do not reintroduce storage: 'database'.
 describe('auth rate limiting', () => {
-  it('uses database storage and keys on the Cloudflare client IP', async () => {
+  it('disables Better Auth rate limit and still keys IPs for CF headers', async () => {
     const auth = (await loadAuth())({} as never);
-    // `enabled` is intentionally absent from the options object so Better Auth
-    // applies its production default — do not reintroduce a forced true here.
-    expect(auth.options.rateLimit).toEqual({
-      window: 60,
-      max: 100,
-      storage: 'database',
-    });
+    expect(auth.options.rateLimit).toEqual({ enabled: false });
     expect(auth.options.advanced?.ipAddress?.ipAddressHeaders).toEqual([
       'cf-connecting-ip',
       'x-forwarded-for',
     ]);
+  });
+});
+
+// Session cookie cache avoids a Hyperdrive round-trip on most get-session calls
+// (ADR-022). Drift back to disabled would re-load production latency.
+describe('session cookie cache', () => {
+  it('is enabled with a ten-minute maxAge', async () => {
+    const auth = (await loadAuth())({} as never);
+    expect(auth.options.session?.cookieCache).toEqual({
+      enabled: true,
+      maxAge: 60 * 10,
+    });
   });
 });

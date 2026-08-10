@@ -59,12 +59,8 @@ const ProfilePage = () => {
   useTheme({ systemUIVisible: false });
 
   const { quotas, userProfilePlan = 'free' } = useQuotaStats();
-  const {
-    handleLogout,
-    handleResetPassword,
-    handleConfirmDelete,
-    handleDeleteAllBooks,
-  } = useUserActions();
+  const { handleLogout, handleResetPassword, handleConfirmDelete, handleDeleteAllBooks } =
+    useUserActions();
 
   const handleGoBack = () => {
     if (showStorageManager) {

@@ -218,12 +218,14 @@ export const getLastShownReleaseNotesVersion = () => {
 };
 
 export const checkAppReleaseNotes = async (isAutoCheck = true) => {
+  // The changelog host sends no Access-Control-Allow-Origin, so from a browser
+  // this is a guaranteed CORS failure — only the Tauri HTTP plugin can read it.
+  if (!isTauriAppPlatform()) return false;
   const currentVersion = getAppVersion();
   const lastShownVersion = getLastShownReleaseNotesVersion();
   if ((lastShownVersion && semver.gt(currentVersion, lastShownVersion)) || !isAutoCheck) {
     try {
-      const fetchFunc = isTauriAppPlatform() ? fetch : window.fetch;
-      const res = await fetchFunc(READEST_CHANGELOG_FILE);
+      const res = await fetch(READEST_CHANGELOG_FILE);
       if (res.ok) {
         setUpdaterWindowVisible(true, currentVersion, lastShownVersion, false);
         return true;

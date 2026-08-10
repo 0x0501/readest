@@ -330,12 +330,17 @@ describe('updater', () => {
 
   // ── checkAppReleaseNotes ───────────────────────────────────────
   describe('checkAppReleaseNotes', () => {
+    // The changelog only comes back over the Tauri HTTP plugin; see the
+    // web case at the end of this block for why.
+    beforeEach(() => {
+      mockIsTauriAppPlatform = true;
+    });
+
     test('shows release notes when current version is newer than last shown', async () => {
       mockAppVersion = '2.0.0';
       setLastShownReleaseNotesVersion('1.0.0');
 
-      const mockFetchFn = vi.fn().mockResolvedValue({ ok: true });
-      vi.stubGlobal('fetch', mockFetchFn);
+      mockTauriFetch.mockResolvedValue({ ok: true });
 
       const result = await checkAppReleaseNotes(true);
 
@@ -365,8 +370,7 @@ describe('updater', () => {
       mockAppVersion = '1.0.0';
       setLastShownReleaseNotesVersion('1.0.0');
 
-      const mockFetchFn = vi.fn().mockResolvedValue({ ok: true });
-      vi.stubGlobal('fetch', mockFetchFn);
+      mockTauriFetch.mockResolvedValue({ ok: true });
 
       const result = await checkAppReleaseNotes(false);
 
@@ -378,8 +382,7 @@ describe('updater', () => {
       mockAppVersion = '2.0.0';
       setLastShownReleaseNotesVersion('1.0.0');
 
-      const mockFetchFn = vi.fn().mockRejectedValue(new Error('Network error'));
-      vi.stubGlobal('fetch', mockFetchFn);
+      mockTauriFetch.mockRejectedValue(new Error('Network error'));
 
       const result = await checkAppReleaseNotes(true);
 
@@ -390,8 +393,7 @@ describe('updater', () => {
       mockAppVersion = '2.0.0';
       setLastShownReleaseNotesVersion('1.0.0');
 
-      const mockFetchFn = vi.fn().mockResolvedValue({ ok: false });
-      vi.stubGlobal('fetch', mockFetchFn);
+      mockTauriFetch.mockResolvedValue({ ok: false });
 
       const result = await checkAppReleaseNotes(true);
 
@@ -399,7 +401,6 @@ describe('updater', () => {
     });
 
     test('uses tauri fetch when on tauri platform', async () => {
-      mockIsTauriAppPlatform = true;
       mockAppVersion = '2.0.0';
       setLastShownReleaseNotesVersion('1.0.0');
 
@@ -409,6 +410,24 @@ describe('updater', () => {
 
       expect(result).toBe(true);
       expect(mockTauriFetch).toHaveBeenCalledWith('https://example.com/release-notes.json');
+    });
+
+    // The changelog host sends no Access-Control-Allow-Origin, so a browser
+    // fetch can only ever end in a CORS error in the console.
+    test('requests nothing on web', async () => {
+      mockIsTauriAppPlatform = false;
+      mockAppVersion = '2.0.0';
+      setLastShownReleaseNotesVersion('1.0.0');
+
+      const mockFetchFn = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', mockFetchFn);
+
+      const result = await checkAppReleaseNotes(true);
+
+      expect(result).toBe(false);
+      expect(mockFetchFn).not.toHaveBeenCalled();
+      expect(mockTauriFetch).not.toHaveBeenCalled();
+      expect(mockSetUpdaterWindowVisible).not.toHaveBeenCalled();
     });
   });
 

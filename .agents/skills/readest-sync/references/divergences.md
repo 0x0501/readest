@@ -35,6 +35,8 @@ resolution is to delete it again, not to wire it up.
 | `src/context/PHContext.tsx`, `src/utils/telemetry.ts`, `src/components/TelemetryConsentDialog.tsx` | PostHog. The committed fallback keys point at upstream's own project, so this instance's reading activity was one settings toggle from a third party |
 | `src/components/SupportLinks.tsx`, `src/components/LegalLinks.tsx` | Upstream's community channels and readest.com terms/privacy. A self-hosted instance does not speak for that company |
 | `DOWNLOAD_READEST_URL` and every caller (library menu, reader book menu, `/s`, `/o`) | Sent visitors of this deployment to install an app that cannot reach it |
+| `src/app/auth/components/**` (`AuthPanel`, `EmailPasswordAuth`) and their tests | Upstream's #5505 rewrite of the Supabase Auth UI. This fork's sign-in screen is its own, so nothing imports these — they arrive as orphans and hold dead translation keys alive |
+| `src/app/auth/utils/reservedAuthKeys.ts` | Nothing but `stubTranslation` anchors, keeping OTP and phone strings this fork's screens never render |
 
 ## What the fork does not maintain
 
@@ -96,6 +98,8 @@ of whatever upstream changed rather than discarding either side.
 | `pnpm-workspace.yaml` | Adds `apps/readest-app/workers/share-og` | Union of both — upstream adds workers here too |
 | `.env.local.example` | Documents `DATABASE_URL`, `BETTER_AUTH_*`, `SIGNUP_ALLOWED_EMAILS`, `GITHUB_CLIENT_*` | Union of both |
 | `.gitignore` | Adds `.dev.vars` | Union of both |
+| `src/pages/api/user/library.ts` | Upstream's Delete All Books route, rewritten in Drizzle | Port upstream's query changes; the UI is kept, so the route cannot be dropped |
+| `src/app/api/azure-translate/route.ts` | Takes `validateRequestUser` from `libs/auth/verify`, not `validateUserAndToken` from `utils/access` | Keep the swap. Any new route touching no other table wants the same one — it releases the connection after the JWKS lookup |
 
 ## Workflows: a mirror that upstream cannot conflict with
 
@@ -120,12 +124,40 @@ upstream has no reason to — the journal/`__drizzle_migrations` count match and
 zero-`auth.users`-foreign-keys check — and those depend on this fork's migration
 layout. If that layout changes, the assertions change with it.
 
+## When neither side is wholly right
+
+The fork deletes features inside files upstream keeps adding to, so a conflict region
+can hold one of each. Taking either side whole loses something, and both losses are
+silent.
+
+The worked example is `src/app/user/components/AccountActions.tsx` and
+`src/app/user/page.tsx` at the payments teardown. Upstream had added
+`onConfirmDeleteAllBooks` — its new Danger Zone — into the same props list and the same
+destructure the fork was removing `onRestorePurchase` and `onManageSubscription` from.
+Taking the fork's side drops a working upstream feature; taking upstream's side
+resurrects payments. Resolve by line: keep `onConfirmDeleteAllBooks`, drop the two
+payment props.
+
+The same region also carried upstream's replacement of a `showConfirmDelete` boolean
+with a `pendingAction` union. Take that: the non-conflicting parts of the file already
+reference it, and the fork has no reason to prefer the old shape.
+
+Two habits make this survivable. Grep the file afterwards for symbols you kept but
+whose imports you dropped — `appService` was declared in that same hunk and used only
+by the IAP block that left. Then let `tsc` confirm it, because an orphaned local is the
+one thing this resolution reliably produces.
+
 ## Regenerate rather than merge
 
 | File | Why | What to do |
 | --- | --- | --- |
 | `pnpm-lock.yaml` | Merge conflicts here are unresolvable by reading | Take either side, then `pnpm install` |
 | `src/libs/db/schema.ts` | Generated from the live database | Take either side, then `pnpm db:pull` after the migration chain runs |
+| `public/locales/*/translation.json` | The scanner owns the key set (ADR-023), and both sides append to the same object | Merge the parsed JSON — not the text — then `pnpm i18n:extract` and `check:translations` |
+
+Generated means generated: a hand edit to `schema.ts` is reverted by the next
+`db:pull` and comes back as a diff at every sync. Notes about a table belong in
+`drizzle/README.md` or `docs/database.md` instead.
 
 ## Upstream PRs carried locally
 

@@ -222,6 +222,60 @@ leaves a key nothing can read. Clear the table and Better Auth regenerates:
 delete from jwks;
 ```
 
+## CI fails on formatting after a clean local run
+
+**Symptom:** `pnpm lint` and the whole test suite pass locally, and CI's
+`lint + typecheck` job goes red on `format:check`.
+
+The pre-commit hook runs `biome format --write` through lint-staged, which only sees
+**staged** files. A conflict resolution written before staging is formatted by nobody,
+and `format:check` reads the whole tree.
+
+Dropping a single property is enough. Removing `handleUpdateEmail` from the
+`useUserActions` destructure in `src/app/user/page.tsx` shortened the block past the
+width where biome wants it on one line, and nothing local objected.
+
+```bash
+pnpm format                          # from the monorepo root
+pnpm -C apps/readest-app format:check
+```
+
+## `pnpm db:pull` rewrites a table nobody touched
+
+**Symptom:** step 5 produces a diff when the survey found no upstream migrations, so
+it looks as though upstream moved the data model.
+
+Read the diff before believing it. If it swaps an inline `.unique()` for a named
+constraint, or drops a comment, that is not upstream — it is a hand edit to
+`src/libs/db/schema.ts` coming back. The file is generated; edits to it are reverted by
+the next `db:pull` and will reappear as a diff at every sync.
+
+Take the generated output. Anything worth saying about a table belongs in
+`drizzle/README.md` or `docs/database.md`, which are not regenerated.
+
+## A locale catalogue will not parse after you resolve it
+
+**Symptom:** `pnpm i18n:extract` or the app throws on
+`public/locales/<lang>/translation.json` right after a rebase.
+
+Both sides append their new keys to the end of the object, so the conflict region ends
+one block and begins another. Keeping both halves of the text drops the comma between
+them. These conflicts are JSON, not text — merge the parsed objects rather than the
+lines. Shared keys carry the same value on both sides, so only the key sets differ.
+
+## A test shard is red with every test passing
+
+**Symptom:** CI reports `Test Files 347 passed` and the job still fails.
+
+Vitest exits non-zero on an **unhandled error** even when no assertion failed. The one
+seen here is `ReferenceError: window is not defined` out of Better Auth's
+`cleanupBroadcastSetup`, fired by a nanostores lifecycle timer after jsdom has been torn
+down — thirteen test files mount `AuthContext` without mocking `@/libs/auth/client`.
+
+It is timing-dependent and it predates any given sync, but adding or deleting test files
+reshuffles `--shard=1/2` and can expose it. Before treating it as a regression, check
+whether the tests you changed have anything to do with it.
+
 ## Environment quirks
 
 **`npx` and `pnpm exec` are intercepted in some shells here.** `npx biome lint .`

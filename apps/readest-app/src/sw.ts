@@ -83,14 +83,14 @@ const serwist = new Serwist({
         ],
       }),
     },
-    // Other external resources
+    // Other same-origin resources
     {
-      matcher: ({ url }) => {
-        if (url.pathname.startsWith('/api/')) {
-          return false;
-        }
-        return /^https?.*/.test(url.href);
-      },
+      // Same-origin only: a cross-origin response reaches us opaque — useless
+      // for offline reuse and fatal to any script carrying an `integrity`
+      // attribute (Cloudflare's analytics beacon) — and when such a request
+      // fails, the interception surfaces it as a `respondWith()` rejection
+      // instead of the browser's own network error.
+      matcher: ({ url, sameOrigin }) => sameOrigin && !url.pathname.startsWith('/api/'),
       handler: new NetworkFirst({
         cacheName: 'offline-cache',
         networkTimeoutSeconds: 3,

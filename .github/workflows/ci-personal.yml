@@ -27,7 +27,7 @@ jobs:
           # as TS source through tsconfig paths — lint fails without them.
           submodules: recursive
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: 24
@@ -41,6 +41,21 @@ jobs:
 
       - name: format check
         run: pnpm -C apps/readest-app format:check
+
+      # ADR-023. This fork deletes strings upstream ships and adds ones it does
+      # not, in the same catalogues upstream edits on nearly every sync, and
+      # nothing else here reads them. The scanner owns the key set, so a
+      # non-empty diff means a key came back from a feature that is gone, or one
+      # this fork owns went missing in a merge.
+      - name: locale catalogues match the scanner
+        run: |
+          pnpm -C apps/readest-app i18n:extract
+          git diff --exit-code apps/readest-app/public/locales/
+
+      # The other half. The check above cannot tell a translated string from a
+      # placeholder, and this one cannot tell a deleted key from a correct one.
+      - name: every catalogue key is translated
+        run: pnpm -C apps/readest-app check:translations
 
       - name: lint and typecheck
         run: pnpm -C apps/readest-app lint
@@ -74,7 +89,7 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: 24
@@ -117,7 +132,7 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: 24

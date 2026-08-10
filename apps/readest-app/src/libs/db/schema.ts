@@ -424,14 +424,17 @@ export const passkey = pgTable(
   ],
 );
 
-// Better Auth rate-limit counters (historical ADR-020). Runtime no longer
-// writes here (ADR-021); table retained for migration history.
-export const rateLimit = pgTable('rateLimit', {
-  id: uuid().defaultRandom().primaryKey().notNull(),
-  key: text().notNull().unique(),
-  count: integer().notNull(),
-  lastRequest: bigint({ mode: 'number' }).notNull(),
-});
+export const rateLimit = pgTable(
+  'rateLimit',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    key: text().notNull(),
+    count: integer().notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    lastRequest: bigint({ mode: 'number' }).notNull(),
+  },
+  (table) => [unique('rateLimit_key_key').on(table.key)],
+);
 
 export const replicaKeys = pgTable(
   'replica_keys',

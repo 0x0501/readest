@@ -61,3 +61,40 @@ A short-lived, signed cookie that holds a Better Auth session snapshot so
 caching.
 _Avoid_: JWT, access token, session cookie (the signed session *token* is
 separate), HTTP cache
+
+### Localization
+
+**Locale catalogue**:
+The set of UI strings for one language. Generated, not authored: the key set is
+whatever the scanner finds in the application source, and only the values are written
+by hand (ADR-023).
+_Avoid_: translation file, language pack, i18n file
+
+**Translated string**:
+A UI label held in a **locale catalogue**. Not the output of **book translation** —
+the codebase calls both "translation" and they have nothing to do with each other.
+_Avoid_: translation (unqualified)
+
+**Book translation**:
+The reader feature that renders a passage of a book in another language through an
+external provider. Chosen per reader, in view settings. Not a **translated string**.
+_Avoid_: translation (unqualified)
+
+### Fork maintenance
+
+**Upstream sync**:
+Rebasing this fork onto the upstream project. An operation on the repository, never a
+product feature, and routinely confused with **sync** because of the name.
+_Avoid_: sync (unqualified), update, pull
+
+**Sync**:
+The product feature that carries books, annotations and reading progress between one
+reader's devices. Never means **upstream sync**.
+_Avoid_: cloud backup, upload (as a name for the whole feature)
+
+**Watch list**:
+The files both this fork and upstream have edited since the merge base, computed at
+the start of an **upstream sync**. Something to re-check afterwards, not a prediction
+of conflicts — git merges most of them cleanly because the two sides touched different
+regions.
+_Avoid_: conflict list, conflicts

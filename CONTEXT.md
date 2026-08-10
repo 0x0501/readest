@@ -65,9 +65,9 @@ separate), HTTP cache
 ### Localization
 
 **Locale catalogue**:
-The set of UI strings for one language. Generated, not authored: the key set is
-whatever the scanner finds in the application source, and only the values are written
-by hand (ADR-023).
+The set of UI strings for one language. A generated artefact rather than an
+authored one — which keys it holds is not a choice, and only the translated
+values are written by hand (ADR-023).
 _Avoid_: translation file, language pack, i18n file
 
 **Translated string**:

@@ -5,7 +5,7 @@ import {
   BING_TRANSLATOR_URL,
   parseBingAuthParams,
 } from '@/services/translators/providers/azureShared';
-import { validateUserAndToken } from '@/utils/access';
+import { validateRequestUser } from '@/libs/auth/verify';
 
 /**
  * Same-origin proxy for the Bing Translator web API, used by the `azure`
@@ -29,7 +29,7 @@ const requestBudgets = new Map<string, { count: number; resetAt: number; active:
 const NULL_BODY_STATUSES = new Set([204, 205, 304]);
 
 export async function POST(request: NextRequest) {
-  const { user, token } = await validateUserAndToken(request.headers.get('authorization'));
+  const { user, token } = await validateRequestUser(request.headers.get('authorization'));
   if (!user || !token) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
   }

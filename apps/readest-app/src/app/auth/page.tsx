@@ -15,6 +15,7 @@ import { useTurnstile } from '@/hooks/useTurnstile';
 import { authClient } from '@/libs/auth/client';
 import { isWebAppPlatform } from '@/services/environment';
 import { getRuntimeConfig } from '@/services/runtimeConfig';
+import { useThemeStore } from '@/store/themeStore';
 
 type Mode = 'sign-in' | 'sign-up';
 
@@ -22,6 +23,7 @@ export default function AuthPage() {
   const _ = useTranslation();
   const router = useRouter();
   const { user } = useAuth();
+  const { safeAreaInsets } = useThemeStore();
   useTheme({ systemUIVisible: false });
 
   const [mode, setMode] = useState<Mode>('sign-in');
@@ -102,6 +104,11 @@ export default function AuthPage() {
       <button
         aria-label={_('Go Back')}
         onClick={() => router.back()}
+        // This screen hides the system UI, so the top inset is the whole
+        // clearance the notch needs (docs/safe-area-insets.md). It adds to the
+        // corner offset rather than replacing it, so nothing moves on a device
+        // that reports no inset.
+        style={{ marginTop: `${safeAreaInsets?.top ?? 0}px` }}
         className='btn btn-ghost absolute left-6 top-6 h-8 min-h-8 w-8 p-0'
       >
         <IoArrowBack className='text-base-content' />

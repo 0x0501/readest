@@ -20,15 +20,19 @@ const { signInEmail, signUpEmail, signInPasskey, requestPasswordReset, resetPass
   }),
 );
 
-const { runtimeConfig, webPlatform } = vi.hoisted(() => ({
+const { runtimeConfig, webPlatform, safeAreaInsets } = vi.hoisted(() => ({
   runtimeConfig: { value: {} as Record<string, unknown> },
   webPlatform: { value: true },
+  safeAreaInsets: { value: { top: 0, right: 0, bottom: 0, left: 0 } },
 }));
 
 vi.mock('@/hooks/useTranslation', () => ({
   useTranslation: () => (s: string) => s,
 }));
 vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({}) }));
+vi.mock('@/store/themeStore', () => ({
+  useThemeStore: () => ({ safeAreaInsets: safeAreaInsets.value }),
+}));
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: null }) }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
@@ -67,6 +71,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   runtimeConfig.value = {};
   webPlatform.value = true;
+  safeAreaInsets.value = { top: 0, right: 0, bottom: 0, left: 0 };
   setSearch('');
 });
 
@@ -103,6 +108,23 @@ describe('sign-in page', () => {
     expect(screen.getByPlaceholderText('Your email address').getAttribute('autocomplete')).toBe(
       'email',
     );
+  });
+
+  // The back button is anchored to the top-left corner, which on a notched
+  // phone is underneath the status bar. Every other surface in the app already
+  // clears it; this screen was the one that did not.
+  it('keeps the back button clear of the status bar', () => {
+    safeAreaInsets.value = { top: 44, right: 0, bottom: 34, left: 0 };
+
+    render(<AuthPage />);
+
+    expect(screen.getByLabelText('Go Back').style.marginTop).toBe('44px');
+  });
+
+  it('leaves the back button where it is when the platform has no inset', () => {
+    render(<AuthPage />);
+
+    expect(screen.getByLabelText('Go Back').style.marginTop).toBe('0px');
   });
 
   it('renders no captcha, and stays submittable, when none is configured', () => {

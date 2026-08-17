@@ -1698,7 +1698,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Segerakkan perpustakaan, kemajuan bacaan dan penonjolan anda dengan Readest Cloud.",
   "Account and Storage": "Akaun dan storan",
   "Manage your plan and stored files": "Urus pelan dan fail tersimpan anda",
-  "Another device is still syncing this library via Readest Cloud": "Peranti lain masih menyegerakkan perpustakaan ini melalui Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} muat naik gagal: kuota storan tidak mencukupi",
   "Library sync via {{provider}}": "Penyegerakan pustaka melalui {{provider}}",
   "Google Drive session expired": "Sesi Google Drive telah tamat tempoh",
@@ -1946,7 +1945,6 @@
   "{{count}} Highlights_other": "{{count}} sorotan",
   "{{count}} Notes_other": "{{count}} nota",
   "{{matched}} of {{total}}": "{{matched}} daripada {{total}}",
-  "Purchases restored successfully.": "Pembelian berjaya dipulihkan.",
   "Send {{count}} book(s) to nearby device_other": "Hantar {{count}} buku ke peranti berdekatan",
   "Refresh devices": "Muat semula peranti",
   "Enable LocalSend in Settings to send books.": "Dayakan LocalSend dalam Tetapan untuk menghantar buku.",
@@ -1985,5 +1983,9 @@
   "More Settings": "Tetapan Lain",
   "Right-to-Left Pages": "Halaman Kanan ke Kiri",
   "Send Document Metadata": "Hantar Metadata Dokumen",
-  "Hide covers": "Sembunyikan kulit buku"
+  "Hide covers": "Sembunyikan kulit buku",
+  "Downloading {{title}}": "Memuat turun {{title}}",
+  "Remove from queue": "Buang daripada baris gilir",
+  "Cancel all ({{count}})_other": "Batalkan semua ({{count}})",
+  "Waiting…": "Menunggu…"
 }

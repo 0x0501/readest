@@ -1698,7 +1698,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "將您的書庫、閱讀進度和高亮與 Readest 雲端同步。",
   "Account and Storage": "帳戶與儲存",
   "Manage your plan and stored files": "管理您的訂閱方案和已儲存的檔案",
-  "Another device is still syncing this library via Readest Cloud": "另一台裝置仍在透過 Readest 雲端同步此書庫",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} 個上傳失敗：雲存儲空間不足",
   "Library sync via {{provider}}": "透過 {{provider}} 同步書庫",
   "Google Drive session expired": "Google Drive 工作階段已過期",
@@ -1946,7 +1945,6 @@
   "{{count}} Highlights_other": "{{count}} 條標註",
   "{{count}} Notes_other": "{{count}} 條筆記",
   "{{matched}} of {{total}}": "{{matched}} / {{total}}",
-  "Purchases restored successfully.": "購買項目已成功還原。",
   "Send {{count}} book(s) to nearby device_other": "傳送 {{count}} 本書到附近裝置",
   "Refresh devices": "重新整理裝置",
   "Enable LocalSend in Settings to send books.": "請在設定中啟用 LocalSend 以傳送書籍。",
@@ -1985,5 +1983,9 @@
   "More Settings": "更多設定",
   "Right-to-Left Pages": "從右到左翻頁",
   "Send Document Metadata": "傳送文件中繼資料",
-  "Hide covers": "隱藏封面"
+  "Hide covers": "隱藏封面",
+  "Downloading {{title}}": "正在下載 {{title}}",
+  "Remove from queue": "從佇列中移除",
+  "Cancel all ({{count}})_other": "全部取消 ({{count}})",
+  "Waiting…": "等待中…"
 }

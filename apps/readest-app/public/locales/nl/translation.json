@@ -1732,7 +1732,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Synchroniseer je bibliotheek, leesvoortgang en markeringen met Readest Cloud.",
   "Account and Storage": "Account en opslag",
   "Manage your plan and stored files": "Beheer je abonnement en opgeslagen bestanden",
-  "Another device is still syncing this library via Readest Cloud": "Een ander apparaat synchroniseert deze bibliotheek nog via Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} upload mislukt: onvoldoende opslagruimte",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} uploads mislukt: onvoldoende opslagruimte",
   "Library sync via {{provider}}": "Bibliotheeksynchronisatie via {{provider}}",
@@ -1994,7 +1993,6 @@
   "{{count}} Notes_one": "{{count}} notitie",
   "{{count}} Notes_other": "{{count}} notities",
   "{{matched}} of {{total}}": "{{matched}} van {{total}}",
-  "Purchases restored successfully.": "Aankopen hersteld.",
   "Send {{count}} book(s) to nearby device_one": "{{count}} boek naar apparaat in de buurt sturen",
   "Send {{count}} book(s) to nearby device_other": "{{count}} boeken naar apparaat in de buurt sturen",
   "Refresh devices": "Apparaten vernieuwen",
@@ -2041,5 +2039,10 @@
   "More Settings": "Meer instellingen",
   "Right-to-Left Pages": "Pagina's van rechts naar links",
   "Send Document Metadata": "Documentmetadata verzenden",
-  "Hide covers": "Boekomslagen verbergen"
+  "Hide covers": "Boekomslagen verbergen",
+  "Downloading {{title}}": "{{title}} downloaden",
+  "Remove from queue": "Uit wachtrij verwijderen",
+  "Cancel all ({{count}})_one": "Alles annuleren ({{count}})",
+  "Cancel all ({{count}})_other": "Alles annuleren ({{count}})",
+  "Waiting…": "Wachten…"
 }

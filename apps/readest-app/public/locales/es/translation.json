@@ -1766,7 +1766,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Sincroniza tu biblioteca, progreso de lectura y resaltados con Readest Cloud.",
   "Account and Storage": "Cuenta y almacenamiento",
   "Manage your plan and stored files": "Gestiona tu plan y tus archivos almacenados",
-  "Another device is still syncing this library via Readest Cloud": "Otro dispositivo sigue sincronizando esta biblioteca vía Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} subida fallida: cuota de almacenamiento insuficiente",
   "{{count}} uploads failed: insufficient storage quota_many": "{{count}} subidas fallidas: cuota de almacenamiento insuficiente",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} subidas fallidas: cuota de almacenamiento insuficiente",
@@ -2042,7 +2041,6 @@
   "{{count}} Notes_many": "{{count}} notas",
   "{{count}} Notes_other": "{{count}} notas",
   "{{matched}} of {{total}}": "{{matched}} de {{total}}",
-  "Purchases restored successfully.": "Compras restauradas correctamente.",
   "Send {{count}} book(s) to nearby device_one": "Enviar {{count}} libro a un dispositivo cercano",
   "Send {{count}} book(s) to nearby device_many": "Enviar {{count}} libros a un dispositivo cercano",
   "Send {{count}} book(s) to nearby device_other": "Enviar {{count}} libros a un dispositivo cercano",
@@ -2097,5 +2095,11 @@
   "More Settings": "Más configuraciones",
   "Right-to-Left Pages": "Páginas de derecha a izquierda",
   "Send Document Metadata": "Enviar metadatos del documento",
-  "Hide covers": "Ocultar portadas de libros"
+  "Hide covers": "Ocultar portadas de libros",
+  "Downloading {{title}}": "Descargando {{title}}",
+  "Remove from queue": "Quitar de la cola",
+  "Cancel all ({{count}})_one": "Cancelar todo ({{count}})",
+  "Cancel all ({{count}})_many": "Cancelar todo ({{count}})",
+  "Cancel all ({{count}})_other": "Cancelar todo ({{count}})",
+  "Waiting…": "Esperando…"
 }

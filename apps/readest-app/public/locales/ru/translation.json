@@ -1800,7 +1800,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Синхронизируйте свою библиотеку, прогресс чтения и выделения с Readest Cloud.",
   "Account and Storage": "Аккаунт и хранилище",
   "Manage your plan and stored files": "Управляйте тарифом и сохранёнными файлами",
-  "Another device is still syncing this library via Readest Cloud": "Другое устройство всё ещё синхронизирует эту библиотеку через Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} загрузка не удалась: недостаточно квоты хранилища",
   "{{count}} uploads failed: insufficient storage quota_few": "{{count}} загрузки не удались: недостаточно квоты хранилища",
   "{{count}} uploads failed: insufficient storage quota_many": "{{count}} загрузок не удалось: недостаточно квоты хранилища",
@@ -2090,7 +2089,6 @@
   "{{count}} Notes_many": "{{count}} заметок",
   "{{count}} Notes_other": "{{count}} заметки",
   "{{matched}} of {{total}}": "{{matched}} из {{total}}",
-  "Purchases restored successfully.": "Покупки успешно восстановлены.",
   "Send {{count}} book(s) to nearby device_one": "Отправить {{count}} книгу на устройство поблизости",
   "Send {{count}} book(s) to nearby device_few": "Отправить {{count}} книги на устройство поблизости",
   "Send {{count}} book(s) to nearby device_many": "Отправить {{count}} книг на устройство поблизости",
@@ -2153,5 +2151,12 @@
   "More Settings": "Другие настройки",
   "Right-to-Left Pages": "Страницы справа налево",
   "Send Document Metadata": "Отправлять метаданные документа",
-  "Hide covers": "Скрыть обложки книг"
+  "Hide covers": "Скрыть обложки книг",
+  "Downloading {{title}}": "Загрузка {{title}}",
+  "Remove from queue": "Удалить из очереди",
+  "Cancel all ({{count}})_one": "Отменить все ({{count}})",
+  "Cancel all ({{count}})_few": "Отменить все ({{count}})",
+  "Cancel all ({{count}})_many": "Отменить все ({{count}})",
+  "Cancel all ({{count}})_other": "Отменить все ({{count}})",
+  "Waiting…": "Ожидание…"
 }

@@ -1732,7 +1732,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "আপনার লাইব্রেরি, পড়ার অগ্রগতি এবং হাইলাইটগুলি Readest Cloud-এর সাথে সিঙ্ক করুন।",
   "Account and Storage": "অ্যাকাউন্ট এবং স্টোরেজ",
   "Manage your plan and stored files": "আপনার প্ল্যান এবং সংরক্ষিত ফাইল পরিচালনা করুন",
-  "Another device is still syncing this library via Readest Cloud": "অন্য একটি ডিভাইস এখনও Readest Cloud-এর মাধ্যমে এই লাইব্রেরি সিঙ্ক করছে",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}}টি আপলোড ব্যর্থ: অপর্যাপ্ত স্টোরেজ কোটা",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}}টি আপলোড ব্যর্থ: অপর্যাপ্ত স্টোরেজ কোটা",
   "Library sync via {{provider}}": "{{provider}} এর মাধ্যমে লাইব্রেরি সিঙ্ক",
@@ -1994,7 +1993,6 @@
   "{{count}} Notes_one": "{{count}}টি নোট",
   "{{count}} Notes_other": "{{count}}টি নোট",
   "{{matched}} of {{total}}": "{{total}}টির মধ্যে {{matched}}টি",
-  "Purchases restored successfully.": "ক্রয়সমূহ সফলভাবে পুনরুদ্ধার করা হয়েছে।",
   "Send {{count}} book(s) to nearby device_one": "{{count}}টি বই কাছাকাছি ডিভাইসে পাঠান",
   "Send {{count}} book(s) to nearby device_other": "{{count}}টি বই কাছাকাছি ডিভাইসে পাঠান",
   "Refresh devices": "ডিভাইস রিফ্রেশ করুন",
@@ -2041,5 +2039,10 @@
   "More Settings": "আরও সেটিংস",
   "Right-to-Left Pages": "ডান থেকে বামে পৃষ্ঠা",
   "Send Document Metadata": "নথির মেটাডেটা পাঠান",
-  "Hide covers": "বইয়ের মলাট লুকান"
+  "Hide covers": "বইয়ের মলাট লুকান",
+  "Downloading {{title}}": "{{title}} ডাউনলোড হচ্ছে",
+  "Remove from queue": "সারি থেকে সরান",
+  "Cancel all ({{count}})_one": "সব বাতিল করুন ({{count}})",
+  "Cancel all ({{count}})_other": "সব বাতিল করুন ({{count}})",
+  "Waiting…": "অপেক্ষা করছে…"
 }

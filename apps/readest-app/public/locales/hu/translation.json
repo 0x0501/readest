@@ -1732,7 +1732,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Szinkronizálja könyvtárát, olvasási haladását és kiemeléseit a Readest Clouddal.",
   "Account and Storage": "Fiók és tárhely",
   "Manage your plan and stored files": "Előfizetés és tárolt fájlok kezelése",
-  "Another device is still syncing this library via Readest Cloud": "Egy másik eszköz még mindig a Readest Cloudon keresztül szinkronizálja ezt a könyvtárat",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} feltöltés sikertelen: nincs elegendő tárhelykvóta",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} feltöltés sikertelen: nincs elegendő tárhelykvóta",
   "Library sync via {{provider}}": "Könyvtár szinkronizálása a következőn keresztül: {{provider}}",
@@ -1994,7 +1993,6 @@
   "{{count}} Notes_one": "{{count}} jegyzet",
   "{{count}} Notes_other": "{{count}} jegyzet",
   "{{matched}} of {{total}}": "{{matched}} / {{total}}",
-  "Purchases restored successfully.": "A vásárlások sikeresen visszaállítva.",
   "Send {{count}} book(s) to nearby device_one": "{{count}} könyv küldése közeli eszközre",
   "Send {{count}} book(s) to nearby device_other": "{{count}} könyv küldése közeli eszközre",
   "Refresh devices": "Eszközök frissítése",
@@ -2041,5 +2039,10 @@
   "More Settings": "További beállítások",
   "Right-to-Left Pages": "Oldalak jobbról balra",
   "Send Document Metadata": "Dokumentum metaadatainak küldése",
-  "Hide covers": "Könyvborítók elrejtése"
+  "Hide covers": "Könyvborítók elrejtése",
+  "Downloading {{title}}": "{{title}} letöltése",
+  "Remove from queue": "Eltávolítás a sorból",
+  "Cancel all ({{count}})_one": "Összes megszakítása ({{count}})",
+  "Cancel all ({{count}})_other": "Összes megszakítása ({{count}})",
+  "Waiting…": "Várakozás…"
 }

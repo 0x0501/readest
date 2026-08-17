@@ -1732,7 +1732,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Kütüphanenizi, okuma ilerlemenizi ve vurgularınızı Readest Cloud ile senkronize edin.",
   "Account and Storage": "Hesap ve depolama",
   "Manage your plan and stored files": "Planınızı ve depolanan dosyalarınızı yönetin",
-  "Another device is still syncing this library via Readest Cloud": "Başka bir cihaz bu kütüphaneyi hâlâ Readest Cloud üzerinden senkronize ediyor",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} yükleme başarısız: yetersiz depolama kotası",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} yükleme başarısız: yetersiz depolama kotası",
   "Library sync via {{provider}}": "{{provider}} ile kitaplık eşitleme",
@@ -1994,7 +1993,6 @@
   "{{count}} Notes_one": "{{count}} not",
   "{{count}} Notes_other": "{{count}} not",
   "{{matched}} of {{total}}": "{{total}} içinde {{matched}}",
-  "Purchases restored successfully.": "Satın alımlar başarıyla geri yüklendi.",
   "Send {{count}} book(s) to nearby device_one": "{{count}} kitabı yakındaki cihaza gönder",
   "Send {{count}} book(s) to nearby device_other": "{{count}} kitabı yakındaki cihaza gönder",
   "Refresh devices": "Cihazları yenile",
@@ -2041,5 +2039,10 @@
   "More Settings": "Diğer ayarlar",
   "Right-to-Left Pages": "Sağdan Sola Sayfalar",
   "Send Document Metadata": "Belge Meta Verilerini Gönder",
-  "Hide covers": "Kitap kapaklarını gizle"
+  "Hide covers": "Kitap kapaklarını gizle",
+  "Downloading {{title}}": "{{title}} indiriliyor",
+  "Remove from queue": "Kuyruktan kaldır",
+  "Cancel all ({{count}})_one": "Tümünü iptal et ({{count}})",
+  "Cancel all ({{count}})_other": "Tümünü iptal et ({{count}})",
+  "Waiting…": "Bekleniyor…"
 }

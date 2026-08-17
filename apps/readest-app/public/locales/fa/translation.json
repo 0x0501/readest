@@ -1732,7 +1732,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "کتابخانه، وضعیت مطالعه و هایلایت‌های خود را با Readest Cloud همگام‌سازی کنید.",
   "Account and Storage": "حساب و فضای ذخیره‌سازی",
   "Manage your plan and stored files": "مدیریت طرح اشتراک و فایل‌های ذخیره‌شده",
-  "Another device is still syncing this library via Readest Cloud": "دستگاه دیگری هنوز این کتابخانه را از طریق Readest Cloud همگام‌سازی می‌کند",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} بارگذاری ناموفق بود: سهمیه‌ی ذخیره‌سازی کافی نیست",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} بارگذاری ناموفق بود: سهمیه‌ی ذخیره‌سازی کافی نیست",
   "Library sync via {{provider}}": "همگام‌سازی کتابخانه از طریق {{provider}}",
@@ -1994,7 +1993,6 @@
   "{{count}} Notes_one": "{{count}} یادداشت",
   "{{count}} Notes_other": "{{count}} یادداشت",
   "{{matched}} of {{total}}": "{{matched}} از {{total}}",
-  "Purchases restored successfully.": "خریدها با موفقیت بازیابی شدند.",
   "Send {{count}} book(s) to nearby device_one": "ارسال {{count}} کتاب به دستگاه نزدیک",
   "Send {{count}} book(s) to nearby device_other": "ارسال {{count}} کتاب به دستگاه نزدیک",
   "Refresh devices": "به‌روزرسانی دستگاه‌ها",
@@ -2041,5 +2039,10 @@
   "More Settings": "تنظیمات بیشتر",
   "Right-to-Left Pages": "صفحات راست به چپ",
   "Send Document Metadata": "ارسال فراداده سند",
-  "Hide covers": "پنهان کردن جلد کتاب‌ها"
+  "Hide covers": "پنهان کردن جلد کتاب‌ها",
+  "Downloading {{title}}": "در حال دانلود {{title}}",
+  "Remove from queue": "حذف از صف",
+  "Cancel all ({{count}})_one": "لغو همه ({{count}})",
+  "Cancel all ({{count}})_other": "لغو همه ({{count}})",
+  "Waiting…": "در انتظار…"
 }

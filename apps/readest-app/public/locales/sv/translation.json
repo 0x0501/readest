@@ -1732,7 +1732,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Synka ditt bibliotek, dina läsframsteg och markeringar med Readest Cloud.",
   "Account and Storage": "Konto och lagring",
   "Manage your plan and stored files": "Hantera ditt abonnemang och lagrade filer",
-  "Another device is still syncing this library via Readest Cloud": "En annan enhet synkar fortfarande det här biblioteket via Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} uppladdning misslyckades: otillräcklig lagringskvot",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} uppladdningar misslyckades: otillräcklig lagringskvot",
   "Library sync via {{provider}}": "Bibliotekssynkronisering via {{provider}}",
@@ -1994,7 +1993,6 @@
   "{{count}} Notes_one": "{{count}} anteckning",
   "{{count}} Notes_other": "{{count}} anteckningar",
   "{{matched}} of {{total}}": "{{matched}} av {{total}}",
-  "Purchases restored successfully.": "Köp återställda.",
   "Send {{count}} book(s) to nearby device_one": "Skicka {{count}} bok till enhet i närheten",
   "Send {{count}} book(s) to nearby device_other": "Skicka {{count}} böcker till enhet i närheten",
   "Refresh devices": "Uppdatera enheter",
@@ -2041,5 +2039,10 @@
   "More Settings": "Fler inställningar",
   "Right-to-Left Pages": "Sidor från höger till vänster",
   "Send Document Metadata": "Skicka dokumentmetadata",
-  "Hide covers": "Dölj bokomslag"
+  "Hide covers": "Dölj bokomslag",
+  "Downloading {{title}}": "Laddar ner {{title}}",
+  "Remove from queue": "Ta bort från kön",
+  "Cancel all ({{count}})_one": "Avbryt alla ({{count}})",
+  "Cancel all ({{count}})_other": "Avbryt alla ({{count}})",
+  "Waiting…": "Väntar…"
 }

@@ -1766,7 +1766,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Sincronizează-ți biblioteca, progresul citirii și evidențierile cu Readest Cloud.",
   "Account and Storage": "Cont și stocare",
   "Manage your plan and stored files": "Gestionează-ți abonamentul și fișierele stocate",
-  "Another device is still syncing this library via Readest Cloud": "Un alt dispozitiv încă sincronizează această bibliotecă prin Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} încărcare eșuată: cotă de stocare insuficientă",
   "{{count}} uploads failed: insufficient storage quota_few": "{{count}} încărcări eșuate: cotă de stocare insuficientă",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} de încărcări eșuate: cotă de stocare insuficientă",
@@ -2042,7 +2041,6 @@
   "{{count}} Notes_few": "{{count}} notițe",
   "{{count}} Notes_other": "{{count}} de notițe",
   "{{matched}} of {{total}}": "{{matched}} din {{total}}",
-  "Purchases restored successfully.": "Achizițiile au fost restaurate cu succes.",
   "Send {{count}} book(s) to nearby device_one": "Trimite {{count}} carte către un dispozitiv din apropiere",
   "Send {{count}} book(s) to nearby device_few": "Trimite {{count}} cărți către un dispozitiv din apropiere",
   "Send {{count}} book(s) to nearby device_other": "Trimite {{count}} de cărți către un dispozitiv din apropiere",
@@ -2097,5 +2095,11 @@
   "More Settings": "Mai multe setări",
   "Right-to-Left Pages": "Pagini de la dreapta la stânga",
   "Send Document Metadata": "Trimite metadatele documentului",
-  "Hide covers": "Ascunde coperțile cărților"
+  "Hide covers": "Ascunde coperțile cărților",
+  "Downloading {{title}}": "Se descarcă {{title}}",
+  "Remove from queue": "Elimină din coadă",
+  "Cancel all ({{count}})_one": "Anulează tot ({{count}})",
+  "Cancel all ({{count}})_few": "Anulează tot ({{count}})",
+  "Cancel all ({{count}})_other": "Anulează tot ({{count}})",
+  "Waiting…": "Aşteptare…"
 }

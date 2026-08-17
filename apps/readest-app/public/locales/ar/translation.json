@@ -1868,7 +1868,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "زامن مكتبتك وتقدم القراءة والتمييزات مع Readest Cloud.",
   "Account and Storage": "الحساب والتخزين",
   "Manage your plan and stored files": "إدارة اشتراكك وملفاتك المخزنة",
-  "Another device is still syncing this library via Readest Cloud": "لا يزال جهاز آخر يزامن هذه المكتبة عبر Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_zero": "لم يفشل أي رفع: حصة التخزين غير كافية",
   "{{count}} uploads failed: insufficient storage quota_one": "فشل رفع واحد: حصة التخزين غير كافية",
   "{{count}} uploads failed: insufficient storage quota_two": "فشل رفعان: حصة التخزين غير كافية",
@@ -2186,7 +2185,6 @@
   "{{count}} Notes_many": "{{count}} ملاحظة",
   "{{count}} Notes_other": "{{count}} ملاحظة",
   "{{matched}} of {{total}}": "{{matched}} من {{total}}",
-  "Purchases restored successfully.": "تمت استعادة المشتريات بنجاح.",
   "Send {{count}} book(s) to nearby device_zero": "إرسال الكتب إلى جهاز قريب",
   "Send {{count}} book(s) to nearby device_one": "إرسال كتاب واحد إلى جهاز قريب",
   "Send {{count}} book(s) to nearby device_two": "إرسال كتابين إلى جهاز قريب",
@@ -2265,5 +2263,14 @@
   "More Settings": "مزيد من الإعدادات",
   "Right-to-Left Pages": "صفحات من اليمين إلى اليسار",
   "Send Document Metadata": "إرسال البيانات الوصفية للمستند",
-  "Hide covers": "إخفاء أغلفة الكتب"
+  "Hide covers": "إخفاء أغلفة الكتب",
+  "Downloading {{title}}": "جارٍ تنزيل {{title}}",
+  "Remove from queue": "إزالة من قائمة الانتظار",
+  "Cancel all ({{count}})_zero": "إلغاء الكل ({{count}})",
+  "Cancel all ({{count}})_one": "إلغاء الكل ({{count}})",
+  "Cancel all ({{count}})_two": "إلغاء الكل ({{count}})",
+  "Cancel all ({{count}})_few": "إلغاء الكل ({{count}})",
+  "Cancel all ({{count}})_many": "إلغاء الكل ({{count}})",
+  "Cancel all ({{count}})_other": "إلغاء الكل ({{count}})",
+  "Waiting…": "جارٍ الانتظار…"
 }

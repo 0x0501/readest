@@ -1800,7 +1800,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Sinhronizirajte knjižnico, napredek branja in označbe z Readest Cloud.",
   "Account and Storage": "Račun in shramba",
   "Manage your plan and stored files": "Upravljajte svoj paket in shranjene datoteke",
-  "Another device is still syncing this library via Readest Cloud": "Druga naprava še vedno sinhronizira to knjižnico prek Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} nalaganje ni uspelo: nezadostna kvota v shrambi",
   "{{count}} uploads failed: insufficient storage quota_two": "{{count}} nalaganji nista uspeli: nezadostna kvota v shrambi",
   "{{count}} uploads failed: insufficient storage quota_few": "{{count}} nalaganja niso uspela: nezadostna kvota v shrambi",
@@ -2090,7 +2089,6 @@
   "{{count}} Notes_few": "{{count}} opombe",
   "{{count}} Notes_other": "{{count}} opomb",
   "{{matched}} of {{total}}": "{{matched}} od {{total}}",
-  "Purchases restored successfully.": "Nakupi so bili uspešno obnovljeni.",
   "Send {{count}} book(s) to nearby device_one": "Pošlji {{count}} knjigo napravi v bližini",
   "Send {{count}} book(s) to nearby device_two": "Pošlji {{count}} knjigi napravi v bližini",
   "Send {{count}} book(s) to nearby device_few": "Pošlji {{count}} knjige napravi v bližini",
@@ -2153,5 +2151,12 @@
   "More Settings": "Več nastavitev",
   "Right-to-Left Pages": "Strani od desne proti levi",
   "Send Document Metadata": "Pošlji metapodatke dokumenta",
-  "Hide covers": "Skrij naslovnice knjig"
+  "Hide covers": "Skrij naslovnice knjig",
+  "Downloading {{title}}": "Prenašanje {{title}}",
+  "Remove from queue": "Odstrani iz čakalne vrste",
+  "Cancel all ({{count}})_one": "Prekliči vse ({{count}})",
+  "Cancel all ({{count}})_two": "Prekliči vse ({{count}})",
+  "Cancel all ({{count}})_few": "Prekliči vse ({{count}})",
+  "Cancel all ({{count}})_other": "Prekliči vse ({{count}})",
+  "Waiting…": "Čakanje…"
 }

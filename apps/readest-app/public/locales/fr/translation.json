@@ -1766,7 +1766,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Synchronisez votre bibliothèque, votre progression de lecture et vos surlignages avec Readest Cloud.",
   "Account and Storage": "Compte et stockage",
   "Manage your plan and stored files": "Gérer votre abonnement et vos fichiers stockés",
-  "Another device is still syncing this library via Readest Cloud": "Un autre appareil synchronise encore cette bibliothèque via Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} téléversement échoué : quota de stockage insuffisant",
   "{{count}} uploads failed: insufficient storage quota_many": "{{count}} téléversements échoués : quota de stockage insuffisant",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} téléversements échoués : quota de stockage insuffisant",
@@ -2042,7 +2041,6 @@
   "{{count}} Notes_many": "{{count}} notes",
   "{{count}} Notes_other": "{{count}} notes",
   "{{matched}} of {{total}}": "{{matched}} sur {{total}}",
-  "Purchases restored successfully.": "Achats restaurés avec succès.",
   "Send {{count}} book(s) to nearby device_one": "Envoyer {{count}} livre à un appareil à proximité",
   "Send {{count}} book(s) to nearby device_many": "Envoyer {{count}} livres à un appareil à proximité",
   "Send {{count}} book(s) to nearby device_other": "Envoyer {{count}} livres à un appareil à proximité",
@@ -2097,5 +2095,11 @@
   "More Settings": "Plus de paramètres",
   "Right-to-Left Pages": "Pages de droite à gauche",
   "Send Document Metadata": "Envoyer les métadonnées du document",
-  "Hide covers": "Masquer les couvertures de livres"
+  "Hide covers": "Masquer les couvertures de livres",
+  "Downloading {{title}}": "Téléchargement de {{title}}",
+  "Remove from queue": "Retirer de la file d'attente",
+  "Cancel all ({{count}})_one": "Tout annuler ({{count}})",
+  "Cancel all ({{count}})_many": "Tout annuler ({{count}})",
+  "Cancel all ({{count}})_other": "Tout annuler ({{count}})",
+  "Waiting…": "En attente…"
 }

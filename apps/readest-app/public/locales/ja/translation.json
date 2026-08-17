@@ -1698,7 +1698,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "ライブラリ、読書進捗、ハイライトを Readest Cloud と同期します。",
   "Account and Storage": "アカウントとストレージ",
   "Manage your plan and stored files": "プランと保存済みファイルを管理",
-  "Another device is still syncing this library via Readest Cloud": "別のデバイスがまだ Readest Cloud 経由でこのライブラリを同期しています",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} 件のアップロードが失敗しました: ストレージクォータが不足しています",
   "Library sync via {{provider}}": "{{provider}} 経由でライブラリを同期",
   "Google Drive session expired": "Google Drive のセッションが期限切れです",
@@ -1946,7 +1945,6 @@
   "{{count}} Highlights_other": "{{count}}件のハイライト",
   "{{count}} Notes_other": "{{count}}件のメモ",
   "{{matched}} of {{total}}": "{{total}}件中{{matched}}件",
-  "Purchases restored successfully.": "購入が正常に復元されました。",
   "Send {{count}} book(s) to nearby device_other": "{{count}}冊の本を近くのデバイスに送信",
   "Refresh devices": "デバイスを更新",
   "Enable LocalSend in Settings to send books.": "本を送信するには、設定でLocalSendを有効にしてください。",
@@ -1985,5 +1983,9 @@
   "More Settings": "その他の設定",
   "Right-to-Left Pages": "右から左のページ送り",
   "Send Document Metadata": "ドキュメントのメタデータを送信",
-  "Hide covers": "表紙を非表示"
+  "Hide covers": "表紙を非表示",
+  "Downloading {{title}}": "{{title}} をダウンロード中",
+  "Remove from queue": "キューから削除",
+  "Cancel all ({{count}})_other": "すべてキャンセル ({{count}})",
+  "Waiting…": "待機中…"
 }

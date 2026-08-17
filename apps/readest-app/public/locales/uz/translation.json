@@ -1732,7 +1732,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Kutubxonangiz, oʻqish jarayoni va belgilashlaringizni Readest Cloud bilan sinxronlang.",
   "Account and Storage": "Hisob va xotira",
   "Manage your plan and stored files": "Tarif reja va saqlangan fayllarni boshqaring",
-  "Another device is still syncing this library via Readest Cloud": "Boshqa qurilma hali ham bu kutubxonani Readest Cloud orqali sinxronlamoqda",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} ta yuklash muvaffaqiyatsiz: yetarli xotira kvotasi yoʻq",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} ta yuklash muvaffaqiyatsiz: yetarli xotira kvotasi yoʻq",
   "Library sync via {{provider}}": "Kutubxona {{provider}} orqali sinxronlashtiriladi",
@@ -1994,7 +1993,6 @@
   "{{count}} Notes_one": "{{count}} ta eslatma",
   "{{count}} Notes_other": "{{count}} ta eslatma",
   "{{matched}} of {{total}}": "{{total}} tadan {{matched}} ta",
-  "Purchases restored successfully.": "Xaridlar muvaffaqiyatli tiklandi.",
   "Send {{count}} book(s) to nearby device_one": "{{count}} ta kitobni yaqin-atrofdagi qurilmaga yuborish",
   "Send {{count}} book(s) to nearby device_other": "{{count}} ta kitobni yaqin-atrofdagi qurilmaga yuborish",
   "Refresh devices": "Qurilmalarni yangilash",
@@ -2041,5 +2039,10 @@
   "More Settings": "Boshqa sozlamalar",
   "Right-to-Left Pages": "Oʻngdan chapga sahifalar",
   "Send Document Metadata": "Hujjat metamaʼlumotlarini yuborish",
-  "Hide covers": "Kitob muqovalarini yashirish"
+  "Hide covers": "Kitob muqovalarini yashirish",
+  "Downloading {{title}}": "{{title}} yuklab olinmoqda",
+  "Remove from queue": "Navbatdan olib tashlash",
+  "Cancel all ({{count}})_one": "Barchasini bekor qilish ({{count}})",
+  "Cancel all ({{count}})_other": "Barchasini bekor qilish ({{count}})",
+  "Waiting…": "Kutilmoqda…"
 }

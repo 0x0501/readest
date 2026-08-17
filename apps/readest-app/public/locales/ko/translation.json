@@ -1698,7 +1698,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "라이브러리, 읽기 진행 상황, 하이라이트를 Readest Cloud와 동기화합니다.",
   "Account and Storage": "계정 및 저장소",
   "Manage your plan and stored files": "요금제와 저장된 파일 관리",
-  "Another device is still syncing this library via Readest Cloud": "다른 기기가 아직 Readest Cloud를 통해 이 라이브러리를 동기화하고 있습니다",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}}개의 업로드 실패: 저장소 할당량 부족",
   "Library sync via {{provider}}": "{{provider}}을(를) 통한 서재 동기화",
   "Google Drive session expired": "Google Drive 세션이 만료되었습니다",
@@ -1946,7 +1945,6 @@
   "{{count}} Highlights_other": "하이라이트 {{count}}개",
   "{{count}} Notes_other": "메모 {{count}}개",
   "{{matched}} of {{total}}": "{{total}}개 중 {{matched}}개",
-  "Purchases restored successfully.": "구매가 성공적으로 복원되었습니다.",
   "Send {{count}} book(s) to nearby device_other": "책 {{count}}권을 근처 기기로 보내기",
   "Refresh devices": "기기 새로고침",
   "Enable LocalSend in Settings to send books.": "책을 보내려면 설정에서 LocalSend를 활성화하세요.",
@@ -1985,5 +1983,9 @@
   "More Settings": "추가 설정",
   "Right-to-Left Pages": "오른쪽에서 왼쪽으로 페이지 넘김",
   "Send Document Metadata": "문서 메타데이터 전송",
-  "Hide covers": "책 표지 숨기기"
+  "Hide covers": "책 표지 숨기기",
+  "Downloading {{title}}": "{{title}} 다운로드 중",
+  "Remove from queue": "대기열에서 제거",
+  "Cancel all ({{count}})_other": "모두 취소 ({{count}})",
+  "Waiting…": "대기 중…"
 }

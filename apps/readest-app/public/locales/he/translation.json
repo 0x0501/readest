@@ -1766,7 +1766,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "סנכרן את הספרייה, התקדמות הקריאה וההדגשות שלך עם Readest Cloud.",
   "Account and Storage": "חשבון ואחסון",
   "Manage your plan and stored files": "נהל את המינוי והקבצים המאוחסנים שלך",
-  "Another device is still syncing this library via Readest Cloud": "מכשיר אחר עדיין מסנכרן את הספרייה הזו דרך Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_one": "העלאה {{count}} נכשלה: מכסת אחסון לא מספקת",
   "{{count}} uploads failed: insufficient storage quota_two": "{{count}} העלאות נכשלו: מכסת אחסון לא מספקת",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} העלאות נכשלו: מכסת אחסון לא מספקת",
@@ -2042,7 +2041,6 @@
   "{{count}} Notes_two": "{{count}} הערות",
   "{{count}} Notes_other": "{{count}} הערות",
   "{{matched}} of {{total}}": "{{matched}} מתוך {{total}}",
-  "Purchases restored successfully.": "הרכישות שוחזרו בהצלחה.",
   "Send {{count}} book(s) to nearby device_one": "שליחת ספר אחד למכשיר קרוב",
   "Send {{count}} book(s) to nearby device_two": "שליחת {{count}} ספרים למכשיר קרוב",
   "Send {{count}} book(s) to nearby device_other": "שליחת {{count}} ספרים למכשיר קרוב",
@@ -2097,5 +2095,11 @@
   "More Settings": "הגדרות נוספות",
   "Right-to-Left Pages": "עמודים מימין לשמאל",
   "Send Document Metadata": "שליחת מטא-נתונים של המסמך",
-  "Hide covers": "הסתר כריכות ספרים"
+  "Hide covers": "הסתר כריכות ספרים",
+  "Downloading {{title}}": "מוריד את {{title}}",
+  "Remove from queue": "הסר מהתור",
+  "Cancel all ({{count}})_one": "בטל הכול ({{count}})",
+  "Cancel all ({{count}})_two": "בטל הכול ({{count}})",
+  "Cancel all ({{count}})_other": "בטל הכול ({{count}})",
+  "Waiting…": "ממתין…"
 }

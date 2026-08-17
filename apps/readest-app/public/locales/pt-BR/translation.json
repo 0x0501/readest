@@ -1766,7 +1766,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Sincronize sua biblioteca, progresso de leitura e destaques com o Readest Cloud.",
   "Account and Storage": "Conta e armazenamento",
   "Manage your plan and stored files": "Gerencie seu plano e arquivos armazenados",
-  "Another device is still syncing this library via Readest Cloud": "Outro dispositivo ainda está sincronizando esta biblioteca via Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} envio falhou: cota de armazenamento insuficiente",
   "{{count}} uploads failed: insufficient storage quota_many": "{{count}} envios falharam: cota de armazenamento insuficiente",
   "{{count}} uploads failed: insufficient storage quota_other": "{{count}} envios falharam: cota de armazenamento insuficiente",
@@ -2042,7 +2041,6 @@
   "{{count}} Notes_many": "{{count}} notas",
   "{{count}} Notes_other": "{{count}} notas",
   "{{matched}} of {{total}}": "{{matched}} de {{total}}",
-  "Purchases restored successfully.": "Compras restauradas com sucesso.",
   "Send {{count}} book(s) to nearby device_one": "Enviar {{count}} livro para um dispositivo próximo",
   "Send {{count}} book(s) to nearby device_many": "Enviar {{count}} livros para um dispositivo próximo",
   "Send {{count}} book(s) to nearby device_other": "Enviar {{count}} livros para um dispositivo próximo",
@@ -2102,5 +2100,6 @@
   "More Settings": "Mais configurações",
   "Right-to-Left Pages": "Páginas da direita para a esquerda",
   "Send Document Metadata": "Enviar metadados do documento",
-  "Hide covers": "Ocultar capas de livros"
+  "Hide covers": "Ocultar capas de livros",
+  "Downloading {{title}}": "Baixando {{title}}"
 }

@@ -1800,7 +1800,6 @@
   "Sync your library, reading progress, and highlights with Readest Cloud.": "Synchronizuj bibliotekę, postęp czytania i zaznaczenia z Readest Cloud.",
   "Account and Storage": "Konto i przechowywanie",
   "Manage your plan and stored files": "Zarządzaj swoim planem i przechowywanymi plikami",
-  "Another device is still syncing this library via Readest Cloud": "Inne urządzenie nadal synchronizuje tę bibliotekę przez Readest Cloud",
   "{{count}} uploads failed: insufficient storage quota_one": "{{count}} przesyłanie nieudane: niewystarczająca kwota przechowywania",
   "{{count}} uploads failed: insufficient storage quota_few": "{{count}} przesyłania nieudane: niewystarczająca kwota przechowywania",
   "{{count}} uploads failed: insufficient storage quota_many": "{{count}} przesyłań nieudanych: niewystarczająca kwota przechowywania",
@@ -2090,7 +2089,6 @@
   "{{count}} Notes_many": "{{count}} notatek",
   "{{count}} Notes_other": "{{count}} notatki",
   "{{matched}} of {{total}}": "{{matched}} z {{total}}",
-  "Purchases restored successfully.": "Zakupy zostały przywrócone.",
   "Send {{count}} book(s) to nearby device_one": "Wyślij {{count}} książkę na urządzenie w pobliżu",
   "Send {{count}} book(s) to nearby device_few": "Wyślij {{count}} książki na urządzenie w pobliżu",
   "Send {{count}} book(s) to nearby device_many": "Wyślij {{count}} książek na urządzenie w pobliżu",
@@ -2153,5 +2151,12 @@
   "More Settings": "Więcej ustawień",
   "Right-to-Left Pages": "Strony od prawej do lewej",
   "Send Document Metadata": "Wysyłaj metadane dokumentu",
-  "Hide covers": "Ukryj okładki książek"
+  "Hide covers": "Ukryj okładki książek",
+  "Downloading {{title}}": "Pobieranie {{title}}",
+  "Remove from queue": "Usuń z kolejki",
+  "Cancel all ({{count}})_one": "Anuluj wszystko ({{count}})",
+  "Cancel all ({{count}})_few": "Anuluj wszystko ({{count}})",
+  "Cancel all ({{count}})_many": "Anuluj wszystko ({{count}})",
+  "Cancel all ({{count}})_other": "Anuluj wszystko ({{count}})",
+  "Waiting…": "Oczekiwanie…"
 }

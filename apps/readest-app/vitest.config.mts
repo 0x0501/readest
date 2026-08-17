@@ -18,6 +18,14 @@ export default defineConfig({
       // Pin all `fflate` resolutions to the app's copy to keep js-mdict
       // self-contained at the source-tree level.
       fflate: path.resolve(__dirname, 'node_modules/fflate'),
+      // Better Auth's browser client is built at module scope, so any test that
+      // reaches AuthContext opens a BroadcastChannel and a nanostores session
+      // atom whose cleanup timer can outlive jsdom — an uncaught
+      // `window is not defined` that fails a whole shard with every test
+      // passing.  See the stub for the full story.  `vi.mock` in a setup file
+      // does not reach modules imported by test files, so the substitution has
+      // to happen at resolution.
+      '@/libs/auth/client': path.resolve(__dirname, 'src/__tests__/helpers/authClientStub.ts'),
     },
   },
   test: {

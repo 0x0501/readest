@@ -25,29 +25,10 @@ const { runtimeConfig, webPlatform, safeAreaInsets } = vi.hoisted(() => ({
   webPlatform: { value: true },
   safeAreaInsets: { value: { top: 0, right: 0, bottom: 0, left: 0 } },
 }));
-const cloudChoice = vi.hoisted(() => ({ resolve: () => {} }));
-
 vi.mock('@/hooks/useTranslation', () => ({
   useTranslation: () => (s: string) => s,
 }));
 vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({}) }));
-vi.mock('@/hooks/useEnsureSettingsLoaded', () => ({ useEnsureSettingsLoaded: () => true }));
-vi.mock('@/app/auth/components/ReadestCloudOptIn', () => ({
-  default: ({ onPendingWrite }: { onPendingWrite: (write: Promise<void>) => void }) => (
-    <button
-      type='button'
-      onClick={() =>
-        onPendingWrite(
-          new Promise<void>((resolve) => {
-            cloudChoice.resolve = resolve;
-          }),
-        )
-      }
-    >
-      Cloud choice
-    </button>
-  ),
-}));
 vi.mock('@/store/themeStore', () => ({
   useThemeStore: () => ({ safeAreaInsets: safeAreaInsets.value }),
 }));
@@ -103,9 +84,9 @@ describe('sign-in page', () => {
     expect(link?.getAttribute('href')).toBe('/auth/forgot-password');
   });
 
-  it('waits for the cloud choice to be saved before signing in', async () => {
+  it('signs in without asking for a Readest Cloud choice', async () => {
     render(<AuthPage />);
-    fireEvent.click(screen.getByText('Cloud choice'));
+    expect(screen.queryByRole('checkbox')).toBeNull();
     fireEvent.change(screen.getByPlaceholderText('Your email address'), {
       target: { value: 'reader@example.test' },
     });
@@ -113,8 +94,6 @@ describe('sign-in page', () => {
       target: { value: 'secret-password' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-    expect(signInEmail).not.toHaveBeenCalled();
-    cloudChoice.resolve();
     await waitFor(() => expect(signInEmail).toHaveBeenCalledOnce());
   });
 

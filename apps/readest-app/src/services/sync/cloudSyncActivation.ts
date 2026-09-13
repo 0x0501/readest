@@ -77,7 +77,7 @@ export const withCloudProviderEnabled = (
 
 /**
  * Load the live settings, apply `apply`, then hydrate the store, persist, and
- * broadcast. Shared by the two writers below so a cloud-sync selection always
+ * broadcast. A cloud-sync selection always
  * (a) persists, (b) hydrates the settings store even on routes where it was
  * never loaded (the OAuth callbacks), and (c) broadcasts to other windows — a
  * stale reader window would otherwise clobber the change on its next
@@ -115,15 +115,3 @@ export const persistCloudProviderEnabled = async (
   persistCloudSyncSelection(envConfig, (current) =>
     withCloudProviderEnabled(mutate(current), kind, enabled),
   );
-
-/**
- * Readest Cloud's switch, for callers that need to clear it back to the
- * derived default as well as set it. The sign-in page's opt-in (#6010) is the
- * one such caller; the Integrations checkbox goes through
- * `persistCloudProviderEnabled` like every other provider.
- */
-export const persistReadestCloudChoice = async (
-  envConfig: EnvConfigType,
-  enabled: boolean | undefined,
-): Promise<SystemSettings> =>
-  persistCloudSyncSelection(envConfig, (current) => withReadestCloudChoice(current, enabled));

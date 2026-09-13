@@ -4,20 +4,18 @@ import { WebAuthnAbortService } from '@simplewebauthn/browser';
 import clsx from 'clsx';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FaGithub } from 'react-icons/fa';
 import { IoArrowBack } from 'react-icons/io5';
 import { MdKey } from 'react-icons/md';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/hooks/useTheme';
-import { useEnsureSettingsLoaded } from '@/hooks/useEnsureSettingsLoaded';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useTurnstile } from '@/hooks/useTurnstile';
 import { authClient } from '@/libs/auth/client';
 import { isWebAppPlatform } from '@/services/environment';
 import { getRuntimeConfig } from '@/services/runtimeConfig';
 import { useThemeStore } from '@/store/themeStore';
-import ReadestCloudOptIn from './components/ReadestCloudOptIn';
 
 type Mode = 'sign-in' | 'sign-up';
 
@@ -27,11 +25,6 @@ export default function AuthPage() {
   const { user } = useAuth();
   const { safeAreaInsets } = useThemeStore();
   useTheme({ systemUIVisible: false });
-  // The OAuth return and any deep link land here cold; hydrate before the
-  // Readest Cloud opt-in or handleGoBack's keepLogin write reads the store.
-  useEnsureSettingsLoaded();
-  const pendingCloudChoice = useRef<Promise<unknown> | null>(null);
-
   const [mode, setMode] = useState<Mode>('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -75,7 +68,6 @@ export default function AuthPage() {
     e.preventDefault();
     setBusy(true);
     setError('');
-    await pendingCloudChoice.current;
     const fetchOptions = { headers: captcha.headers };
     const { error: authError } =
       mode === 'sign-in'
@@ -103,7 +95,6 @@ export default function AuthPage() {
 
   const handleGithub = async () => {
     setError('');
-    await pendingCloudChoice.current;
     await authClient.signIn.social({ provider: 'github', callbackURL: redirectTo });
   };
 
@@ -148,7 +139,6 @@ export default function AuthPage() {
             placeholder={_('Your password')}
             className='input input-bordered eink-bordered w-full'
           />
-          <ReadestCloudOptIn onPendingWrite={(write) => (pendingCloudChoice.current = write)} />
           {captcha.widget}
           {error && <p className='text-error text-sm'>{error}</p>}
           <button

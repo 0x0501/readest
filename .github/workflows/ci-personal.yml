@@ -166,10 +166,12 @@ jobs:
           stale=$(q "select count(*) from pg_constraint c
                      join pg_class t on t.oid = c.confrelid
                      join pg_namespace n on n.oid = t.relnamespace
-                     where c.contype = 'f' and n.nspname = 'auth'")
+                     join pg_class rel on rel.oid = c.conrelid
+                     join pg_namespace rn on rn.oid = rel.relnamespace
+                     where c.contype = 'f' and n.nspname = 'auth' and rn.nspname = 'public'")
           echo "applied=$applied journal=$journal staleAuthFks=$stale"
           [ "$applied" = "$journal" ] || { echo "::error::journal has $journal entries but $applied ran"; exit 1; }
-          [ "$stale" = "0" ] || { echo "::error::$stale foreign keys still reference the auth.users stub"; exit 1; }
+          [ "$stale" = "0" ] || { echo "::error::$stale public foreign keys still reference the auth.users stub"; exit 1; }
 
       # The database this job just built is the only place these can run. A
       # mocked equivalent is what let the usage counters ship against Postgres

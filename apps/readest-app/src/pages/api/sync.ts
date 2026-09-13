@@ -666,113 +666,133 @@ export async function POST(req: NextRequest) {
           serverRecordsMap.set(key, record);
         });
 
+        // One payload can name the same primary key twice (two library copies,
+        // a retry coalesced into one POST). Postgres rejects a multi-row INSERT
+        // that repeats a PK, so keep the later change before classifying.
+        const recordsByKey = new Map<string, (typeof dbRecords)[number]>();
+        for (const item of dbRecords) {
+          const key = primaryKeys.map((pk) => item.original[pk]).join('|');
+          const prev = recordsByKey.get(key);
+          if (!prev || latestChangeMs(item.db) >= latestChangeMs(prev.db)) {
+            recordsByKey.set(key, item);
+          }
+        }
+
+        const keyOf = (row: BookDataRecord | DBBook | DBBookConfig) =>
+          primaryKeys.map((pk) => (row as BookDataRecord)[pk]).join('|');
+
+        const mergeAgainstServer = (
+          dbRec: DBBook | DBBookConfig,
+          serverData: BookDataRecord,
+        ): { update: DBBook | DBBookConfig } | { keep: BookDataRecord } => {
+          const clientUpdatedAt = dbRec.updated_at ? new Date(dbRec.updated_at).getTime() : 0;
+          const serverUpdatedAt = serverData.updated_at
+            ? new Date(serverData.updated_at).getTime()
+            : 0;
+          const clientDeletedAt = dbRec.deleted_at ? new Date(dbRec.deleted_at).getTime() : 0;
+          const serverDeletedAt = serverData.deleted_at
+            ? new Date(serverData.deleted_at).getTime()
+            : 0;
+          const clientIsNewer =
+            clientDeletedAt > serverDeletedAt || clientUpdatedAt > serverUpdatedAt;
+
+          if (table === 'books') {
+            // `dbRec` is DBBook | DBBookConfig; in the 'books' branch it is always DBBook.
+            const clientBook = dbRec as DBBook;
+            // `serverData` is BookDataRecord but the DB row carries the status +
+            // cover columns at runtime — widen the type without going through `unknown`.
+            const serverBook = serverData as BookDataRecord &
+              Partial<
+                Pick<
+                  DBBook,
+                  | 'reading_status'
+                  | 'reading_status_updated_at'
+                  | 'cover_hash'
+                  | 'cover_updated_at'
+                  | 'metadata'
+                  | 'metadata_updated_at'
+                >
+              > &
+              Pick<DBBook, 'title' | 'author' | 'tags'>;
+            const status = resolveReadingStatusMerge(clientBook, serverBook);
+            // Cover has its own field-level LWW so a page-turn can't clobber a
+            // cover edit (issue #4544; mirrors reading_status / #4634).
+            const cover = resolveCoverMerge(clientBook, serverBook);
+            // The metadata group likewise merges on its own clock (issue #5438).
+            const meta = resolveMetadataMerge(clientBook, serverBook, clientIsNewer);
+            if (clientIsNewer) {
+              // Client wins the row; graft the fresher status + cover +
+              // metadata onto it (server's may be the newer one even though
+              // the row is older).
+              clientBook.reading_status = status.reading_status;
+              clientBook.reading_status_updated_at = status.reading_status_updated_at;
+              clientBook.cover_hash = cover.cover_hash;
+              clientBook.cover_updated_at = cover.cover_updated_at;
+              clientBook.title = meta.title;
+              clientBook.author = meta.author;
+              clientBook.tags = meta.tags;
+              clientBook.metadata = meta.metadata;
+              clientBook.metadata_updated_at = meta.metadata_updated_at;
+              return { update: clientBook };
+            }
+            // Only rewrite when a resolved field VALUE differs from the
+            // server's — a timestamp-only difference on the same value is a
+            // no-op, and rewriting it would churn updated_at + re-propagate.
+            const statusChanged = readingStatusChanged(
+              status.reading_status,
+              serverBook.reading_status,
+            );
+            const coverChanged = (cover.cover_hash ?? null) !== (serverBook.cover_hash ?? null);
+            const metadataChanged = bookMetadataChanged(meta, serverBook);
+            if (statusChanged || coverChanged || metadataChanged) {
+              // Server wins the row, but the client's status, cover and/or
+              // metadata is the fresher one. Graft the fresher fields onto
+              // the server row and leave updated_at untouched; the
+              // books_set_synced_at trigger advances synced_at so peers
+              // re-pull via the synced_at cursor without reordering the
+              // date-read library (#4678, #4544, #5438).
+              // The runtime DB row carries all DBBook columns; the static type
+              // of `serverBook` is a narrower intersection so `unknown` is
+              // required to bridge the gap at this one construction site.
+              const propagated = buildStatusPropagationRow(serverBook as unknown as DBBook, status);
+              propagated.cover_hash = cover.cover_hash;
+              propagated.cover_updated_at = cover.cover_updated_at;
+              propagated.title = meta.title;
+              propagated.author = meta.author;
+              propagated.tags = meta.tags;
+              propagated.metadata = meta.metadata;
+              propagated.metadata_updated_at = meta.metadata_updated_at;
+              return { update: propagated };
+            }
+            return { keep: serverData };
+          }
+          if (clientIsNewer) return { update: dbRec };
+          return { keep: serverData };
+        };
+
         // Separate into inserts and updates
-        const toInsert: (DBBook | DBBookConfig | DBBookConfig)[] = [];
-        const toUpdate: (DBBook | DBBookConfig | DBBookConfig)[] = [];
+        const toInsert: (DBBook | DBBookConfig)[] = [];
+        const toUpdate: (DBBook | DBBookConfig)[] = [];
         const batchAuthoritativeRecords: BookDataRecord[] = [];
 
-        for (const { original, db: dbRec } of dbRecords) {
-          const key = primaryKeys.map((pk) => original[pk]).join('|');
-          const serverData = serverRecordsMap.get(key);
+        for (const { original, db: dbRec } of recordsByKey.values()) {
+          const serverData = serverRecordsMap.get(keyOf(original));
 
           if (!serverData) {
             dbRec.updated_at = new Date().toISOString();
             toInsert.push(dbRec);
           } else {
-            const clientUpdatedAt = dbRec.updated_at ? new Date(dbRec.updated_at).getTime() : 0;
-            const serverUpdatedAt = serverData.updated_at
-              ? new Date(serverData.updated_at).getTime()
-              : 0;
-            const clientDeletedAt = dbRec.deleted_at ? new Date(dbRec.deleted_at).getTime() : 0;
-            const serverDeletedAt = serverData.deleted_at
-              ? new Date(serverData.deleted_at).getTime()
-              : 0;
-            const clientIsNewer =
-              clientDeletedAt > serverDeletedAt || clientUpdatedAt > serverUpdatedAt;
-
-            if (table === 'books') {
-              // `dbRec` is DBBook | DBBookConfig; in the 'books' branch it is always DBBook.
-              const clientBook = dbRec as DBBook;
-              // `serverData` is BookDataRecord but the DB row carries the status +
-              // cover columns at runtime — widen the type without going through `unknown`.
-              const serverBook = serverData as BookDataRecord &
-                Partial<
-                  Pick<
-                    DBBook,
-                    | 'reading_status'
-                    | 'reading_status_updated_at'
-                    | 'cover_hash'
-                    | 'cover_updated_at'
-                    | 'metadata'
-                    | 'metadata_updated_at'
-                  >
-                > &
-                Pick<DBBook, 'title' | 'author' | 'tags'>;
-              const status = resolveReadingStatusMerge(clientBook, serverBook);
-              // Cover has its own field-level LWW so a page-turn can't clobber a
-              // cover edit (issue #4544; mirrors reading_status / #4634).
-              const cover = resolveCoverMerge(clientBook, serverBook);
-              // The metadata group likewise merges on its own clock (issue #5438).
-              const meta = resolveMetadataMerge(clientBook, serverBook, clientIsNewer);
-              if (clientIsNewer) {
-                // Client wins the row; graft the fresher status + cover +
-                // metadata onto it (server's may be the newer one even though
-                // the row is older).
-                clientBook.reading_status = status.reading_status;
-                clientBook.reading_status_updated_at = status.reading_status_updated_at;
-                clientBook.cover_hash = cover.cover_hash;
-                clientBook.cover_updated_at = cover.cover_updated_at;
-                clientBook.title = meta.title;
-                clientBook.author = meta.author;
-                clientBook.tags = meta.tags;
-                clientBook.metadata = meta.metadata;
-                clientBook.metadata_updated_at = meta.metadata_updated_at;
-                toUpdate.push(clientBook);
-              } else {
-                // Only rewrite when a resolved field VALUE differs from the
-                // server's — a timestamp-only difference on the same value is a
-                // no-op, and rewriting it would churn updated_at + re-propagate.
-                const statusChanged = readingStatusChanged(
-                  status.reading_status,
-                  serverBook.reading_status,
-                );
-                const coverChanged = (cover.cover_hash ?? null) !== (serverBook.cover_hash ?? null);
-                const metadataChanged = bookMetadataChanged(meta, serverBook);
-                if (statusChanged || coverChanged || metadataChanged) {
-                  // Server wins the row, but the client's status, cover and/or
-                  // metadata is the fresher one. Graft the fresher fields onto
-                  // the server row and leave updated_at untouched; the
-                  // books_set_synced_at trigger advances synced_at so peers
-                  // re-pull via the synced_at cursor without reordering the
-                  // date-read library (#4678, #4544, #5438).
-                  // The runtime DB row carries all DBBook columns; the static type
-                  // of `serverBook` is a narrower intersection so `unknown` is
-                  // required to bridge the gap at this one construction site.
-                  const propagated = buildStatusPropagationRow(
-                    serverBook as unknown as DBBook,
-                    status,
-                  );
-                  propagated.cover_hash = cover.cover_hash;
-                  propagated.cover_updated_at = cover.cover_updated_at;
-                  propagated.title = meta.title;
-                  propagated.author = meta.author;
-                  propagated.tags = meta.tags;
-                  propagated.metadata = meta.metadata;
-                  propagated.metadata_updated_at = meta.metadata_updated_at;
-                  toUpdate.push(propagated);
-                } else {
-                  batchAuthoritativeRecords.push(serverData);
-                }
-              }
-            } else if (clientIsNewer) {
-              toUpdate.push(dbRec);
-            } else {
-              batchAuthoritativeRecords.push(serverData);
-            }
+            const merged = mergeAgainstServer(dbRec, serverData);
+            if ('update' in merged) toUpdate.push(merged.update);
+            else batchAuthoritativeRecords.push(merged.keep);
           }
         }
 
-        // Batch insert
+        // Batch insert. ON CONFLICT DO NOTHING is load-bearing: the existence
+        // SELECT can miss a live PK (Hyperdrive query cache, a concurrent
+        // insert) and a plain INSERT then 500s with books_pkey. Rows that
+        // already exist fall through to the merge below instead of failing
+        // the whole sync.
         if (toInsert.length > 0) {
           try {
             const inserted = (await db
@@ -780,8 +800,37 @@ export async function POST(req: NextRequest) {
               // Drizzle types `.values()` off the concrete table, and this one is a
               // union of three; the rows are built from that same table's columns.
               .values(toInsert.map((row) => toRow(table, row)) as never)
+              .onConflictDoNothing({
+                target: [cols['userId']!, ...keyProps.map((prop) => cols[prop]!)],
+              })
               .returning(wireColumnsOf(table))) as unknown as BookDataRecord[];
             batchAuthoritativeRecords.push(...inserted);
+            const insertedKeys = new Set(inserted.map((row) => keyOf(row)));
+            const unresolved = toInsert.filter((row) => !insertedKeys.has(keyOf(row)));
+            if (unresolved.length > 0) {
+              const extraFilters = primaryKeys.map((pk, idx) =>
+                inArray(cols[keyProps[idx]!]!, [
+                  ...new Set(unresolved.map((row) => (row as BookDataRecord)[pk] as string)),
+                ]),
+              );
+              const extraServer = (await db
+                .select(wireColumnsOf(table))
+                .from(TABLES[table])
+                .where(
+                  and(eq(cols['userId']!, user.id), ...extraFilters),
+                )) as unknown as BookDataRecord[];
+              extraServer.forEach((record) => serverRecordsMap.set(keyOf(record), record));
+              for (const dbRec of unresolved) {
+                const serverData = serverRecordsMap.get(keyOf(dbRec));
+                if (!serverData) {
+                  toUpdate.push(dbRec);
+                  continue;
+                }
+                const merged = mergeAgainstServer(dbRec, serverData);
+                if ('update' in merged) toUpdate.push(merged.update);
+                else batchAuthoritativeRecords.push(merged.keep);
+              }
+            }
           } catch (error) {
             // The reason has to be logged here: the caller is told something
             // deliberately vague, and the rethrow above this carries only that

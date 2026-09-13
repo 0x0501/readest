@@ -149,6 +149,40 @@ describe('POST /api/sync books', () => {
 
     expect((await bookRow('a'))?.syncedAt).toBe(before?.syncedAt);
   });
+
+  // Production: POST /api/sync 500ed with books_pkey (23505) because the write
+  // path INSERTed a hash the SELECT had not classified as existing. Two copies
+  // of the same book in one payload is the deterministic form of that miss —
+  // the first never makes it into the lookup map before the second is queued
+  // as another insert, and Postgres then rejects the statement.
+  it('upserts when the same book_hash is pushed twice in one request', async () => {
+    const { status, body } = await push({
+      books: [
+        clientBook('a', 1_000, { title: 'first' }),
+        clientBook('a', 2_000, { title: 'second' }),
+      ],
+    });
+
+    expect(status).toBe(200);
+    expect(body.error).toBeUndefined();
+    await expect(bookRow('a').then((r) => r?.title)).resolves.toBe('second');
+  });
+
+  // Production 500: the existence SELECT returned no row, then a one-row INSERT
+  // hit books_pkey. Two overlapping POSTs of a new hash are the same miss
+  // without having to stub the SELECT.
+  it('does not 500 when two concurrent pushes insert the same new book', async () => {
+    const [left, right] = await Promise.all([
+      push({ books: [clientBook('a', 1_000, { title: 'left' })] }),
+      push({ books: [clientBook('a', 2_000, { title: 'right' })] }),
+    ]);
+
+    expect(left.status).toBe(200);
+    expect(right.status).toBe(200);
+    expect(left.body.error).toBeUndefined();
+    expect(right.body.error).toBeUndefined();
+    await expect(bookRow('a')).resolves.toBeTruthy();
+  });
 });
 
 describe('POST /api/sync book_notes', () => {

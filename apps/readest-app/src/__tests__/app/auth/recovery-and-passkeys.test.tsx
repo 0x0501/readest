@@ -25,11 +25,29 @@ const { runtimeConfig, webPlatform, safeAreaInsets } = vi.hoisted(() => ({
   webPlatform: { value: true },
   safeAreaInsets: { value: { top: 0, right: 0, bottom: 0, left: 0 } },
 }));
+const cloudChoice = vi.hoisted(() => ({ resolve: () => {} }));
 
 vi.mock('@/hooks/useTranslation', () => ({
   useTranslation: () => (s: string) => s,
 }));
 vi.mock('@/hooks/useTheme', () => ({ useTheme: () => ({}) }));
+vi.mock('@/hooks/useEnsureSettingsLoaded', () => ({ useEnsureSettingsLoaded: () => true }));
+vi.mock('@/app/auth/components/ReadestCloudOptIn', () => ({
+  default: ({ onPendingWrite }: { onPendingWrite: (write: Promise<void>) => void }) => (
+    <button
+      type='button'
+      onClick={() =>
+        onPendingWrite(
+          new Promise<void>((resolve) => {
+            cloudChoice.resolve = resolve;
+          }),
+        )
+      }
+    >
+      Cloud choice
+    </button>
+  ),
+}));
 vi.mock('@/store/themeStore', () => ({
   useThemeStore: () => ({ safeAreaInsets: safeAreaInsets.value }),
 }));
@@ -83,6 +101,21 @@ describe('sign-in page', () => {
 
     const link = screen.getByText('Forgot your password?').closest('a');
     expect(link?.getAttribute('href')).toBe('/auth/forgot-password');
+  });
+
+  it('waits for the cloud choice to be saved before signing in', async () => {
+    render(<AuthPage />);
+    fireEvent.click(screen.getByText('Cloud choice'));
+    fireEvent.change(screen.getByPlaceholderText('Your email address'), {
+      target: { value: 'reader@example.test' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Your password'), {
+      target: { value: 'secret-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(signInEmail).not.toHaveBeenCalled();
+    cloudChoice.resolve();
+    await waitFor(() => expect(signInEmail).toHaveBeenCalledOnce());
   });
 
   it('offers passkeys on the web, and asks the platform to autofill one', () => {

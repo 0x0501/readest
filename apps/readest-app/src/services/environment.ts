@@ -1,6 +1,7 @@
 import { AppService } from '@/types/system';
 import { READEST_NODE_BASE_URL, READEST_WEB_BASE_URL } from './constants';
 import { getRuntimeConfig } from './runtimeConfig';
+import { isLinuxCefRuntime } from '@/utils/ua';
 
 declare global {
   interface Window {
@@ -19,6 +20,18 @@ export const getBaseUrl = () =>
   READEST_WEB_BASE_URL;
 export const getNodeBaseUrl = () =>
   process.env['NEXT_PUBLIC_NODE_BASE_URL'] ?? READEST_NODE_BASE_URL;
+
+/**
+ * Whether window move/resize has to be driven from JS with pointer events.
+ * Under CEF on X11 the mouse press is owned by Chromium's X connection, so the
+ * runtime's `startDragging` (`_NET_WM_MOVERESIZE` from winit's connection) is
+ * refused by the window manager, and the undecorated window has no native
+ * resize borders either. Every other platform keeps the runtime's own drag.
+ */
+export const needsPointerWindowControls = () =>
+  isTauriAppPlatform() &&
+  typeof navigator !== 'undefined' &&
+  isLinuxCefRuntime(navigator.userAgent);
 
 export const isMacPlatform = () =>
   typeof window !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
@@ -43,8 +56,13 @@ let nativeAppService: AppService | null = null;
 const getNativeAppService = async () => {
   if (!nativeAppService) {
     const { NativeAppService } = await import('@/services/nativeAppService');
-    nativeAppService = new NativeAppService();
-    await nativeAppService.init();
+    // Publish the singleton only after `init` resolves. Assigning first meant a
+    // failed init left a half-built service cached forever: every later caller
+    // got it back without re-running init, and `getInitializedAppService`
+    // handed synchronous callers an object whose paths were never resolved.
+    const service = new NativeAppService();
+    await service.init();
+    nativeAppService = service;
   }
   return nativeAppService;
 };
@@ -53,8 +71,9 @@ let webAppService: AppService | null = null;
 const getWebAppService = async () => {
   if (!webAppService) {
     const { WebAppService } = await import('@/services/webAppService');
-    webAppService = new WebAppService();
-    await webAppService.init();
+    const service = new WebAppService();
+    await service.init();
+    webAppService = service;
   }
   return webAppService;
 };

@@ -19,7 +19,9 @@ import { LibraryCoverFitType, LibraryViewModeType } from '@/types/settings';
 import { navigateToLogin } from '@/utils/nav';
 import { isReadestCloudStorageActive } from '@/services/sync/cloudSyncProvider';
 import { isFeedBook } from '@/services/rss/feedBookUrl';
+import { isAudiobook } from '@/utils/audiobook';
 import { formatAuthors, formatDescription, formatSeries } from '@/utils/book';
+import { formatCompactTime } from '@/utils/time';
 import { INDETERMINATE_PROGRESS } from '@/utils/transfer';
 import ReadingProgress from './ReadingProgress';
 import BookCover from '@/components/BookCover';
@@ -79,6 +81,23 @@ const BookItem: React.FC<BookItemProps> = ({
   const isTransferring = transferProgress !== null;
   const isIndeterminate = transferProgress === INDETERMINATE_PROGRESS;
 
+  // ABS books track progress in seconds, not pages, so the row shows a
+  // duration/remaining-time label instead of ReadingProgress's page percent:
+  // total length when unplayed, remaining time once started (mirrors the
+  // scrubber's "-remaining" convention).
+  const isAbsBook = isAudiobook(book);
+  const isPodcastShow = book.absMediaType === 'podcast';
+  const absDuration = book.duration ?? 0;
+  const absCurrentTime = book.progress?.[0] ?? 0;
+  const absTimeLabel =
+    absCurrentTime > 0
+      ? `-${formatCompactTime(Math.max(absDuration - absCurrentTime, 0))}`
+      : formatCompactTime(absDuration);
+  // A podcast show has no total duration or resume position of its own (those
+  // live per-episode, a later task), so the row badges its episode count
+  // instead of the duration/remaining-time label audiobooks get.
+  const episodeCountLabel = _('{{count}} episodes', { count: book.episodeCount ?? 0 });
+
   return (
     <div
       role='none'
@@ -93,8 +112,8 @@ const BookItem: React.FC<BookItemProps> = ({
     >
       <div
         className={clsx(
-          'bookitem-main relative flex justify-center overflow-hidden rounded',
-          !fitCoverInGrid && 'aspect-[28/41]',
+          'bookitem-main relative flex justify-center overflow-hidden rounded-sm',
+          !fitCoverInGrid && 'aspect-28/41',
           coverFit === 'crop' && 'shadow-md',
           mode === 'grid' && 'items-end',
           mode === 'list' && 'min-w-20 items-center',
@@ -108,7 +127,7 @@ const BookItem: React.FC<BookItemProps> = ({
           showSpine={settings.librarySkeuomorphicCovers}
           imageClassName={clsx(
             'shadow-md',
-            settings.librarySkeuomorphicCovers ? 'rounded-none' : 'rounded',
+            settings.librarySkeuomorphicCovers ? 'rounded-none' : 'rounded-sm',
           )}
           onAspectRatioChange={setCoverAspect}
         />
@@ -127,7 +146,7 @@ const BookItem: React.FC<BookItemProps> = ({
             {isIndeterminate ? (
               <span className='loading loading-spinner loading-sm text-white eink:text-base-content' />
             ) : (
-              <span className='eink:text-base-content text-sm font-semibold text-white not-eink:drop-shadow-sm'>
+              <span className='eink:text-base-content text-sm font-semibold text-white not-eink:drop-shadow-xs'>
                 {Math.round(transferProgress)}%
               </span>
             )}
@@ -141,7 +160,7 @@ const BookItem: React.FC<BookItemProps> = ({
             {bookSelected ? (
               <MdCheckCircle className='fill-blue-500' />
             ) : (
-              <MdCheckCircleOutline className='fill-gray-300 drop-shadow-sm' />
+              <MdCheckCircleOutline className='fill-gray-300 drop-shadow-xs' />
             )}
           </div>
         )}
@@ -157,7 +176,7 @@ const BookItem: React.FC<BookItemProps> = ({
           <h4
             className={clsx(
               'overflow-hidden text-ellipsis font-semibold',
-              mode === 'grid' && 'block whitespace-nowrap text-[0.6em] text-xs',
+              mode === 'grid' && 'block whitespace-nowrap text-xs',
               mode === 'list' && 'line-clamp-1 text-base',
             )}
           >
@@ -180,15 +199,26 @@ const BookItem: React.FC<BookItemProps> = ({
         <div
           className={clsx(
             'flex items-center',
-            book.progress || book.readingStatus ? 'justify-between' : 'justify-end',
+            book.progress || book.readingStatus || isAbsBook ? 'justify-between' : 'justify-end',
           )}
           style={{
             height: `${iconSize15}px`,
             minHeight: `${iconSize15}px`,
           }}
         >
-          {(book.progress || book.readingStatus) && (
-            <ReadingProgress book={book} showTimeRemaining={showTimeRemaining} />
+          {isAbsBook ? (
+            <div
+              className='text-neutral-content/70 flex min-w-0 justify-between text-xs'
+              role='status'
+            >
+              <span className='truncate tabular-nums'>
+                {isPodcastShow ? episodeCountLabel : absTimeLabel}
+              </span>
+            </div>
+          ) : (
+            (book.progress || book.readingStatus) && (
+              <ReadingProgress book={book} showTimeRemaining={showTimeRemaining} />
+            )
           )}
           <div className='flex shrink-0 items-center justify-center gap-x-2'>
             {!appService?.isMobile && (
@@ -200,16 +230,16 @@ const BookItem: React.FC<BookItemProps> = ({
                   showBookDetailsModal(book);
                 }}
               >
-                <div className='pt-[2px] sm:pt-[1px]'>
+                <div className='pt-0.5 sm:pt-px'>
                   <LiaInfoCircleSolid size={iconSize15} />
                 </div>
               </button>
             )}
-            {book.hasNarration && (
+            {(book.hasNarration || isAbsBook) && (
               <div
-                className='pt-[2px] sm:pt-[1px]'
-                title={_('Includes narration')}
-                aria-label={_('Includes narration')}
+                className='pt-0.5 sm:pt-px'
+                title={isAbsBook ? _('Audiobook') : _('Includes narration')}
+                aria-label={isAbsBook ? _('Audiobook') : _('Includes narration')}
               >
                 <LiaHeadphonesSolid size={iconSize15} />
               </div>
@@ -221,7 +251,11 @@ const BookItem: React.FC<BookItemProps> = ({
                 null
               : // A feed book has no file to move either way, so it never gets a
                 // cloud badge — it would only queue a transfer that fails (#5307).
+                // Same for an ABS book: it streams from the server and never has
+                // uploadedAt/downloadedAt set, so without this check the badge
+                // would render forever and Upload would always fail.
                 !isFeedBook(book) &&
+                !isAudiobook(book) &&
                 (!book.uploadedAt || (book.uploadedAt && !book.downloadedAt)) && (
                   <button
                     aria-label={!book.uploadedAt ? _('Upload Book') : _('Download Book')}

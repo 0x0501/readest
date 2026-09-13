@@ -7,12 +7,17 @@ import type { UserPlan } from '@/types/quota';
 
 const validateUserMock = vi.fn();
 const getUserProfilePlanMock = vi.fn();
+const getCustomizationPurchasedMock = vi.fn();
 vi.mock('@/utils/access', async () => {
   // Reach the real module so `isEmailInPlan` keeps the production logic
   // (we test it directly below) while patching the function the route
   // actually calls.
   const actual = await vi.importActual<typeof import('@/utils/access')>('@/utils/access');
-  return { ...actual, getUserProfilePlan: (...args: unknown[]) => getUserProfilePlanMock(...args) };
+  return {
+    ...actual,
+    getUserProfilePlan: (...args: unknown[]) => getUserProfilePlanMock(...args),
+    getCustomizationPurchased: (...args: unknown[]) => getCustomizationPurchasedMock(...args),
+  };
 });
 vi.mock('@/libs/auth/verify', () => ({
   validateUserAndToken: (...args: unknown[]) => validateUserMock(...args),
@@ -76,6 +81,7 @@ function makeReq(method: 'GET' | 'POST', body?: unknown): NextApiRequest {
 beforeEach(() => {
   validateUserMock.mockReset();
   getUserProfilePlanMock.mockReset();
+  getCustomizationPurchasedMock.mockReset().mockReturnValue(false);
   dbTouched.mockReset();
   validateUserMock.mockResolvedValue({
     user: { id: 'user-1', email: 'u@example.com' },
@@ -84,14 +90,15 @@ beforeEach(() => {
 });
 
 describe('isEmailInPlan helper', () => {
-  test('allows plus, pro, and lifetime (purchase)', () => {
-    expect(isEmailInPlan('plus')).toBe(true);
-    expect(isEmailInPlan('pro')).toBe(true);
-    expect(isEmailInPlan('purchase')).toBe(true);
+  test('allows plus, pro, and purchased customization', () => {
+    expect(isEmailInPlan('plus', false)).toBe(true);
+    expect(isEmailInPlan('pro', false)).toBe(true);
+    expect(isEmailInPlan('purchase', true)).toBe(true);
+    expect(isEmailInPlan('purchase', false)).toBe(false);
   });
 
   test('blocks the free tier', () => {
-    expect(isEmailInPlan('free')).toBe(false);
+    expect(isEmailInPlan('free', false)).toBe(false);
   });
 });
 
@@ -128,6 +135,7 @@ describe('/api/send/address — plan gate', () => {
     'purchase',
   ])('lets %s users through the gate', async (plan) => {
     getUserProfilePlanMock.mockReturnValue(plan);
+    getCustomizationPurchasedMock.mockReturnValue(plan === 'purchase');
     const res = makeRes();
     await addressHandler(makeReq('GET'), res as unknown as NextApiResponse);
     // The gate is past — the database was touched. We don't care here what
@@ -163,6 +171,7 @@ describe('/api/send/senders — plan gate', () => {
 
   test.each<UserPlan>(['plus', 'pro', 'purchase'])('lets %s users past the gate', async (plan) => {
     getUserProfilePlanMock.mockReturnValue(plan);
+    getCustomizationPurchasedMock.mockReturnValue(plan === 'purchase');
     const res = makeRes();
     await sendersHandler(makeReq('GET'), res as unknown as NextApiResponse);
     expect(dbTouched).toHaveBeenCalled();

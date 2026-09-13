@@ -20,24 +20,7 @@ import {
 import { DBBook, DBBookConfig } from '@/types/records';
 import { clientSafeMessage, describeError, SyncError } from '@/libs/errors';
 
-const pageKey = (r: StatPageRecord) => `${r.book_hash}|${r.page}|${r.start_time}`;
-
-/**
- * Decide which incoming page events to write: new keys always win; existing
- * keys win only when the incoming duration is strictly longer (union/upsert
- * semantics — KOReader-compatible).
- */
-export function pickWinningPages(
-  incoming: StatPageRecord[],
-  server: Map<string, StatPageRecord>,
-): { toUpsert: StatPageRecord[] } {
-  const toUpsert: StatPageRecord[] = [];
-  for (const rec of incoming) {
-    const existing = server.get(pageKey(rec));
-    if (!existing || rec.duration > existing.duration) toUpsert.push(rec);
-  }
-  return { toUpsert };
-}
+const ms = (s?: string | number | null) => (s ? new Date(s).getTime() : 0);
 
 /**
  * Field-level last-writer-wins for a books row's reading_status: return the
@@ -63,7 +46,6 @@ export function resolveReadingStatusMerge(
   client: Pick<DBBook, 'reading_status' | 'reading_status_updated_at'>,
   server: Pick<DBBook, 'reading_status' | 'reading_status_updated_at'>,
 ): Pick<DBBook, 'reading_status' | 'reading_status_updated_at'> {
-  const ms = (s?: string | null) => (s ? new Date(s).getTime() : 0);
   return ms(client.reading_status_updated_at) >= ms(server.reading_status_updated_at)
     ? {
         reading_status: client.reading_status,
@@ -109,7 +91,6 @@ export function resolveCoverMerge(
   client: Pick<DBBook, 'cover_hash' | 'cover_updated_at'>,
   server: Pick<DBBook, 'cover_hash' | 'cover_updated_at'>,
 ): Pick<DBBook, 'cover_hash' | 'cover_updated_at'> {
-  const ms = (s?: string | null) => (s ? new Date(s).getTime() : 0);
   return ms(client.cover_updated_at) >= ms(server.cover_updated_at)
     ? { cover_hash: client.cover_hash, cover_updated_at: client.cover_updated_at }
     : { cover_hash: server.cover_hash, cover_updated_at: server.cover_updated_at };
@@ -144,11 +125,21 @@ export function resolveMetadataMerge(
   server: BookMetadataFields,
   clientRowWins: boolean,
 ): BookMetadataFields {
-  const ms = (s?: string | null) => (s ? new Date(s).getTime() : 0);
   const clientMs = ms(client.metadata_updated_at);
   const serverMs = ms(server.metadata_updated_at);
   const clientWins = clientMs === serverMs ? clientRowWins : clientMs > serverMs;
-  return pickMetadataFields(clientWins ? client : server);
+  const winner = clientWins ? client : server;
+  const loser = clientWins ? server : client;
+  const fields = pickMetadataFields(winner);
+  // An absent `metadata` blob means "this device never had one" — a cloud-shelf
+  // row, a file-sync discovery row, an old client — never "the user cleared
+  // it": nothing in the app empties book.metadata, the editor only edits fields
+  // inside it. So it must never overwrite a copy that has one, on any clock.
+  // Without this a metadata-less peer erased every book's description for the
+  // whole fleet (#5912). title/author are NOT NULL columns and need no such
+  // guard.
+  fields.metadata = fields.metadata ?? loser.metadata;
+  return fields;
 }
 
 /**
@@ -164,6 +155,97 @@ export const bookMetadataChanged = (
   a.author !== b.author ||
   (a.metadata ?? null) !== (b.metadata ?? null) ||
   JSON.stringify(a.tags ?? null) !== JSON.stringify(b.tags ?? null);
+
+type BookGroupFields = Pick<DBBook, 'group_id' | 'group_name' | 'group_updated_at'>;
+
+const pickGroupFields = (b: BookGroupFields): BookGroupFields => ({
+  group_id: b.group_id,
+  group_name: b.group_name,
+  group_updated_at: b.group_updated_at,
+});
+
+const hasGroup = (b: BookGroupFields): boolean => !!b.group_id || !!b.group_name;
+
+/**
+ * Field-level last-writer-wins for a books row's group membership (group_id +
+ * group_name). Grouping shares the row with page-turn progress AND with
+ * uploads — `cloudService.uploadBook` bumps updated_at so the fresh
+ * uploaded_at reaches peers — so the group must resolve on its own clock or a
+ * device holding a never-grouped copy clobbers it. Issue #5911, the same
+ * hazard as #4634 / #4544 / #5438.
+ *
+ * A tie does NOT follow the row winner, unlike the three merges above. On
+ * equal stamps the side that HAS a group wins, because an absent group is
+ * ambiguous — "never grouped" and "ungrouped by a client too old to stamp"
+ * look identical, and every legacy row is unstamped (0 === 0). Only when both
+ * sides agree about having a group does the row winner decide. A real removal
+ * still propagates: it carries a newer group_updated_at and wins on step one.
+ */
+export function resolveGroupMerge(
+  client: BookGroupFields,
+  server: BookGroupFields,
+  clientRowWins: boolean,
+): BookGroupFields {
+  const clientMs = ms(client.group_updated_at);
+  const serverMs = ms(server.group_updated_at);
+  if (clientMs !== serverMs) return pickGroupFields(clientMs > serverMs ? client : server);
+  if (hasGroup(client) !== hasGroup(server)) {
+    return pickGroupFields(hasGroup(client) ? client : server);
+  }
+  return pickGroupFields(clientRowWins ? client : server);
+}
+
+/**
+ * Value-level change check for the propagation no-op guard: a timestamp-only
+ * difference on the same group must not rewrite the server row (mirrors
+ * readingStatusChanged / bookMetadataChanged).
+ */
+export const bookGroupChanged = (
+  a: Omit<BookGroupFields, 'group_updated_at'>,
+  b: Omit<BookGroupFields, 'group_updated_at'>,
+): boolean =>
+  (a.group_id ?? null) !== (b.group_id ?? null) ||
+  (a.group_name ?? null) !== (b.group_name ?? null);
+
+// Epoch ms of a row's latest change. A delete counts: KOReader's tombstones
+// keep the highlight's original updated_at (the plugin never bumps it on
+// delete), so ranking rows on updated_at alone puts a tombstone below a live
+// duplicate of the same note (issue #5818).
+type ChangeStamps = {
+  updated_at?: string | number | null;
+  deleted_at?: string | number | null;
+};
+const latestChangeMs = (rec: ChangeStamps) => Math.max(ms(rec.updated_at), ms(rec.deleted_at));
+
+/**
+ * Collapse rows sharing `keys` down to the one changed most recently, keeping
+ * the input order. The same note can exist under two book_hash values when the
+ * two devices hold different copies of a book (meta_hash bridges them); a
+ * deletion on either side must win over the stale live duplicate or it never
+ * reaches the peer. A tie goes to the tombstone: a delete and an edit in the
+ * same millisecond must not resurrect the note.
+ */
+export function dedupeLatest<T extends ChangeStamps>(records: T[], keys: (keyof T)[]): T[] {
+  const keyOf = (rec: T) =>
+    keys
+      .map((k) => rec[k])
+      .filter(Boolean)
+      .join('|');
+  const latest = new Map<string, { rec: T; at: number }>();
+  for (const rec of records) {
+    const key = keyOf(rec);
+    if (!key) continue;
+    const at = latestChangeMs(rec);
+    const best = latest.get(key);
+    if (!best || at > best.at || (at === best.at && !!rec.deleted_at && !best.rec.deleted_at)) {
+      latest.set(key, { rec, at });
+    }
+  }
+  return records.filter((rec) => {
+    const key = keyOf(rec);
+    return !key || latest.get(key)?.rec === rec;
+  });
+}
 
 const transformsToDB = {
   books: transformBookToDB,
@@ -342,22 +424,8 @@ export async function GET(req: NextRequest) {
           .where(and(...scopeOf(table), cursor))
           .orderBy(desc(cursorColumn))) as unknown as SyncRecord[];
 
-        let records = allRecords;
-        if (dedupeKeys && dedupeKeys.length > 0) {
-          const seen = new Set<string>();
-          records = records.filter((rec) => {
-            const key = dedupeKeys
-              .map((k) => rec[k])
-              .filter(Boolean)
-              .join('|');
-            if (key && seen.has(key)) {
-              return false;
-            } else {
-              seen.add(key);
-              return true;
-            }
-          });
-        }
+        const records =
+          dedupeKeys && dedupeKeys.length > 0 ? dedupeLatest(allRecords, dedupeKeys) : allRecords;
         (results as unknown as Record<string, SyncRecord[]>)[DBSyncTypeMap[table]] = records || [];
       };
 
@@ -859,63 +927,23 @@ export async function POST(req: NextRequest) {
       }
 
       if (statPages.length > 0) {
-        // Batched so a single push cannot blow past Postgres' bind-parameter
-        // limit: the existing-row fetch takes two IN lists and the upsert nine
-        // columns per row.
+        // Migration 020's explicit-user RPC is atomic and avoids the old
+        // existing-row scan. Migration 019's auth.uid() variant cannot scope
+        // this fork's Better Auth requests.
         const BATCH = 500;
         for (let off = 0; off < statPages.length; off += BATCH) {
-          const batch = statPages.slice(off, off + BATCH);
-          const bookHashes = [...new Set(batch.map((p) => p.book_hash))];
-          const startTimes = [...new Set(batch.map((p) => p.start_time))];
-          // Scoped to this batch's (book_hash, start_time) values rather than a
-          // book's whole history, so "longer-duration-wins" is decided against
-          // exactly the rows the batch could collide with.
-          const existing = await db
-            .select(STAT_PAGE_COLUMNS)
-            .from(schema.statPages)
-            .where(
-              and(
-                eq(schema.statPages.userId, user.id),
-                inArray(schema.statPages.bookHash, bookHashes),
-                inArray(schema.statPages.startTime, startTimes),
-              ),
-            );
-          const serverMap = new Map<string, StatPageRecord>();
-          existing.forEach((r) =>
-            serverMap.set(pageKey(r as unknown as StatPageRecord), r as unknown as StatPageRecord),
-          );
-          const { toUpsert } = pickWinningPages(batch, serverMap);
-          const rows = toUpsert.map((p) => ({
-            userId: user.id,
-            bookHash: p.book_hash,
+          const rows = statPages.slice(off, off + BATCH).map((p) => ({
+            book_hash: p.book_hash,
             page: p.page,
-            startTime: p.start_time,
+            start_time: p.start_time,
             duration: p.duration,
-            totalPages: p.total_pages,
+            total_pages: p.total_pages,
             ext: p.ext ?? null,
-            updatedAt: new Date().toISOString(),
-            deletedAt: p.deleted_at ?? null,
+            deleted_at: p.deleted_at ?? null,
           }));
-          if (rows.length > 0) {
-            await db
-              .insert(schema.statPages)
-              .values(rows)
-              .onConflictDoUpdate({
-                target: [
-                  schema.statPages.userId,
-                  schema.statPages.bookHash,
-                  schema.statPages.page,
-                  schema.statPages.startTime,
-                ],
-                set: {
-                  duration: sql`excluded.duration`,
-                  totalPages: sql`excluded.total_pages`,
-                  ext: sql`excluded.ext`,
-                  updatedAt: sql`excluded.updated_at`,
-                  deletedAt: sql`excluded.deleted_at`,
-                },
-              });
-          }
+          await db.execute(
+            sql`select public.upsert_stat_pages_as(${user.id}::uuid, ${JSON.stringify(rows)}::jsonb)`,
+          );
         }
       }
 

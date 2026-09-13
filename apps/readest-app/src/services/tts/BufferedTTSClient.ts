@@ -7,7 +7,7 @@ import { TTSWordBoundary } from '@/libs/edgeTTS';
 import { TTSGranularity, TTSMark, TTSVoice, TTSVoicesGroup } from './types';
 import { AppService } from '@/types/system';
 import { parseSSMLMarks } from '@/utils/ssml';
-import { TTSController } from './TTSController';
+import { DEFAULT_PARAGRAPH_GAP_SEC, TTSController } from './TTSController';
 import { TTSUtils } from './TTSUtils';
 import { findBoundaryIndexAtTime } from './wordHighlight';
 import { applyEdgeFade, findSpeechBounds } from './pcm';
@@ -38,12 +38,13 @@ import { TTSAudioBuffer, WebAudioPlayer, WebAudioPlayerEvent } from './WebAudioP
 // the screen off), not when it is fetched — schedule-ahead would otherwise
 // run foliate's mark cursor ahead of the voice and break prev/next/resume.
 
-// Natural pause between sentences, replacing the silence Edge bakes into every
-// utterance: measured at ~0.18s leading and ~0.8s trailing, so ~1s of dead air
-// per sentence if it is played as-is (see #5414). Divided by the playback rate
-// so pauses shrink with speed (#2033's "gaps don't scale" complaint). Note the
-// native path only cuts the trailing silence, so its audible gap also carries
-// the next utterance's ~0.18s of leading silence.
+// Natural pause between sentences at 1.0x, replacing the silence Edge bakes
+// into every utterance: measured at ~0.18s leading and ~0.8s trailing, so ~1s
+// of dead air per sentence if it is played as-is (see #5414). The rate scaling
+// happens once, before the value reaches this client (see scaleGapForRate);
+// what arrives here is wall-clock seconds of silence. Note the native path only
+// cuts the trailing silence, so its audible gap also carries the next
+// utterance's ~0.18s of leading silence.
 export const DEFAULT_SENTENCE_GAP_SEC = 0.15;
 const TICKS_PER_SECOND = 10_000_000;
 
@@ -99,6 +100,7 @@ export class BufferedTTSClient implements TTSClient {
   #rate = 1.0;
   #pitch = 1.0;
   #sentenceGapSec = DEFAULT_SENTENCE_GAP_SEC;
+  #paragraphGapSec = DEFAULT_PARAGRAPH_GAP_SEC;
 
   // iOS plays natively (app-process AVPlayer): audio in the app's own audio
   // session makes Now Playing, pause-slot retention, AirPods routing, and the
@@ -224,15 +226,22 @@ export class BufferedTTSClient implements TTSClient {
 
     // startSession before ensureContext: starting a session declares playback
     // intent, clearing any lingering user-pause so the context may resume.
-    const generation = this.#player.startSession((event: WebAudioPlayerEvent) => {
-      if (event.type === 'chunk-start') {
-        queue.push({ kind: 'chunk-start', index: event.chunkIndex });
-      } else if (event.type === 'session-end') {
-        queue.push({ kind: 'session-end' });
-      } else {
-        queue.push({ kind: 'error', message: event.message });
-      }
-    });
+    const generation = this.#player.startSession(
+      (event: WebAudioPlayerEvent) => {
+        if (event.type === 'chunk-start') {
+          queue.push({ kind: 'chunk-start', index: event.chunkIndex });
+        } else if (event.type === 'session-end') {
+          queue.push({ kind: 'session-end' });
+        } else {
+          queue.push({ kind: 'error', message: event.message });
+        }
+      },
+      // One speak() is one paragraph, so the pause before this session's first
+      // sample is the inter-paragraph pause. Scheduling it against the previous
+      // session's end is what hides synthesis and decode inside the pause; when
+      // they overrun it the player just starts as soon as it can (#5750).
+      { startAfterPreviousSec: this.#paragraphGapSec },
+    );
     this.#activeGeneration = generation;
     await this.#player.ensureContext();
     this.#isPlaying = true;
@@ -417,7 +426,7 @@ export class BufferedTTSClient implements TTSClient {
           chunkMeta.push(meta);
           try {
             const durationSec = await this.#player.scheduleRawChunk(generation, index, audio.data, {
-              gapSec: this.#sentenceGapSec / rate,
+              gapSec: this.#sentenceGapSec,
             });
             meta.trimmedDurationSec = durationSec;
             this.#recordDurations(voiceId, mark.text, audio.boundaries, durationSec);
@@ -456,7 +465,7 @@ export class BufferedTTSClient implements TTSClient {
         this.#player.scheduleChunk(generation, prepared.buffer, {
           trimStartSec: prepared.trimStartSec,
           mediaScale: prepared.trimmedDurationSec / prepared.buffer.duration,
-          gapSec: this.#sentenceGapSec / rate,
+          gapSec: this.#sentenceGapSec,
         });
       }
       if (!signal.aborted && this.#activeGeneration === generation) {
@@ -604,6 +613,10 @@ export class BufferedTTSClient implements TTSClient {
     this.#sentenceGapSec = sec;
   }
 
+  setParagraphGap(sec: number): void {
+    this.#paragraphGapSec = sec;
+  }
+
   registerSectionManifest(section: number, marks: string[]): Promise<void> | void {
     if (this.provider instanceof CachingProvider) {
       return this.provider.registerSectionManifest(section, marks);
@@ -633,15 +646,31 @@ export class BufferedTTSClient implements TTSClient {
     ordinal: number,
     lang: string,
     text: string,
+    signal?: AbortSignal,
   ): Promise<boolean> {
     if (!(this.provider instanceof CachingProvider)) return false;
     const voiceId = await this.getVoiceIdFromLang(lang);
     const req = { lang, text, voice: voiceId, pitch: this.#pitch };
     try {
-      await this.provider.synthesize(req, new AbortController().signal);
-    } catch {
+      // Retry transient failures exactly like live playback: a single network
+      // blip (DNS, socket reset) must not drop a sentence and fail a chapter.
+      // Abort with the caller's signal so cancelling a download interrupts an
+      // in-flight synthesis instead of waiting for it to finish. An aborted
+      // synthesis resolves undefined: nothing was cached, so record nothing.
+      const result = await this.#synthesizeWithRetry(
+        lang,
+        text,
+        voiceId,
+        signal ?? new AbortController().signal,
+      );
+      if (!result) return false;
+    } catch (err) {
       // Offline / permanent failure: leave the ordinal unrecorded so the
       // section stays incomplete and can be retried later.
+      console.warn(
+        `[TTS] warmSentence FAIL s=${section} o=${ordinal} lang=${lang} voice=${voiceId} ` +
+          `text="${text.slice(0, 80)}" err=${err instanceof Error ? err.message : String(err)}`,
+      );
       return false;
     }
     await this.provider.recordMark(section, ordinal, req);
@@ -728,6 +757,10 @@ export class BufferedTTSClient implements TTSClient {
       // The native player time-stretches live; the web path bakes the rate
       // into the scheduled buffers, so it needs a session restart.
       liveRateChange: this.#player instanceof NativeAudioPlayer,
+      // Only the web path carries an audio clock across sessions; the native
+      // queue starts each session fresh, so its paragraph pause stays with the
+      // controller.
+      scheduledGaps: !(this.#player instanceof NativeAudioPlayer),
     };
   }
 

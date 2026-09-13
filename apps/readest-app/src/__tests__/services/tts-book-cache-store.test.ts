@@ -19,6 +19,11 @@ const packState = vi.hoisted(() => {
         if (!data) throw new Error('missing pack');
         return data.slice(offset, offset + length).buffer as ArrayBuffer;
       }),
+      readSidecar: vi.fn(async (name: string) => {
+        const data = files.get(name);
+        if (!data) return null;
+        return JSON.parse(new TextDecoder().decode(data));
+      }),
       remove: vi.fn(async (name: string) => {
         files.delete(name);
       }),
@@ -108,6 +113,35 @@ describe('BookTTSCacheStore', () => {
     // fake (web-like) appService the compaction is a safe no-op, but the
     // manifest rows must exist for it to consider.
     await expect(store.close()).resolves.toBeUndefined();
+  });
+
+  test('close waits for an active compaction before closing the database', async () => {
+    const store = new BookTTSCacheStore(appService, () => 'hash123', 1024 * 1024);
+    await store.registerSectionMarks(7, ['0:a']);
+    await store.put('k1', entry());
+    await store.recordMarkKey(7, 0, 'k1');
+    const writing = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const write = packState.fs.write.getMockImplementation()!;
+    packState.fs.write.mockImplementationOnce(async (name, data) => {
+      writing.resolve();
+      await resume.promise;
+      await write(name, data);
+    });
+    const close = vi.spyOn(db, 'close');
+    const compacting = store.compact();
+    await writing.promise;
+    const closing = store.close();
+    // Let the close path run while the first pack write remains suspended.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const closedEarly = close.mock.calls.length > 0;
+    resume.resolve();
+    const results = await Promise.allSettled([compacting, closing]);
+
+    expect(closedEarly).toBe(false);
+    expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect(close).toHaveBeenCalledOnce();
+    expect([...packState.files.keys()].filter((name) => name.endsWith('.mp3'))).toHaveLength(1);
   });
 
   test('marks a book cache while an explicit download is pinned and clears the marker on cancel', async () => {

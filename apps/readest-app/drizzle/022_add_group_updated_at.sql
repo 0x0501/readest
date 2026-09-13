@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/022_add_group_updated_at.sql

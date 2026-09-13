@@ -40,8 +40,14 @@ import android.app.Service
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import java.io.File
 
 data class TTSVoiceData(
     val id: String,
@@ -95,6 +101,7 @@ class UpdateMediaSessionStateArgs {
 @InvokeArg
 class SetMediaSessionActiveArgs {
   var active: Boolean? = null
+  var ownsAudioFocus: Boolean? = null
   var notificationTitle: String? = null
   var notificationText: String? = null
   var foregroundServiceTitle: String? = null
@@ -102,6 +109,14 @@ class SetMediaSessionActiveArgs {
   var bookHash: String? = null
   var bookTitle: String? = null
   var bookAuthor: String? = null
+}
+
+@InvokeArg
+class PlayoutControlArgs {
+    var action: String? = null
+    var rate: Double? = null
+    var path: String? = null
+    var positionMs: Double? = null
 }
 
 @TauriPlugin(
@@ -127,6 +142,31 @@ class NativeTTSPlugin(private val activity: Activity) : Plugin(activity) {
     private var isSpeaking = AtomicBoolean(false)
     private var currentRate = AtomicReference<Float>(1.0f)
     private var currentPitch = AtomicReference<Float>(1.0f)
+
+    // Continuous local-file playback for EPUB Media Overlays and paired
+    // audiobooks. The WebView cannot expose Android app-private files as a
+    // seekable Blob without first reading the whole file into memory; ExoPlayer
+    // can seek and stream the original file path directly.
+    private var playoutPlayer: ExoPlayer? = null
+    private var playoutSession = 0
+    private var playoutCurrentIndex = -1
+    private var playoutRate = 1.0f
+    private var playoutLoadedPath: String? = null
+    private val playoutListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED && playoutCurrentIndex >= 0) {
+                playoutCurrentIndex = -1
+                emitPlayoutEvent("ended", 0)
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            if (playoutCurrentIndex < 0) return
+            Log.e(TAG, "Native narration playback failed", error)
+            playoutCurrentIndex = -1
+            emitPlayoutEvent("error", 0)
+        }
+    }
 
     private val eventChannels = ConcurrentHashMap<String, Channel<TTSMessageEvent>>()
     private val speakingJobs = ConcurrentHashMap<String, Job>()
@@ -550,6 +590,9 @@ class NativeTTSPlugin(private val activity: Activity) : Plugin(activity) {
                 MediaPlaybackService.pluginEventTrigger = { event, data -> trigger(event, data) }
                 MediaPlaybackService.currentTitle = FOREGROUND_SERVICE_TITLE
                 MediaPlaybackService.currentArtist = FOREGROUND_SERVICE_TEXT
+                // Set before the service starts: activateSession reads it to
+                // decide whether to take audio focus for this session.
+                MediaPlaybackService.ownsAudioFocus = args.ownsAudioFocus ?: true
                 // Persist the book so the Android Auto browse tree can offer a
                 // "Resume last book" entry after the process is cold.
                 args.bookHash?.let {
@@ -572,6 +615,125 @@ class NativeTTSPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.reject("Failed to set media session active state: ${e.message}")
         }
     }
+
+    @Command
+    fun playout_control(invoke: Invoke) {
+        val args = invoke.parseArgs(PlayoutControlArgs::class.java)
+        val action = args.action ?: ""
+
+        activity.runOnUiThread {
+            try {
+                when (action) {
+                    "start-session" -> {
+                        cancelIdleTimer()
+                        abortPlayout()
+                        playoutSession += 1
+                        invoke.resolve(JSObject().apply { put("session", playoutSession) })
+                    }
+                    "end-session" -> {
+                        if (playoutCurrentIndex < 0) emitPlayoutEvent("session-end")
+                        invoke.resolve(JSObject().apply { put("session", JSONObject.NULL) })
+                    }
+                    "abort" -> {
+                        abortPlayout()
+                        invoke.resolve(JSObject().apply { put("session", JSONObject.NULL) })
+                    }
+                    "pause" -> {
+                        playoutPlayer?.pause()
+                        invoke.resolve(JSObject().apply { put("session", JSONObject.NULL) })
+                    }
+                    "resume" -> {
+                        playoutPlayer?.play()
+                        invoke.resolve(JSObject().apply { put("session", JSONObject.NULL) })
+                    }
+                    "set-rate" -> {
+                        playoutRate = (args.rate ?: 1.0).toFloat()
+                        playoutPlayer?.setPlaybackSpeed(playoutRate)
+                        invoke.resolve(JSObject().apply { put("session", JSONObject.NULL) })
+                    }
+                    "load" -> {
+                        val path = args.path
+                        if (path.isNullOrEmpty()) {
+                            invoke.reject("playout load requires path")
+                        } else {
+                            loadContinuousFile(path, args.positionMs ?: 0.0)
+                            invoke.resolve(JSObject().apply { put("session", playoutSession) })
+                        }
+                    }
+                    "seek" -> {
+                        playoutPlayer?.seekTo((args.positionMs ?: 0.0).coerceAtLeast(0.0).toLong())
+                        invoke.resolve(JSObject().apply { put("session", JSONObject.NULL) })
+                    }
+                    else -> invoke.reject("Unknown playout action: $action")
+                }
+            } catch (e: Exception) {
+                invoke.reject("Native narration control failed: ${e.message}")
+            }
+        }
+    }
+
+    @Command
+    fun playout_position(invoke: Invoke) {
+        activity.runOnUiThread {
+            val player = playoutPlayer
+            invoke.resolve(JSObject().apply {
+                put("session", playoutSession)
+                put("index", playoutCurrentIndex)
+                put("positionMs", player?.currentPosition ?: 0L)
+                put("playing", player?.isPlaying ?: false)
+            })
+        }
+    }
+
+    private fun ensurePlayoutPlayer(): ExoPlayer {
+        return playoutPlayer ?: ExoPlayer.Builder(activity).build().also { player ->
+            player.addListener(playoutListener)
+            player.setPlaybackSpeed(playoutRate)
+            playoutPlayer = player
+        }
+    }
+
+    private fun loadContinuousFile(path: String, positionMs: Double) {
+        // A paired Audiobookshelf audiobook streams its tracks by URL, the
+        // same way the iOS playout player already accepts http(s) paths.
+        val uri = if (path.startsWith("http://") || path.startsWith("https://")) {
+            Uri.parse(path)
+        } else {
+            val file = File(path)
+            require(file.isFile) { "Narration file not found: $path" }
+            Uri.fromFile(file)
+        }
+        val player = ensurePlayoutPlayer()
+        val startMs = positionMs.coerceAtLeast(0.0).toLong()
+
+        if (playoutLoadedPath == path && player.currentMediaItem != null) {
+            player.seekTo(startMs)
+        } else {
+            player.setMediaItem(MediaItem.fromUri(uri), startMs)
+            player.prepare()
+            playoutLoadedPath = path
+        }
+        // Loading and resuming are separate operations, matching the web and
+        // iOS clocks used by MediaOverlayClient.
+        player.pause()
+        playoutCurrentIndex = 0
+        emitPlayoutEvent("chunk-start", 0)
+    }
+
+    private fun abortPlayout() {
+        playoutCurrentIndex = -1
+        playoutPlayer?.stop()
+        playoutPlayer?.clearMediaItems()
+        playoutLoadedPath = null
+    }
+
+    private fun emitPlayoutEvent(type: String, index: Int? = null) {
+        trigger("playout_events", JSObject().apply {
+            put("type", type)
+            put("session", playoutSession)
+            index?.let { put("index", it) }
+        })
+    }
     
     private fun startIdleTimer() {
         idleHandler.removeCallbacks(idleShutdownRunnable)
@@ -584,6 +746,7 @@ class NativeTTSPlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun shutdownTTSEngine() {
         try {
+            abortPlayout()
             MediaPlaybackService.requestDeactivation()
             MediaPlaybackService.pluginEventTrigger = null
 
@@ -619,6 +782,8 @@ class NativeTTSPlugin(private val activity: Activity) : Plugin(activity) {
             eventChannels.clear()
             speakingJobs.values.forEach { it.cancel() }
             speakingJobs.clear()
+            playoutPlayer?.release()
+            playoutPlayer = null
 
             Log.d(TAG, "Plugin destroyed successfully")
         } catch (e: Exception) {

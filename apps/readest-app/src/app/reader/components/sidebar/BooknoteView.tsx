@@ -24,7 +24,7 @@ import { eventDispatcher } from '@/utils/event';
 import {
   filterBooknotes,
   collectAnnotationFacets,
-  summarizeAnnotations,
+  summarizeAnnotationHub,
   AnnotationFilterKind,
 } from '../../utils/annotatorUtil';
 import AnnotationsToolbar from './AnnotationsToolbar';
@@ -102,14 +102,12 @@ const BooknoteView: React.FC<{
     setExcludedStyles([]);
   }, []);
 
-  // Live annotations drive both the facet row (distinct colors/styles) and
-  // the greyed-out state of "Clear Annotations" (mirrors BookMenu).
   const liveAnnotations = useMemo(
     () => allNotes.filter((note) => note.type === 'annotation' && !note.deletedAt),
     [allNotes],
   );
   const facets = useMemo(() => collectAnnotationFacets(liveAnnotations), [liveAnnotations]);
-  const counts = useMemo(() => summarizeAnnotations(liveAnnotations), [liveAnnotations]);
+  const counts = useMemo(() => summarizeAnnotationHub(liveAnnotations), [liveAnnotations]);
 
   // Filter active notes of this type, then apply the hub's kind/query/facet
   // filter (annotation tab only). useMemo so referential stability flows
@@ -371,14 +369,19 @@ const BooknoteView: React.FC<{
   const isEmpty = sortedGroups.length === 0;
 
   return (
-    <div className='booknote-list rounded' role='tree'>
+    <div
+      className='booknote-list rounded-sm'
+      role='tree'
+      data-annotations-heading={type === 'annotation' ? '' : undefined}
+      tabIndex={type === 'annotation' ? -1 : undefined}
+      aria-label={type === 'annotation' ? _('Annotations') : undefined}
+    >
       {type === 'annotation' && (
         <AnnotationsToolbar
           filterKind={filterKind}
           searchInput={searchInput}
           isSearchVisible={isSearchBarVisible}
-          highlightCount={counts.highlights}
-          noteCount={counts.notes}
+          annotationCount={counts.annotations}
           matchCount={filteredNotes.length}
           isFiltering={isFiltering}
           onCloseSearch={() => setSearchBarVisible(false)}

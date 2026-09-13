@@ -1,21 +1,28 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useEnv } from '@/context/EnvContext';
 import { useThemeStore } from '@/store/themeStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useSafeAreaInsets } from './useSafeAreaInsets';
-import { themes, applyCustomTheme, Palette } from '@/styles/themes';
+import { applyCustomTheme, Palette, ThemeScope } from '@/styles/themes';
 import { getStatusBarHeight, setSystemUIVisibility } from '@/utils/bridge';
+import { getOverlayerBlendMode } from '@/utils/style';
 import { getOSPlatform } from '@/utils/misc';
-import { parseWebViewVersion } from '@/utils/ua';
 
 type UseThemeProps = {
   systemUIVisible?: boolean;
   appThemeColor?: keyof Palette;
+  /**
+   * Which page's theme this route paints (issue #5945). Only the reader owns
+   * its own scope; the library, OPDS, player, auth and user pages all share
+   * the library's so no route paints a third look.
+   */
+  themeScope?: ThemeScope;
 };
 
 export const useTheme = ({
   systemUIVisible = true,
   appThemeColor = 'base-100',
+  themeScope = 'library',
 }: UseThemeProps = {}) => {
   const { appService } = useEnv();
   const { settings } = useSettingsStore();
@@ -32,10 +39,16 @@ export const useTheme = ({
     setStatusBarHeight,
     systemUIAlwaysHidden,
     setSystemUIAlwaysHidden,
+    setThemeScope,
   } = useThemeStore();
   const { onUpdateInsets } = useSafeAreaInsets();
 
-  const useFallbackColors = useRef(false);
+  // Point the store at this route's scope. `themeColor`/`isDarkMode` below
+  // are the resolved values for whichever scope is active, so the data-theme
+  // effect repaints for free when the user moves between library and reader.
+  useEffect(() => {
+    setThemeScope(themeScope);
+  }, [themeScope, setThemeScope]);
 
   useEffect(() => {
     updateAppTheme(appThemeColor);
@@ -106,23 +119,9 @@ export const useTheme = ({
   }, [handleSystemUIVisibility]);
 
   useEffect(() => {
-    if (!appService?.isAndroidApp) return;
-    const webViewVersion = parseWebViewVersion(appService);
-    // OKLCH color model is supported in Chromium 111+
-    useFallbackColors.current = webViewVersion < 111;
-  }, [appService]);
-
-  useEffect(() => {
-    if (!themeColor || !themes.find((t) => t.name === themeColor)) return;
-    if (useFallbackColors.current) {
-      applyCustomTheme(undefined, themeColor, true);
-    }
-  }, [themeColor]);
-
-  useEffect(() => {
     const customThemes = settings.globalReadSettings?.customThemes ?? [];
     customThemes.forEach((customTheme) => {
-      applyCustomTheme(customTheme, undefined, useFallbackColors.current);
+      applyCustomTheme(customTheme);
     });
     localStorage.setItem('customThemes', JSON.stringify(customThemes));
   }, [settings.globalReadSettings?.customThemes]);
@@ -136,9 +135,11 @@ export const useTheme = ({
       '--overlayer-highlight-opacity',
       isBwEink ? '1.0' : String(highlightOpacity),
     );
+    // The global default assumes a page painted in the theme colors. Books that
+    // keep their own page (PDFs, comics) override it per view in FoliateViewer.
     document.documentElement.style.setProperty(
       '--overlayer-highlight-blend-mode',
-      isBwEink ? 'difference' : isDarkMode ? 'screen' : 'multiply',
+      getOverlayerBlendMode({ isDarkMode, isBwEink: !!isBwEink }),
     );
     document.documentElement.style.setProperty(
       '--bg-texture-blend-mode',

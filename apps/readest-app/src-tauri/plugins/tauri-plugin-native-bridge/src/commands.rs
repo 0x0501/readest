@@ -31,6 +31,14 @@ pub(crate) async fn copy_uri_to_path<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn render_pdf_cover<R: Runtime>(
+    app: AppHandle<R>,
+    payload: RenderPdfCoverRequest,
+) -> Result<RenderPdfCoverResponse> {
+    app.native_bridge().render_pdf_cover(payload)
+}
+
+#[command]
 pub(crate) async fn save_image_to_gallery<R: Runtime>(
     app: AppHandle<R>,
     payload: SaveImageToGalleryRequest,
@@ -353,6 +361,26 @@ pub(crate) async fn capture_webview_region<R: Runtime>(
         .native_bridge()
         .capture_webview_region(&window, payload)?;
     Ok(tauri::ipc::Response::new(png))
+}
+
+/// Freeze the on-screen pixels of a webview region behind a native layer
+/// that `capture_webview_region` does not see, for the two-column page curl
+/// (#6106). iOS only so far; other platforms reject and the JS side keeps
+/// a paper back on the leaf.
+#[command]
+pub(crate) async fn cover_webview_region<R: Runtime>(
+    app: AppHandle<R>,
+    payload: CaptureWebviewRegionRequest,
+) -> Result<CoverWebviewRegionResponse> {
+    app.native_bridge().cover_webview_region(payload)
+}
+
+#[command]
+pub(crate) async fn uncover_webview_region<R: Runtime>(
+    app: AppHandle<R>,
+    payload: UncoverWebviewRegionRequest,
+) -> Result<()> {
+    app.native_bridge().uncover_webview_region(payload)
 }
 
 #[command]

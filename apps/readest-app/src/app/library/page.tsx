@@ -22,6 +22,7 @@ import { DEFAULT_NEARBY_WORDS } from '@/utils/searchConfig';
 import { clearLibrarySearchHistory, loadLibrarySearchHistory } from './utils/searchHistory';
 import type { LibrarySearchTarget } from '@/types/book';
 import { navigateToLibrary, navigateToLogin, navigateToReader } from '@/utils/nav';
+import { splitLibraryOpenIds } from '@/utils/audiobook';
 import { getBookWithUpdatedMetadata, listFormater } from '@/utils/book';
 import { getImportErrorMessage } from '@/services/errors';
 import { ingestFile } from '@/services/ingestService';
@@ -30,7 +31,11 @@ import { transferManager } from '@/services/transferManager';
 import { isReadestCloudStorageActive } from '@/services/sync/cloudSyncProvider';
 import { getFilename, getFolderImportGroupName, joinScannedPath } from '@/utils/path';
 import { parseOpenWithFiles } from '@/helpers/openWith';
-import { isTauriAppPlatform, isWebAppPlatform } from '@/services/environment';
+import {
+  getInitializedAppService,
+  isTauriAppPlatform,
+  isWebAppPlatform,
+} from '@/services/environment';
 import { checkForAppUpdates, checkAppReleaseNotes } from '@/helpers/updater';
 import { impactFeedback } from '@tauri-apps/plugin-haptics';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
@@ -51,6 +56,7 @@ import { useBookTransferActions } from './hooks/useBookTransferActions';
 import { useAutoImportFolders } from './hooks/useAutoImportFolders';
 import { useInboxDrainer } from '@/hooks/useInboxDrainer';
 import { useOPDSSubscriptions } from '@/hooks/useOPDSSubscriptions';
+import { useABSSync } from '@/hooks/useABSSync';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { useTransferStore } from '@/store/transferStore';
 import { useBackgroundTexture } from '@/hooks/useBackgroundTexture';
@@ -62,6 +68,7 @@ import { useOpenBookLink } from '@/hooks/useOpenBookLink';
 import { useReadingWidget } from '@/hooks/useReadingWidget';
 import { useOpenShareLink } from '@/hooks/useOpenShareLink';
 import { useClipUrlIngress } from '@/hooks/useClipUrlIngress';
+import { useWebBrowserDownloads } from '@/hooks/useWebBrowserDownloads';
 import { useKeyDownActions } from '@/hooks/useKeyDownActions';
 import { SelectedFile, useFileSelector } from '@/hooks/useFileSelector';
 import { lockScreenOrientation, selectDirectory, showFilePicker } from '@/utils/bridge';
@@ -111,10 +118,11 @@ import FailedImportsDialog, { FailedImport } from './components/FailedImportsDia
 import ImportFromFolderDialog, {
   ImportFromFolderResult,
 } from './components/ImportFromFolderDialog';
-import ImportFromUrlDialog from './components/ImportFromUrlDialog';
+import WebSourcesDialog from './components/WebSourcesDialog';
 import ImportNovelDialog from './components/ImportNovelDialog';
 import NowPlayingBar from './components/NowPlayingBar';
-import { clipPageWithSignInFallback } from '@/services/send/clipSignIn';
+import { convertToEpubWithWorker } from '@/services/send/conversion/conversionWorker';
+import type { WebBrowserPage } from '@/services/webBrowser/webBrowser';
 import ClipSignInAlert from '@/components/ClipSignInAlert';
 import useShortcuts from '@/hooks/useShortcuts';
 import { useReplicaPull } from '@/hooks/useReplicaPull';
@@ -231,11 +239,11 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   const isTransferQueueOpen = useTransferStore((state) => state.isTransferQueueOpen);
 
   // Library page pulls user replicas (dictionaries, custom fonts,
-  // background textures, OPDS catalogs, bundled settings). Deferred
-  // 10s; module-scoped dedup means a later navigation to the reader
-  // won't re-pull the same kind.
+  // background textures, OPDS catalogs, Audiobookshelf servers, bundled
+  // settings). Deferred 10s; module-scoped dedup means a later navigation
+  // to the reader won't re-pull the same kind.
   useReplicaPull({
-    kinds: ['dictionary', 'font', 'texture', 'opds_catalog', 'settings'],
+    kinds: ['dictionary', 'font', 'texture', 'opds_catalog', 'abs_server', 'settings'],
   });
   // Hydrate the custom-font store from persisted settings so the Font
   // panel sees imported fonts even when opened straight from the
@@ -247,7 +255,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   );
   const [showFeeds, setShowFeeds] = useState(false);
   const [showAddFeed, setShowAddFeed] = useState(false);
-  const [showImportFromUrl, setShowImportFromUrl] = useState(false);
+  const [showWebSources, setShowWebSources] = useState(false);
   const [showImportNovel, setShowImportNovel] = useState(false);
   const [importMenuAnchor, setImportMenuAnchor] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
@@ -296,8 +304,10 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       | typeof LibraryGroupByType.Series
       | typeof LibraryGroupByType.Author
       | typeof LibraryGroupByType.Tag
-      | typeof LibraryGroupByType.Subject;
+      | typeof LibraryGroupByType.Subject
+      | typeof LibraryGroupByType.Status;
     groupName: string;
+    localized?: boolean;
   } | null>(null);
   // Direct (non-queued) download progress, keyed by book hash. Entries are
   // added and removed by useBookTransferActions, its only writer.
@@ -368,6 +378,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   useReadingWidget();
   useOpenShareLink();
   useClipUrlIngress();
+  useWebBrowserDownloads();
   useTransferQueue(libraryLoaded);
 
   const { pullLibrary, pushLibrary } = useBooksSync();
@@ -376,6 +387,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   // parity with useBooksSync. No-op when no provider is enabled.
   useLibraryFileSync();
   const { checkOPDSSubscriptions } = useOPDSSubscriptions();
+  useABSSync();
   useInboxDrainer();
   const { isDragging } = useDragDropImport();
 
@@ -399,20 +411,17 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
     },
   );
   useShortcuts({
-    onToggleFullscreen: async () => {
-      if (isTauriAppPlatform()) {
-        await tauriHandleToggleFullScreen();
-      }
+    onToggleFullscreen: () => {
+      if (!isTauriAppPlatform()) return false;
+      return tauriHandleToggleFullScreen().then(() => true);
     },
-    onCloseWindow: async () => {
-      if (isTauriAppPlatform()) {
-        await tauriHandleClose();
-      }
+    onCloseWindow: () => {
+      if (!isTauriAppPlatform()) return false;
+      return tauriHandleClose().then(() => true);
     },
-    onQuitApp: async () => {
-      if (isTauriAppPlatform()) {
-        await tauriQuitApp();
-      }
+    onQuitApp: () => {
+      if (!isTauriAppPlatform()) return false;
+      return tauriQuitApp().then(() => true);
     },
     onOpenFontLayoutSettings: () => {
       setSettingsDialogOpen(true);
@@ -683,10 +692,26 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       const bookIds = pendingNavigationBookIds;
       setPendingNavigationBookIds(null);
       if (bookIds.length > 0) {
-        navigateToReader(router, bookIds);
+        const { audiobookHash, readerIds, droppedAudiobooks } = splitLibraryOpenIds(
+          bookIds,
+          (hash) => libraryBooks.find((book) => book.hash === hash),
+        );
+        if (audiobookHash) {
+          router.push(`/player?id=${audiobookHash}`);
+          return;
+        }
+        if (droppedAudiobooks) {
+          eventDispatcher.dispatch('toast', {
+            message: _('Audiobooks open in the player'),
+            type: 'info',
+          });
+        }
+        if (readerIds.length > 0) {
+          navigateToReader(router, readerIds);
+        }
       }
     }
-  }, [pendingNavigationBookIds, appService, router]);
+  }, [pendingNavigationBookIds, appService, router, libraryBooks]);
 
   useEffect(() => {
     if (isInitiating.current) return;
@@ -767,8 +792,35 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       return false;
     };
 
-    initLogin();
-    initLibrary();
+    // Both inits are fire-and-forget, and `checkOpenWithBooks` /
+    // `checkLastOpenBooks` are cleared only on `initLibrary`'s success path.
+    // An escaping throw therefore left this page's early return rendering a
+    // bare `full-height` div for the rest of the session — the blank App Store
+    // window, where the sandbox denied a stale `customRootDir` and the mkdir
+    // inside `loadLibraryBooks` rejected with nothing to catch it. Always
+    // release the render gates, then say what actually broke.
+    const recoverFromInitFailure = (error: unknown) => {
+      console.error('Failed to initialize library:', error);
+      setCheckOpenWithBooks(false);
+      setCheckLastOpenBooks(false);
+      setLibraryLoaded(true);
+      if (loadingTimeout) clearTimeout(loadingTimeout);
+      setLoading(false);
+      const unavailableRootDir = getInitializedAppService()?.unavailableRootDir;
+      eventDispatcher.dispatch('toast', {
+        type: 'error',
+        message: unavailableRootDir
+          ? _(
+              'Cannot open the library folder "{{path}}". Reconnect it, or choose another folder in Settings.',
+              { path: unavailableRootDir },
+            )
+          : _('Failed to load your library.'),
+        timeout: 10000,
+      });
+    };
+
+    initLogin().catch((error) => console.error('Failed to initialize login:', error));
+    initLibrary().catch(recoverFromInitFailure);
     return () => {
       setCheckOpenWithBooks(false);
       setCheckLastOpenBooks(false);
@@ -821,7 +873,8 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
       (groupBy === LibraryGroupByType.Series ||
         groupBy === LibraryGroupByType.Author ||
         groupBy === LibraryGroupByType.Tag ||
-        groupBy === LibraryGroupByType.Subject)
+        groupBy === LibraryGroupByType.Subject ||
+        groupBy === LibraryGroupByType.Status)
     ) {
       // Find the group to get its name
       const allGroups = createBookGroups(
@@ -834,6 +887,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
         setCurrentVirtualGroup({
           groupBy,
           groupName: targetGroup.displayName || targetGroup.name,
+          localized: targetGroup.localized,
         });
       } else {
         setCurrentVirtualGroup(null);
@@ -1260,30 +1314,10 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
     importBooks(files, getImportTargetGroupId());
   });
 
-  const handleImportBookFromUrl = async (url: string) => {
-    // Tauri-only. Routes through the Rust `clip_url` command which spawns
-    // a hidden Tauri webview, loads the URL with the real browser engine
-    // (correct TLS fingerprint, runs the page's JS, executes any
-    // Cloudflare challenge), then captures `document.documentElement
-    // .outerHTML` and returns it. On a login wall the helper offers an
-    // interactive sign-in + manual capture (mobile). End to end this is
-    // exactly the local-file path — no inbox, no upload-then-download, no
-    // server round-trip — `importBooks` is the same call drag-drop uses.
-    if (!isTauriAppPlatform()) return;
-    console.log('[clip] start', { url });
+  const handleClipWebPage = async (page: WebBrowserPage) => {
     setIsSelectMode(false);
-    const t1 = performance.now();
-    const book = await clipPageWithSignInFallback(url, _, appService);
-    console.log('[clip] epub built', {
-      title: book.title,
-      author: book.author || undefined,
-      bytes: book.file.size,
-      ms: Math.round(performance.now() - t1),
-    });
-    const groupId = searchParams?.get('group') || '';
-    console.log('[clip] importing locally', { name: book.file.name, groupId: groupId || null });
-    await importBooks([{ file: book.file }], groupId);
-    console.log('[clip] done');
+    const book = await convertToEpubWithWorker({ kind: 'page', ...page });
+    await importBooks([{ file: book.file }], searchParams?.get('group') || '');
   };
 
   // The dialog fetches the chapter list and assembles the EPUB itself
@@ -1864,7 +1898,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
           onImportBooksFromDirectory={
             appService?.canReadExternalDir ? handleImportBooksFromDirectory : undefined
           }
-          onImportBookFromUrl={isTauriAppPlatform() ? () => setShowImportFromUrl(true) : undefined}
+          onImportFromWebBrowser={isTauriAppPlatform() ? () => setShowWebSources(true) : undefined}
           onImportBookFromNovelUrl={
             isTauriAppPlatform() ? () => setShowImportNovel(true) : undefined
           }
@@ -1916,7 +1950,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
                   key={term}
                   type='button'
                   onClick={() => handleSearchQueryApply(term)}
-                  className='bg-base-300/45 hover:bg-base-300/70 text-base-content/70 max-w-[60%] flex-shrink-0 whitespace-nowrap rounded-full px-3 py-0.5 text-xs'
+                  className='bg-base-300/45 hover:bg-base-300/70 text-base-content/70 max-w-[60%] shrink-0 whitespace-nowrap rounded-full px-3 py-0.5 text-xs'
                 >
                   <p className='truncate'>{term}</p>
                 </button>
@@ -1945,7 +1979,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
           <div className='flex flex-wrap items-center gap-y-1 px-4 text-base'>
             <button
               onClick={() => handleNavigateToPath(undefined)}
-              className='hover:bg-base-300 text-base-content/85 rounded px-2 py-1'
+              className='hover:bg-base-300 text-base-content/85 rounded-sm px-2 py-1'
             >
               {_('All')}
             </button>
@@ -1955,11 +1989,11 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
                 <React.Fragment key={index}>
                   <MdChevronRight size={iconSize} className='text-neutral-content' />
                   {isLast ? (
-                    <span className='truncate rounded px-2 py-1'>{crumb.name}</span>
+                    <span className='truncate rounded-sm px-2 py-1'>{crumb.name}</span>
                   ) : (
                     <button
                       onClick={() => handleNavigateToPath(crumb.path)}
-                      className='hover:bg-base-300 text-base-content/85 truncate rounded px-2 py-1'
+                      className='hover:bg-base-300 text-base-content/85 truncate rounded-sm px-2 py-1'
                     >
                       {crumb.name}
                     </button>
@@ -1974,15 +2008,16 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
         <GroupHeader
           groupBy={currentVirtualGroup.groupBy}
           groupName={currentVirtualGroup.groupName}
+          localized={currentVirtualGroup.localized}
         />
       )}
       {showBookshelf &&
         (libraryBooks.some((book) => !book.deletedAt) ? (
-          <div aria-label={_('Your Bookshelf')} className='flex min-h-0 flex-grow flex-col'>
+          <div aria-label={_('Your Bookshelf')} className='flex min-h-0 grow flex-col'>
             <div
               ref={containerRef}
               className={clsx(
-                'scroll-container drop-zone flex min-h-0 flex-grow flex-col',
+                'scroll-container drop-zone flex min-h-0 grow flex-col',
                 isDragging && 'drag-over',
               )}
               style={{
@@ -2031,7 +2066,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
           onImportBooksFromDirectory={
             appService?.canReadExternalDir ? handleImportBooksFromDirectory : undefined
           }
-          onImportBookFromUrl={isTauriAppPlatform() ? () => setShowImportFromUrl(true) : undefined}
+          onImportFromWebBrowser={isTauriAppPlatform() ? () => setShowWebSources(true) : undefined}
           onImportBookFromNovelUrl={
             isTauriAppPlatform() ? () => setShowImportNovel(true) : undefined
           }
@@ -2135,10 +2170,10 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
           }}
         />
       )}
-      <ImportFromUrlDialog
-        isOpen={showImportFromUrl}
-        onClose={() => setShowImportFromUrl(false)}
-        onSubmit={handleImportBookFromUrl}
+      <WebSourcesDialog
+        isOpen={showWebSources}
+        onClose={() => setShowWebSources(false)}
+        onClip={handleClipWebPage}
       />
       <ImportNovelDialog
         isOpen={showImportNovel}

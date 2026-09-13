@@ -169,6 +169,48 @@
       "when": 25,
       "tag": "local_005_rate_limit",
       "breakpoints": false
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 26,
+      "tag": "019_stat_pages_upsert_rpc",
+      "breakpoints": false
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 27,
+      "tag": "020_stat_archives",
+      "breakpoints": false
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 28,
+      "tag": "021_stat_archive_row_cap",
+      "breakpoints": false
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 29,
+      "tag": "022_add_group_updated_at",
+      "breakpoints": false
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 30,
+      "tag": "local_006_repoint_new_user_fks",
+      "breakpoints": false
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 31,
+      "tag": "local_007_better_auth_jwks",
+      "breakpoints": false
     }
   ]
 }

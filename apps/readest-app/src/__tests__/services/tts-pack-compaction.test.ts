@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { md5 } from 'js-md5';
 import { NodeDatabaseService } from '@/services/database/nodeDatabaseService';
+import type { DatabaseRow } from '@/types/database';
+import { chapterDownloadStatus } from '@/services/tts/downloadChapters';
 import {
   SqliteTTSCacheStore,
   TTSPackFs,
@@ -27,6 +29,11 @@ class FakePackFs implements TTSPackFs {
     const data = this.files.get(name);
     if (!data) throw new Error(`ENOENT: ${name}`);
     return data.slice(offset, offset + length).buffer as ArrayBuffer;
+  }
+  async readSidecar(name: string): Promise<TTSPackSidecar | null> {
+    const data = this.files.get(name);
+    if (!data) return null;
+    return JSON.parse(new TextDecoder().decode(data)) as TTSPackSidecar;
   }
   async remove(name: string): Promise<void> {
     this.files.delete(name);
@@ -81,6 +88,79 @@ describe('SqliteTTSCacheStore pack compaction', () => {
     expect(bytes[0]).toBe(1);
     expect(bytes[40]).toBe(2);
     expect(bytes[80]).toBe(3);
+  });
+
+  test('a queued compaction retries after a preceding database query fails', async () => {
+    await cacheSection(3, ['m1'], ['k1']);
+    const error = new Error('Database query failed');
+    vi.spyOn(db, 'select').mockRejectedValueOnce(error);
+
+    const results = await Promise.allSettled([store.compact(), store.compact()]);
+
+    expect(results).toEqual([
+      { status: 'rejected', reason: error },
+      { status: 'fulfilled', value: 1 },
+    ]);
+    expect((await packFs.list()).filter((name) => name.endsWith('.mp3'))).toHaveLength(1);
+    expect(await store.get('k1')).toMatchObject(sentence(1));
+  });
+
+  test('queued compaction includes sections completed during an earlier run', async () => {
+    await cacheSection(3, ['m1'], ['k1']);
+    const writing = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const write = packFs.write.bind(packFs);
+    vi.spyOn(packFs, 'write').mockImplementationOnce(async (name, data) => {
+      writing.resolve();
+      await resume.promise;
+      await write(name, data);
+    });
+    const first = store.compact();
+    await writing.promise;
+    await cacheSection(4, ['m2'], ['k2']);
+    const second = store.compact();
+    resume.resolve();
+
+    expect(await Promise.all([first, second])).toEqual([1, 1]);
+    expect((await packFs.list()).filter((name) => name.endsWith('.mp3'))).toHaveLength(2);
+    expect(await store.get('k1')).toMatchObject(sentence(1));
+    expect(await store.get('k2')).toMatchObject(sentence(1));
+  });
+
+  test('a section sharing a sentence key with an already-packed section still packs (regression)', async () => {
+    // Section A packs first, adopting the shared key k1 into its pack. From
+    // then on k1's entry is pack-backed (audio NULL pointing at pack A).
+    await cacheSection(4, ['mA1', 'mA2'], ['k1', 'k2']);
+    expect(await store.compact()).toBe(1);
+    expect((await store.getSectionStatuses()).get(4)?.packed).toBe(true);
+
+    // Section B repeats k1 (a cache hit during a download, so no loose row is
+    // written) plus a fresh k3. The old completable check rejected B because
+    // k1's entry has audio NULL, so B could never pack and its chapter failed
+    // forever, even though every sentence was cached.
+    await store.registerSectionMarks(5, ['mB1', 'mB2']);
+    await store.put('k3', sentence(3));
+    await store.recordMarkKey(5, 0, 'k1');
+    await store.recordMarkKey(5, 1, 'k3');
+    expect(await store.compact()).toBe(1);
+    expect((await store.getSectionStatuses()).get(5)?.packed).toBe(true);
+
+    const packNames = (await packFs.list()).filter((n) => n.endsWith('.mp3'));
+    expect(packNames).toHaveLength(2);
+    // The shared sentence is still readable after B's pack adopted the key.
+    expect(await store.get('k1')).not.toBeNull();
+    expect(await store.get('k3')).not.toBeNull();
+  });
+
+  test('an empty-manifest section that packed is reported as packed (regression)', async () => {
+    // Cover / blank / symbol-only sections have zero recordable sentences, but
+    // still pack an (empty) pack and must be reported as packed — otherwise a
+    // "Download all" for a book with such a chapter fails forever.
+    await store.registerSectionMarks(6, []);
+    expect(await store.compact()).toBe(1);
+    expect(await store.getSectionStatuses()).toEqual(
+      new Map([[6, { total: 0, recorded: 0, packed: true, pinned: false, active: false }]]),
+    );
   });
 
   test('packed entries read back through range reads, byte for byte', async () => {
@@ -210,6 +290,226 @@ describe('SqliteTTSCacheStore pack compaction', () => {
     expect(await tight.get('k4')).not.toBeNull();
   });
 
+  test('a shared key survives a later non-owning pack being evicted', async () => {
+    // Section A pinned: packs k1 + k2 into packA, completed to durable.
+    await store.beginDownloadSections([1]);
+    await cacheSection(1, ['m1', 'm2'], ['k1', 'k2']);
+    await store.compact();
+    await store.completeDownloadSections([1]);
+
+    // Section B unpinned: packs k1 (cache hit, shared) + k3 into packB. The
+    // shared k1 row is repointed to packB by #adoptPack.
+    await store.registerSectionMarks(2, ['mB1', 'mB2']);
+    await store.put('k3', sentence(3));
+    await store.recordMarkKey(2, 0, 'k1');
+    await store.recordMarkKey(2, 1, 'k3');
+    await store.compact();
+    expect((await packFs.list()).filter((n) => n.endsWith('.mp3'))).toHaveLength(2);
+
+    // Force eviction of the unpinned packB.
+    const tight = new SqliteTTSCacheStore(db, {
+      budgetBytes: 100,
+      now: () => clock.t++,
+      packFs,
+    });
+    await tight.put('oversize', sentence(9, 80));
+
+    // k1 was transferred to packA, so its audio is still readable offline.
+    expect(await store.get('k1')).not.toBeNull();
+    // k3 had no surviving pack -> NULL/NULL fallback (bounded recovery).
+    expect(await store.get('k3')).toBeNull();
+    // The pinned section is still packed and pinned.
+    expect((await store.getSectionStatuses()).get(1)).toMatchObject({
+      packed: true,
+      pinned: true,
+    });
+  });
+
+  test('a stale pack of a pinned section is evictable after a manifest rebuild', async () => {
+    // v1 manifest + pack for section 1.
+    await store.registerSectionMarks(1, ['m1', 'm2']);
+    await store.put('k1', sentence(1));
+    await store.recordMarkKey(1, 0, 'k1');
+    await store.put('k2', sentence(2));
+    await store.recordMarkKey(1, 1, 'k2');
+    await store.compact();
+    expect((await packFs.list()).filter((n) => n.endsWith('.mp3'))).toHaveLength(1);
+
+    // Rebuild the manifest to v2, pack v2 (v1 pack is now stale).
+    await store.registerSectionMarks(1, ['m1', 'm2', 'm3']);
+    await store.put('k3', sentence(3));
+    await store.recordMarkKey(1, 2, 'k3');
+    await store.compact();
+    expect((await packFs.list()).filter((n) => n.endsWith('.mp3'))).toHaveLength(2);
+
+    // Pin section 1 and mark it complete.
+    await store.beginDownloadSections([1]);
+    await store.completeDownloadSections([1]);
+
+    // Force eviction: the stale v1 pack must be evictable despite the pin.
+    const tight = new SqliteTTSCacheStore(db, {
+      budgetBytes: 100,
+      now: () => clock.t++,
+      packFs,
+    });
+    await tight.put('oversize', sentence(9, 80));
+
+    const surviving = (await packFs.list()).filter((n) => n.endsWith('.mp3'));
+    expect(surviving).toHaveLength(1);
+    expect((await store.getSectionStatuses()).get(1)).toMatchObject({
+      packed: true,
+      pinned: true,
+    });
+  });
+
+  test('a corrupted pack file self-heals by transferring shared keys, not destroying them', async () => {
+    // Same shared-key fixture as the transfer test.
+    await store.beginDownloadSections([1]);
+    await cacheSection(1, ['m1', 'm2'], ['k1', 'k2']);
+    await store.compact();
+    await store.completeDownloadSections([1]);
+    await store.registerSectionMarks(2, ['mB1', 'mB2']);
+    await store.put('k3', sentence(3));
+    await store.recordMarkKey(2, 0, 'k1');
+    await store.recordMarkKey(2, 1, 'k3');
+    await store.compact();
+
+    // Corrupt packB's MP3 (keep its sidecar so offsets stay readable).
+    const pack2Name = (await packFs.list()).find((n) => n.includes('2-') && n.endsWith('.mp3'))!;
+    packFs.files.delete(pack2Name);
+
+    // Self-heal transfers k1 to packA, NULL-falls-back k3.
+    expect(await store.get('k1')).not.toBeNull();
+    expect(await store.get('k3')).toBeNull();
+    expect((await store.getSectionStatuses()).get(1)).toMatchObject({
+      packed: true,
+      pinned: true,
+    });
+  });
+
+  test('detached entries do not keep a section eternally completable after a heal', async () => {
+    // Pinned section 1 packs, then its pack file is lost with no surviving
+    // candidate: self-heal detaches k1/k2 to loose misses. compact() must not
+    // re-attempt the section until the sentences re-synthesize — a predicate
+    // that sees detached rows as packable churns a full-section audio load
+    // plus a "pack audio missing" warning every debounce cycle, forever.
+    await store.beginDownloadSections([1]);
+    await cacheSection(1, ['m1', 'm2'], ['k1', 'k2']);
+    await store.compact();
+    await store.completeDownloadSections([1]);
+    const packName = (await packFs.list()).find((n) => n.endsWith('.mp3'))!;
+    packFs.files.delete(packName);
+    expect(await store.get('k1')).toBeNull();
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(await store.compact()).toBe(0);
+      const missing = warn.mock.calls.filter((call) =>
+        String(call[0]).includes('pack audio missing'),
+      );
+      expect(missing).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('an entry pointing at a vanished pack row detaches to a loose miss', async () => {
+    // A crash between a transfer commit and file cleanup (or an interleaved
+    // eviction) can leave an entry whose pack_id references no pack row. The
+    // read must detach it so the next synthesis repopulates the row, instead
+    // of leaving a permanent silent miss that neither eviction branch counts.
+    await cacheSection(3, ['m1'], ['k1']);
+    await store.compact();
+    await db.execute('DELETE FROM packs', []);
+    expect(await store.get('k1')).toBeNull();
+    const rows = await db.select<DatabaseRow & { pack_id: number | null }>(
+      "SELECT pack_id FROM entries WHERE key = 'k1'",
+    );
+    expect(rows[0]!.pack_id).toBeNull();
+  });
+
+  test('a transfer candidate with malformed sidecar offsets is skipped, not committed as NULL', async () => {
+    // Pinned section 1 owns k1+k2 in packA; section 2 packs k1 (shared) + k3,
+    // adopting k1's row into packB. packA's sidecar is corrupted so k1's entry
+    // lacks a numeric offset: evicting packB must not repoint k1 at packA with
+    // NULL offsets (JSON.stringify drops undefined, so json_extract yields
+    // NULL — a permanent silent miss). With no valid candidate it detaches.
+    await store.beginDownloadSections([1]);
+    await cacheSection(1, ['m1', 'm2'], ['k1', 'k2']);
+    await store.compact();
+    await store.completeDownloadSections([1]);
+    await store.registerSectionMarks(2, ['mB1', 'mB2']);
+    await store.put('k3', sentence(3));
+    await store.recordMarkKey(2, 0, 'k1');
+    await store.recordMarkKey(2, 1, 'k3');
+    await store.compact();
+
+    const packAName = (await packFs.list()).find((n) => n.startsWith('1-') && n.endsWith('.mp3'))!;
+    const sidecarName = packSidecarName(packAName);
+    const sidecar = JSON.parse(
+      new TextDecoder().decode(packFs.files.get(sidecarName)!),
+    ) as TTSPackSidecar;
+    delete (sidecar.entries[0] as { offset?: number }).offset;
+    packFs.files.set(sidecarName, new TextEncoder().encode(JSON.stringify(sidecar)));
+
+    const tight = new SqliteTTSCacheStore(db, {
+      budgetBytes: 100,
+      now: () => clock.t++,
+      packFs,
+    });
+    await tight.put('oversize', sentence(9, 80));
+
+    const rows = await db.select<DatabaseRow & { pack_id: number | null }>(
+      "SELECT pack_id FROM entries WHERE key = 'k1'",
+    );
+    expect(rows[0]!.pack_id).toBeNull();
+  });
+
+  test('an imported pack for a pinned section survives eviction (imported-% special-case)', async () => {
+    // Build a pack on another store and import it here under an 'imported-...'
+    // fingerprint that never matches the local manifest's.
+    const otherDb = await NodeDatabaseService.open(':memory:');
+    const otherFs = new FakePackFs();
+    const other = new SqliteTTSCacheStore(otherDb, {
+      budgetBytes: 1024 * 1024,
+      now: () => clock.t++,
+      packFs: otherFs,
+    });
+    await other.registerSectionMarks(1, ['m1', 'm2']);
+    await other.put('k1', sentence(1));
+    await other.recordMarkKey(1, 0, 'k1');
+    await other.put('k2', sentence(2));
+    await other.recordMarkKey(1, 1, 'k2');
+    await other.compact();
+    const otherName = (await otherFs.list()).find((n) => n.endsWith('.mp3'))!;
+    const otherSidecar = JSON.parse(
+      new TextDecoder().decode(otherFs.files.get(packSidecarName(otherName))!),
+    ) as TTSPackSidecar;
+    const otherBytes = otherFs.files.get(otherName)!.slice().buffer as ArrayBuffer;
+    await otherDb.close();
+
+    // Import into the pinned section's store.
+    await store.registerSectionMarks(1, ['m1', 'm2']);
+    expect(await store.importPack(otherBytes, otherSidecar)).toBe(true);
+    await store.beginDownloadSections([1]);
+    await store.completeDownloadSections([1]);
+
+    // Force eviction: the imported pack must survive despite fingerprint mismatch.
+    const tight = new SqliteTTSCacheStore(db, {
+      budgetBytes: 100,
+      now: () => clock.t++,
+      packFs,
+    });
+    await tight.put('oversize', sentence(9, 80));
+
+    const surviving = (await packFs.list()).filter((n) => n.endsWith('.mp3'));
+    expect(surviving).toContain(otherName);
+    expect((await store.getSectionStatuses()).get(1)).toMatchObject({
+      packed: true,
+      pinned: true,
+    });
+  });
+
   test('an explicit download can exceed the cache budget and its pack is never evicted', async () => {
     const tight = new SqliteTTSCacheStore(db, {
       budgetBytes: 50,
@@ -318,6 +618,84 @@ describe('SqliteTTSCacheStore pack compaction', () => {
     expect(await store.get('k2')).toBeNull();
     expect(await store.get('warm')).not.toBeNull();
     expect((await packFs.list()).filter((name) => name.endsWith('.mp3'))).toHaveLength(0);
+  });
+
+  test('clearDownloads fully removes downloaded chapters sharing sentences with a warm section (regression)', async () => {
+    // Two downloaded chapters share k1. A third, warm-cache section also
+    // repeats k1 and packs last, so k1's single entry row ends up owned by
+    // the warm section's pack. Clear downloads must still remove the
+    // downloaded chapters entirely — their marks, statuses, and pack files —
+    // while the warm section keeps its own cache.
+    await store.beginDownloadSections([4, 5]);
+    await cacheSection(4, ['mA1', 'mA2'], ['k1', 'k2']);
+    expect(await store.compact()).toBe(1);
+    await store.registerSectionMarks(5, ['mB1', 'mB2']);
+    await store.put('k4', sentence(4));
+    await store.recordMarkKey(5, 0, 'k1');
+    await store.recordMarkKey(5, 1, 'k4');
+    expect(await store.compact()).toBe(1);
+    await store.completeDownloadSections([4, 5]);
+
+    await store.registerSectionMarks(6, ['mC1', 'mC2']);
+    await store.put('k3', sentence(3));
+    await store.recordMarkKey(6, 0, 'k1');
+    await store.recordMarkKey(6, 1, 'k3');
+    expect(await store.compact()).toBe(1);
+    expect((await store.getSectionStatuses()).get(6)).toMatchObject({
+      packed: true,
+      pinned: false,
+    });
+
+    await store.clearDownloads();
+
+    expect(await store.hasDownloads()).toBe(false);
+    expect(await store.get('k2')).toBeNull();
+    expect(await store.get('k4')).toBeNull();
+    // The warm section still owns the shared sentence.
+    expect(await store.get('k1')).not.toBeNull();
+    const statuses = await store.getSectionStatuses();
+    // Cleared chapters leave no marks behind, so the podcast sheet must not
+    // label them partially downloaded.
+    expect(statuses.get(4)).toBeUndefined();
+    expect(statuses.get(5)).toBeUndefined();
+    expect(statuses.get(6)).toMatchObject({ packed: true, pinned: false });
+    expect(
+      chapterDownloadStatus(
+        { key: 'ch4', label: 'Chapter 4', depth: 0, startSection: 4, endSection: 5 },
+        statuses,
+      ),
+    ).toBe('none');
+    // Only the warm section's pack remains on disk.
+    expect((await packFs.list()).filter((name) => name.endsWith('.mp3'))).toHaveLength(1);
+  });
+
+  test('clearDownloads drops a shared entry a warm pack adopted when no section marks it anymore (regression)', async () => {
+    // Section 4 downloads k1; warm section 6 also marks k1 and packs last,
+    // adopting k1's entry row into its pack. Section 6's manifest then
+    // changes (a re-enumeration, e.g. a voice change) so nothing marks k1
+    // anymore. Clear downloads must garbage-collect the row instead of
+    // leaking it inside the surviving warm pack.
+    await store.beginDownloadSections([4]);
+    await cacheSection(4, ['mA1'], ['k1']);
+    expect(await store.compact()).toBe(1);
+    await store.completeDownloadSections([4]);
+
+    await store.registerSectionMarks(6, ['mC1', 'mC2']);
+    await store.put('k3', sentence(3));
+    await store.recordMarkKey(6, 0, 'k1');
+    await store.recordMarkKey(6, 1, 'k3');
+    expect(await store.compact()).toBe(1);
+    expect(await store.get('k1')).not.toBeNull();
+
+    await store.registerSectionMarks(6, ['mC2']);
+    await store.recordMarkKey(6, 0, 'k3');
+
+    await store.clearDownloads();
+
+    expect(await store.get('k1')).toBeNull();
+    expect(await store.get('k3')).not.toBeNull();
+    expect((await store.getSectionStatuses()).get(4)).toBeUndefined();
+    expect((await packFs.list()).filter((name) => name.endsWith('.mp3'))).toHaveLength(1);
   });
 
   test('gc removes pack files unknown to the database', async () => {

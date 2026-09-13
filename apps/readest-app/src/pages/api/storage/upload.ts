@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull, sum } from 'drizzle-orm';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { validateUserAndToken } from '@/libs/auth/verify';
 import { schema, withDb } from '@/libs/db';
@@ -89,7 +89,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'Missing file info' });
       }
 
-      const { usage, quota } = getStoragePlanData(token);
+      // The JWT's usage claim is frozen at mint time; authorise against the
+      // same live files rows used to mint it, including pending uploads.
+      const { quota } = getStoragePlanData(token);
+      const [usageRow] = await db
+        .select({ used: sum(schema.files.fileSize) })
+        .from(schema.files)
+        .where(and(eq(schema.files.userId, user.id), isNull(schema.files.deletedAt)));
+      const usage = Number(usageRow?.used ?? 0);
       if (usage + fileSize > quota + STORAGE_QUOTA_GRACE_BYTES) {
         return res.status(403).json({ error: 'Insufficient storage quota', usage });
       }

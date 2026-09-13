@@ -27,7 +27,7 @@ export const SETTINGS_REPLICA_ID = 'singleton';
  *     across devices.
  *   * Collection settings already synced via dedicated kinds
  *     (`customFonts`, `customTextures`, `customDictionaries`,
- *     `opdsCatalogs`). Note: `dictionarySettings` sub-fields
+ *     `opdsCatalogs`, `absServers`). Note: `dictionarySettings` sub-fields
  *     (providerOrder / providerEnabled / webSearches) ARE bundled
  *     here — see entries below. They ride this row for transport but
  *     are gated by the 'dictionary' sync category, not 'settings'
@@ -69,6 +69,8 @@ export const SETTINGS_WHITELIST = [
   'readwise.baseUrl',
   'readwise.accessToken',
   'hardcover.accessToken',
+  'notion.databaseId',
+  'notion.accessToken',
   // WebDAV connection. serverUrl + rootPath sync as plaintext so a fresh
   // device pre-fills the connect form; username / password are listed in
   // `encryptedFields` below. Per-device bookkeeping (enabled, deviceId,
@@ -144,6 +146,7 @@ export const SETTINGS_ENCRYPTED_FIELDS = [
   'bookorbit.customHeaders',
   'readwise.accessToken',
   'hardcover.accessToken',
+  'notion.accessToken',
   'webdav.username',
   'webdav.password',
   's3.accessKeyId',

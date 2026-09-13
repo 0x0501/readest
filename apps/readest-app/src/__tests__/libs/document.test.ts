@@ -1,4 +1,11 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { Blob as NodeBlob, File as NodeFile } from 'node:buffer';
+import { afterAll, afterEach, beforeAll, describe, it, expect, vi } from 'vitest';
+
+beforeAll(() => {
+  vi.stubGlobal('Blob', NodeBlob);
+  vi.stubGlobal('File', NodeFile);
+});
+afterAll(() => vi.unstubAllGlobals());
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { DocumentLoader, getDirection } from '@/libs/document';
@@ -93,6 +100,20 @@ describe('DocumentLoader.open', () => {
     expect(result.book).toBeTruthy();
     expect(result.format).toBe('EPUB');
   }, 15000);
+});
+
+// Issue #5959: some download managers append the duplicate marker after the
+// extension ("notes.md (1)"), and the loader classifies by name. Without
+// tolerating it a Markdown or comic file reaches the zip probe as an unknown
+// binary and fails with "Unsupported or corrupted book file".
+describe('DocumentLoader format probes with a duplicate-download marker', () => {
+  it('still recognizes Markdown', async () => {
+    const file = new File(['# Chapter One\n\nhello'], 'notes.md (1)');
+
+    const { format } = await new DocumentLoader(file).open();
+
+    expect(format).toBe('MD');
+  });
 });
 
 describe('getDirection', () => {

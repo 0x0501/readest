@@ -24,6 +24,7 @@ import android.view.WindowInsetsController
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.pdf.PdfRenderer
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -31,6 +32,7 @@ import android.hardware.SensorManager
 import android.hardware.input.InputManager
 import android.os.Handler
 import android.os.Looper
+import android.os.ParcelFileDescriptor
 import android.util.Base64
 import android.view.PixelCopy
 import android.webkit.WebView
@@ -58,6 +60,7 @@ import app.tauri.plugin.Invoke
 import org.json.JSONArray
 import java.io.*
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.*
 
 @InvokeArg
@@ -70,6 +73,12 @@ class AuthRequestArgs {
 class CopyURIRequestArgs {
     var uri: String? = null
     var dst: String? = null
+}
+
+@InvokeArg
+class RenderPdfCoverArgs {
+    var filePath: String? = null
+    var maxLongEdge: Int = 512
 }
 
 @InvokeArg
@@ -223,6 +232,9 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
     // announcements are delivered; most Android devices filter multicast
     // packets without it. Released in onDestroy.
     private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
+
+    // The in-app browser presented by `open_web_browser` (#5775); null when closed.
+    private var activeWebBrowser: WebBrowserController? = null
 
     private var sensorManager: SensorManager? = null
     private var ambientLightListening = false
@@ -585,6 +597,63 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
                 r
             }
             if (isActive) invoke.resolve(ret)
+        }
+    }
+
+    @Command
+    fun render_pdf_cover(invoke: Invoke) {
+        val args = invoke.parseArgs(RenderPdfCoverArgs::class.java)
+        pluginScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val filePath = args.filePath ?: throw IllegalArgumentException("filePath is required")
+                    val maxLongEdge = args.maxLongEdge.takeIf { it > 0 }?.coerceAtMost(512) ?: 512
+                    val descriptor = if (filePath.startsWith("content://")) {
+                        activity.contentResolver.openFileDescriptor(Uri.parse(filePath), "r")
+                            ?: throw IOException("Failed to open PDF content URI")
+                    } else {
+                        ParcelFileDescriptor.open(File(filePath), ParcelFileDescriptor.MODE_READ_ONLY)
+                    }
+                    descriptor.use { fd ->
+                        PdfRenderer(fd).use { renderer ->
+                            if (renderer.pageCount == 0) throw IOException("PDF has no pages")
+                            renderer.openPage(0).use { page ->
+                                val scale = minOf(
+                                    1f,
+                                    maxLongEdge.toFloat() / maxOf(page.width, page.height).toFloat(),
+                                )
+                                val width = maxOf(1, (page.width * scale).roundToInt())
+                                val height = maxOf(1, (page.height * scale).roundToInt())
+                                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                                try {
+                                    bitmap.eraseColor(Color.WHITE)
+                                    page.render(
+                                        bitmap,
+                                        null,
+                                        null,
+                                        PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY,
+                                    )
+                                    val bytes = ByteArrayOutputStream().use { output ->
+                                        if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output)) {
+                                            throw IOException("Failed to encode PDF cover")
+                                        }
+                                        output.toByteArray()
+                                    }
+                                    JSObject().apply {
+                                        put("coverBase64", Base64.encodeToString(bytes, Base64.NO_WRAP))
+                                        put("coverMime", "image/jpeg")
+                                    }
+                                } finally {
+                                    bitmap.recycle()
+                                }
+                            }
+                        }
+                    }
+                }
+                if (isActive) invoke.resolve(result)
+            } catch (e: Exception) {
+                if (isActive) invoke.reject(e.message ?: "PDF cover rendering failed")
+            }
         }
     }
 
@@ -1401,7 +1470,15 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
             withContext(Dispatchers.IO) {
                 val books = org.json.JSONArray()
                 for (book in args.books) {
-                    ReadingWidgetStore.writeThumbnail(activity, book.hash, book.coverPath, book.percent)
+                    // A thumbnail failure must never escape pluginScope: an
+                    // uncaught exception here kills the process, and the
+                    // snapshot is republished on every library load, so one
+                    // bad cover would crash the app on every launch.
+                    try {
+                        ReadingWidgetStore.writeThumbnail(activity, book.hash, book.coverPath, book.percent)
+                    } catch (e: Exception) {
+                        Log.w("NativeBridgePlugin", "widget thumbnail failed for ${book.hash}", e)
+                    }
                     books.put(
                         org.json.JSONObject()
                             .put("hash", book.hash)
@@ -1800,6 +1877,88 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
     }
 
     /**
+     * Present the in-app browser (#5775). Resolves `{ openBookHash? }` when
+     * the user closes it; downloads are emitted as `web-browser-download`
+     * plugin events while it is open (queued if JS has not registered yet).
+     */
+    @Command
+    fun open_web_browser(invoke: Invoke) {
+        val args = try {
+            invoke.parseArgs(WebBrowserArgs::class.java)
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "Invalid open_web_browser args")
+            return
+        }
+        val controller = WebBrowserController(
+            activity,
+            args,
+            onDownload = { event ->
+                val payload = JSObject()
+                payload.put("url", event.url)
+                payload.put("path", event.path)
+                payload.put("filename", event.filename)
+                payload.put("success", event.success)
+                event.error?.let { payload.put("error", it) }
+                emitOrQueue("web-browser-download", payload)
+            },
+            completion = { hash, page ->
+                activeWebBrowser = null
+                val ret = JSObject()
+                if (hash != null) ret.put("openBookHash", hash)
+                if (page != null) {
+                    val captured = JSObject()
+                    captured.put("url", page.url)
+                    captured.put("html", page.html)
+                    ret.put("page", captured)
+                }
+                invoke.resolve(ret)
+            },
+        )
+        activeWebBrowser = controller
+        controller.show()
+    }
+
+    /** Called only from Rust. The WebView owns cookie scoping, HttpOnly and persistence. */
+    @Command
+    fun web_browser_cookies(invoke: Invoke) {
+        val args = invoke.parseArgs(WebBrowserCookiesArgs::class.java)
+        activity.runOnUiThread {
+            val manager = android.webkit.CookieManager.getInstance()
+            val updates = args.setCookies ?: emptyArray()
+            fun resolve() {
+                val result = JSObject()
+                result.put("cookies", manager.getCookie(args.url) ?: "")
+                invoke.resolve(result)
+            }
+            if (updates.isEmpty()) resolve()
+            else {
+                var pending = updates.size
+                updates.forEach { cookie ->
+                    manager.setCookie(args.url, cookie) {
+                        pending--
+                        if (pending == 0) resolve()
+                    }
+                }
+            }
+        }
+    }
+
+    /** Push an import status into the open browser's banner. */
+    @Command
+    fun set_web_browser_status(invoke: Invoke) {
+        val args = try {
+            invoke.parseArgs(WebBrowserStatusArgs::class.java)
+        } catch (e: Exception) {
+            invoke.reject(e.message ?: "Invalid set_web_browser_status args")
+            return
+        }
+        activity.runOnUiThread {
+            activeWebBrowser?.setStatus(args.state ?: "", args.filename ?: "", args.bookHash)
+        }
+        invoke.resolve()
+    }
+
+    /**
      * Trigger a deep e-ink full screen refresh (GC16 waveform) to clear
      * ghosting. Driven by the page-turner "Refresh Page" action on e-ink
      * Android devices. Runs on the UI thread against the window's decor view;
@@ -1909,4 +2068,10 @@ class SecureItemSetArgs {
 @app.tauri.annotation.InvokeArg
 class SecureItemGetArgs {
     lateinit var key: String
+}
+
+@InvokeArg
+class WebBrowserCookiesArgs {
+    lateinit var url: String
+    var setCookies: Array<String>? = null
 }

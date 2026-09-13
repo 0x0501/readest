@@ -21,6 +21,10 @@ vi.mock('@/utils/misc', () => ({
 vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: vi.fn(),
 }));
+vi.mock('@/utils/simplecc', () => ({
+  initSimpleCC: vi.fn(async () => {}),
+  runSimpleCC: vi.fn((text: string) => text),
+}));
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -249,7 +253,11 @@ describe('yandexProvider', () => {
   });
 
   it('throws when the session request fails', async () => {
-    mockTauriFetch.mockResolvedValue({ ok: false, status: 403 } as unknown as Response);
+    mockTauriFetch.mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: vi.fn(async () => ''),
+    } as unknown as Response);
 
     const { yandexProvider } = await import('@/services/translators/providers/yandex');
     await expect(yandexProvider.translate(['Hello'], 'en', 'fr')).rejects.toThrow(

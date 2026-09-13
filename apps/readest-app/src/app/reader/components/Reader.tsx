@@ -68,7 +68,11 @@ const Reader: React.FC<{ ids?: string }> = ({ ids }) => {
   const { getIsNotebookVisible, setNotebookVisible } = useNotebookStore();
   const { isDarkMode, systemUIAlwaysHidden, isRoundedWindow } = useThemeStore();
 
-  useTheme({ systemUIVisible: settings.alwaysShowStatusBar, appThemeColor: 'base-100' });
+  useTheme({
+    systemUIVisible: settings.alwaysShowStatusBar,
+    appThemeColor: 'base-100',
+    themeScope: 'reader',
+  });
   useScreenWakeLock(settings.screenWakeLock, appService?.hasWindow);
   useScreenBrightness();
   useTransferQueue(libraryLoaded, 5000);
@@ -99,8 +103,7 @@ const Reader: React.FC<{ ids?: string }> = ({ ids }) => {
       } else if (getIsNotebookVisible() && !isNotebookPinned) {
         setNotebookVisible(false);
       } else {
-        eventDispatcher.dispatch('close-reader');
-        router.back();
+        void eventDispatcher.dispatch('close-reader', { onClose: () => router.back() });
       }
       return true;
     }

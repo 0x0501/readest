@@ -8,6 +8,7 @@ import {
   buildChapterFootnotes,
   expandInlineFootnotes,
   extractFootnoteDefs,
+  normalizeFootnoteDefinitionIndent,
 } from './mdFootnotes';
 import { frontmatterToMetadata, parseFrontmatter } from './mdFrontmatter';
 import { sanitizeHtml } from './sanitize';
@@ -25,7 +26,7 @@ const XHTML_NS = 'http://www.w3.org/1999/xhtml';
 // annotation note renderer and the export dialog, and must not gain footnote
 // parsing as a side effect.
 const markdown = new Marked({ gfm: true }).use(markedFootnote({ prefixId: FOOTNOTE_PREFIX_ID }), {
-  hooks: { preprocess: expandInlineFootnotes },
+  hooks: { preprocess: (src) => expandInlineFootnotes(normalizeFootnoteDefinitionIndent(src)) },
 });
 
 // Minimal defaults so code blocks wrap inside the paginated column (long lines
@@ -196,9 +197,10 @@ export async function makeMarkdownBook(file: File): Promise<BookDoc> {
         data: str,
         type: 'application/xhtml+xml',
       };
-      // Readonly, mirroring foliate's Loader.createURL dispatch. Selection
-      // scoped proofread rules compare their TOC-style sectionHref
-      // ("<index>#<anchor>") against this name via split('#')[0].
+      // Readonly, mirroring foliate's Loader.createURL dispatch. Markdown
+      // sections carry no spine CFI, so selection-scoped proofread rules fall
+      // back to matching their sectionHref against this name; both are the
+      // section index ("<index>", or "<index>#<anchor>" via split('#')[0]).
       Object.defineProperty(detail, 'name', { value: String(index) });
       transformTarget.dispatchEvent(new CustomEvent('data', { detail }));
       const out = await detail.data;

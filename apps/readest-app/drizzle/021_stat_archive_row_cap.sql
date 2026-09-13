@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/021_stat_archive_row_cap.sql

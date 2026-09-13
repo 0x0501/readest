@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/020_stat_archives.sql

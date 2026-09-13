@@ -178,6 +178,13 @@ const BookOrbitForm: React.FC<BookOrbitFormProps> = ({ onBack }) => {
     await saveSettings(envConfig, newSettings);
   };
 
+  const handleToggleAutoSync = async () => {
+    const bookorbit = { ...settings.bookorbit, autoSync: settings.bookorbit.autoSync === false };
+    const newSettings = { ...settings, bookorbit };
+    setSettings(newSettings);
+    await saveSettings(envConfig, newSettings);
+  };
+
   const handleStrategyChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const bookorbit = { ...settings.bookorbit, strategy: e.target.value as KOSyncStrategy };
     const newSettings = { ...settings, bookorbit };
@@ -205,6 +212,17 @@ const BookOrbitForm: React.FC<BookOrbitFormProps> = ({ onBack }) => {
               <label className='flex min-h-14 items-center justify-between px-4'>
                 <SettingLabel>{_('Sync Server Connected')}</SettingLabel>
                 <Toggle checked={settings.bookorbit.enabled} onChange={handleToggleEnabled} />
+              </label>
+              {/* Off = manual sync (#6029): progress is only pushed from the
+                  book menu's "Push Progress" or the reader's Sync row, so the
+                  server's reading log isn't filled with debounce-sized
+                  updates. Pulls stay automatic. */}
+              <label className='flex min-h-14 items-center justify-between px-4'>
+                <SettingLabel>{_('Auto Sync')}</SettingLabel>
+                <Toggle
+                  checked={settings.bookorbit.autoSync !== false}
+                  onChange={handleToggleAutoSync}
+                />
               </label>
               <div className='flex min-h-14 items-center justify-between gap-3 px-4'>
                 <SettingLabel>{_('Sync Strategy')}</SettingLabel>
@@ -245,7 +263,7 @@ const BookOrbitForm: React.FC<BookOrbitFormProps> = ({ onBack }) => {
                 <input
                   type='text'
                   placeholder={osName ? `Readest (${osName})` : 'Readest'}
-                  className='input h-9 max-w-[60%] rounded-md !border-0 !bg-transparent !pe-3 !ps-2 text-end text-sm hover:!bg-transparent focus:!border-0 focus:!bg-transparent focus:!shadow-none focus:!outline-none focus:!ring-0'
+                  className='input h-9 max-w-[60%] rounded-md border-0! bg-transparent! pe-3! ps-2! text-end text-sm hover:bg-transparent! focus:border-0! focus:bg-transparent! focus:shadow-none! focus:outline-hidden! focus:ring-0!'
                   value={deviceName}
                   onChange={handleDeviceNameChange}
                 />
@@ -265,16 +283,16 @@ const BookOrbitForm: React.FC<BookOrbitFormProps> = ({ onBack }) => {
                 'CF-Access-Client-Id': 'your-client-id',
                 'CF-Access-Client-Secret': 'your-client-secret',
               })}
-              className='textarea textarea-bordered eink-bordered w-full font-mono text-sm placeholder:text-xs'
+              className='textarea eink-bordered w-full font-mono text-sm placeholder:text-xs'
               rows={4}
               spellCheck={false}
             />
-            <span className='label-text-alt text-base-content/60'>
+            <span className='text-xs text-base-content/60'>
               {_('Add one header per line using "Header-Name: value".')}
             </span>
             {headerError && (
               <div className='pt-0.5'>
-                <span className='label-text-alt text-error'>{headerError}</span>
+                <span className='text-xs text-error'>{headerError}</span>
               </div>
             )}
           </div>
@@ -288,7 +306,7 @@ const BookOrbitForm: React.FC<BookOrbitFormProps> = ({ onBack }) => {
                 'h-10 rounded-lg px-4 text-sm font-medium',
                 'text-error hover:bg-error/10',
                 'transition-colors duration-150',
-                'focus-visible:ring-error/40 focus-visible:outline-none focus-visible:ring-2',
+                'focus-visible:ring-error/40 focus-visible:outline-hidden focus-visible:ring-2',
               )}
             >
               {_('Disconnect')}
@@ -312,7 +330,7 @@ const BookOrbitForm: React.FC<BookOrbitFormProps> = ({ onBack }) => {
                 id='bookorbit-server-url'
                 type='text'
                 placeholder='https://books.example.com'
-                className='input input-bordered eink-bordered h-11 w-full text-sm focus:outline-none'
+                className='input eink-bordered h-11 w-full text-sm focus:outline-hidden'
                 spellCheck='false'
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
@@ -327,7 +345,7 @@ const BookOrbitForm: React.FC<BookOrbitFormProps> = ({ onBack }) => {
                 id='bookorbit-username'
                 type='text'
                 placeholder={_('Your Username')}
-                className='input input-bordered eink-bordered h-11 w-full text-sm focus:outline-none'
+                className='input eink-bordered h-11 w-full text-sm focus:outline-hidden'
                 spellCheck='false'
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -343,7 +361,7 @@ const BookOrbitForm: React.FC<BookOrbitFormProps> = ({ onBack }) => {
                 id='bookorbit-password'
                 type='password'
                 placeholder={_('Your Password')}
-                className='input input-bordered eink-bordered h-11 w-full text-sm focus:outline-none'
+                className='input eink-bordered h-11 w-full text-sm focus:outline-hidden'
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete='current-password'
@@ -365,16 +383,16 @@ const BookOrbitForm: React.FC<BookOrbitFormProps> = ({ onBack }) => {
                   'CF-Access-Client-Id': 'your-client-id',
                   'CF-Access-Client-Secret': 'your-client-secret',
                 })}
-                className='textarea textarea-bordered eink-bordered w-full font-mono text-sm placeholder:text-xs'
+                className='textarea eink-bordered w-full font-mono text-sm placeholder:text-xs'
                 rows={4}
                 spellCheck={false}
               />
-              <span className='label-text-alt text-base-content/60'>
+              <span className='text-xs text-base-content/60'>
                 {_('Add one header per line using "Header-Name: value".')}
               </span>
               {headerError && (
                 <div className='pt-0.5'>
-                  <span className='label-text-alt text-error'>{headerError}</span>
+                  <span className='text-xs text-error'>{headerError}</span>
                 </div>
               )}
             </div>
@@ -394,7 +412,7 @@ const BookOrbitForm: React.FC<BookOrbitFormProps> = ({ onBack }) => {
                 className={clsx(
                   'btn btn-primary',
                   'h-10 min-h-10 rounded-lg border-0 px-5 text-sm font-medium',
-                  'focus-visible:ring-primary/40 focus-visible:outline-none focus-visible:ring-2',
+                  'focus-visible:ring-primary/40 focus-visible:outline-hidden focus-visible:ring-2',
                   isConnecting && 'opacity-60',
                 )}
               >

@@ -265,9 +265,10 @@ const BookCellInner: React.FC<BookCellProps> = ({
       <SearchResultsNav bookKey={bookKey} gridInsets={gridInsets} />
       <BooknotesNav bookKey={bookKey} gridInsets={gridInsets} toc={bookDoc.toc || []} />
       <FootnotePopup bookKey={bookKey} bookDoc={bookDoc} />
-      {/* After FootnotePopup so the selection toolbar and lookup popups stack
-          above the footnote popup (and its dismiss overlay) when the user
-          selects text inside it. */}
+      {/* After FootnotePopup so the lookup popups stack above the footnote
+          popup (and its dismiss overlay) when the user selects text inside it.
+          The selection toolbar no longer rides on this order — it has its own
+          z-[43] band, above the footnote popup's z-[42] (#6145). */}
       <Annotator bookKey={bookKey} contentInsets={contentInsets} />
       <FooterBar
         bookKey={bookKey}
@@ -360,7 +361,7 @@ const BooksGrid: React.FC<BooksGridProps> = ({ bookKeys, onCloseBook, onGoToLibr
 
   return (
     <div
-      className={clsx('books-grid bg-base-100 relative grid h-full flex-grow')}
+      className={clsx('books-grid bg-base-100 relative grid h-full grow')}
       style={gridStyle}
       role='main'
       aria-label={_('Books Content')}

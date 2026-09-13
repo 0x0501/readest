@@ -26,6 +26,7 @@ import {
   tempDir,
 } from '@tauri-apps/api/path';
 import { type as osType } from '@tauri-apps/plugin-os';
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { shareFile } from '@choochmeque/tauri-plugin-sharekit-api';
 
 import {
@@ -37,6 +38,7 @@ import {
   DistChannel,
 } from '@/types/system';
 import type { Book } from '@/types/book';
+import { needsQueryRangeReads } from '@/utils/ua';
 import { getOSPlatform, isContentURI, isFileURI, isValidURL } from '@/utils/misc';
 import { getDirPath, getFilename } from '@/utils/path';
 import { NativeFile, RemoteFile } from '@/utils/file';
@@ -298,12 +300,12 @@ export const nativeFileSystem: FileSystem = {
   async getImageURL(path: string) {
     return this.getURL(path);
   },
-  async openFile(path: string, base: BaseDir, name?: string) {
+  async openFile(path: string, base: BaseDir, name?: string, fetcher?: typeof fetch) {
     const normalizedPath = OS_TYPE === 'ios' ? safeDecodePath(path) : path;
     const { fp, baseDir } = this.resolvePath(normalizedPath, base);
     let fname = safeDecodePath(name || getFilename(fp));
     if (isValidURL(path)) {
-      return await new RemoteFile(path, fname).open();
+      return await new RemoteFile(path, fname, '', Date.now(), fetcher ?? tauriFetch).open();
     } else if (isContentURI(path) || (isFileURI(path) && OS_TYPE === 'ios')) {
       fname = safeDecodePath(await basename(path));
       if (path.includes('com.android.externalstorage')) {
@@ -315,7 +317,7 @@ export const nativeFileSystem: FileSystem = {
         // or file:// URIs is security scoped resource in iOS (e.g. from Files app),
         // we cannot access the file directly — so we copy it to a temporary cache location.
         const prefix = await this.getPrefix('Cache');
-        const dst = await join(prefix, decodeURIComponent(fname));
+        const dst = await join(prefix, `${crypto.randomUUID()}-${decodeURIComponent(fname)}`);
         const res = await copyURIToPath({ uri: path, dst });
         if (!res.success) {
           console.error('Failed to open file:', res);
@@ -325,13 +327,14 @@ export const nativeFileSystem: FileSystem = {
       }
     } else if (isFileURI(path)) {
       return await new NativeFile(fp, fname, baseDir ? baseDir : null).open();
-    } else if (OS_TYPE === 'android') {
-      // Android can't use the asset protocol for ranged reads — its WebView
-      // re-applies a `Range` header's offset to intercepted bodies and corrupts
-      // non-zero-start reads (Chromium 40739128). Instead route reads through
-      // the `rangefile` custom scheme, which carries the range in the URL query
-      // (no `Range` header) so the WebView delivers the bytes verbatim, still
-      // over the network stack rather than the slow Tauri IPC bridge.
+    } else if (needsQueryRangeReads(OS_TYPE, navigator.userAgent)) {
+      // Android and the Linux CEF build can't use the asset protocol for
+      // ranged reads — Chromium re-applies a `Range` header's offset to
+      // intercepted bodies and fails non-zero-start reads (Chromium 40739128).
+      // Instead route reads through the `rangefile` custom scheme, which
+      // carries the range in the URL query (no `Range` header) so the WebView
+      // delivers the bytes verbatim, still over the network stack rather than
+      // the slow Tauri IPC bridge.
       // Falls back to NativeFile if the path is outside the asset scope.
       try {
         const prefix = await this.getPrefix(base);
@@ -662,12 +665,23 @@ export class NativeAppService extends BaseAppService {
       });
     }
     const settings = await this.loadSettings();
-    if (this.customRootDir || settings.customRootDir) {
+    const customRootDir = this.customRootDir || settings.customRootDir;
+    if (customRootDir) {
       this.fs.resolvePath = getPathResolver({
-        customRootDir: this.customRootDir || settings.customRootDir,
+        customRootDir,
         isPortable: this.isPortableApp,
         execDir,
       });
+      // Validate the root before anything depends on it. We deliberately keep
+      // the custom resolver installed when it fails: silently falling back to
+      // the default location would scatter imports into a second library and
+      // make the real books look lost once the root comes back. Recording it
+      // here lets the library page name the folder instead of dying on an
+      // unhandled rejection (blank App Store window, sandbox-denied root).
+      if (!(await this.isRootDirUsable())) {
+        this.unavailableRootDir = customRootDir;
+        console.error('[nativeAppService] library root is not usable:', customRootDir);
+      }
     }
     if (this.isIOSApp) {
       this.isOnlineCatalogsAccessible = this.distChannel !== 'appstore';
@@ -992,6 +1006,10 @@ export class NativeAppService extends BaseAppService {
     const { getMigrations } = await import('./database/migrations');
     await migrate(db, getMigrations(schema));
     return db;
+  }
+
+  override async installDatabase(path: string, base: BaseDir, source: File): Promise<void> {
+    await this.writeFile(path, base, source);
   }
 
   async migrate20251029() {

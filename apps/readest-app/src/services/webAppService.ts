@@ -81,9 +81,9 @@ const indexedDBFileSystem: FileSystem = {
   async getImageURL(path: string) {
     return await this.getBlobURL(path, 'None');
   },
-  async openFile(path: string, base: BaseDir, filename?: string) {
+  async openFile(path: string, base: BaseDir, filename?: string, fetcher?: typeof fetch) {
     if (isValidURL(path)) {
-      return await new RemoteFile(path, filename).open();
+      return await new RemoteFile(path, filename, '', Date.now(), fetcher).open();
     } else {
       const content = await this.readFile(path, base, 'binary');
       return new File([content], filename || path);
@@ -428,6 +428,15 @@ export class WebAppService extends BaseAppService {
     const { getMigrations } = await import('./database/migrations');
     await migrate(db, getMigrations(schema));
     return db;
+  }
+
+  override async installDatabase(path: string, base: BaseDir, source: File): Promise<void> {
+    const root = await navigator.storage.getDirectory();
+    const handle = await root.getFileHandle(await this.opfsDatabaseName(path, base), {
+      create: true,
+    });
+    const writable = await handle.createWritable();
+    await source.stream().pipeTo(writable);
   }
 
   private async opfsDatabaseName(path: string, base: BaseDir): Promise<string> {

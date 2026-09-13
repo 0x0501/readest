@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { TTSController } from '@/services/tts/TTSController';
 import type { TTSClient, TTSMessageEvent } from '@/services/tts/TTSClient';
 import { MEDIA_OVERLAY_VOICE_ID } from '@/services/tts/mediaOverlay';
+import { useABSServerStore } from '@/store/absServerStore';
+import type { PairedAudiobook } from '@/types/book';
+import type { AppService } from '@/types/system';
 import type { FoliateView } from '@/types/view';
 
 // Synthesis clients replaced with fakes; the narration client is the real one,
@@ -120,9 +123,103 @@ const makePlainView = () => {
   return view;
 };
 
+const PAIRED_AUDIOBOOK: PairedAudiobook = {
+  version: 1,
+  narrator: 'External Narrator',
+  files: [{ id: 'audio-0', name: 'chapter.mp3', path: 'hash/audiobook/chapter.mp3', duration: 30 }],
+  chapters: [{ id: 'audio-0:0', fileId: 'audio-0', label: 'Chapter 1', start: 0, end: 30 }],
+  mappings: [{ ebookChapterId: 'chapter.xhtml', audioChapterId: 'audio-0:0' }],
+  createdAt: 1,
+};
+
+// The same chapter, streamed from an Audiobookshelf item split across two files.
+const ABS_PAIRED_AUDIOBOOK: PairedAudiobook = {
+  version: 1,
+  narrator: 'Server Narrator',
+  files: [{ id: 'abs', name: 'Book', path: 'abs://srv1/item1', duration: 30 }],
+  chapters: [{ id: 'abs:0', fileId: 'abs', label: 'Chapter 1', start: 0, end: 30 }],
+  mappings: [{ ebookChapterId: 'chapter.xhtml', audioChapterId: 'abs:0' }],
+  createdAt: 1,
+  source: {
+    kind: 'audiobookshelf',
+    serverId: 'srv1',
+    itemId: 'item1',
+    tracks: [
+      { index: 1, startOffset: 0, duration: 20, contentUrl: '/api/items/item1/file/1' },
+      { index: 2, startOffset: 20, duration: 10, contentUrl: '/api/items/item1/file/2' },
+    ],
+  },
+};
+
+// An audiobook whose chapter list is finer than the EPUB's: "One.1" has no
+// TOC entry to map to, so it plays as the tail of Chapter 1's recording.
+const SUB_CHAPTER_AUDIOBOOK: PairedAudiobook = {
+  version: 1,
+  files: [{ id: 'audio-0', name: 'book.m4b', path: 'hash/audiobook/book.m4b', duration: 60 }],
+  chapters: [
+    { id: 'audio-0:0', fileId: 'audio-0', label: 'One', start: 0, end: 30 },
+    { id: 'audio-0:1', fileId: 'audio-0', label: 'One.1', start: 30, end: 45 },
+    { id: 'audio-0:2', fileId: 'audio-0', label: 'Two', start: 45, end: 60 },
+  ],
+  mappings: [
+    { ebookChapterId: 'chapter.xhtml', audioChapterId: 'audio-0:0' },
+    { ebookChapterId: 'last.xhtml', audioChapterId: 'audio-0:2' },
+  ],
+  createdAt: 1,
+};
+
+const makeSubChapterView = () => {
+  const docs = [
+    makeDoc('<p>Front matter.</p>'),
+    makeDoc('<h1>Chapter 1</h1><p>First chapter text.</p>'),
+    makeDoc('<h1>Chapter 2</h1><p>Second chapter text.</p>'),
+  ];
+  return {
+    book: {
+      toc: [
+        { id: 0, label: 'Chapter 1', href: 'chapter.xhtml', index: 0 },
+        { id: 1, label: 'Chapter 2', href: 'last.xhtml', index: 0 },
+      ],
+      sections: docs.map((doc, index) => ({
+        id: ['front.xhtml', 'chapter.xhtml', 'last.xhtml'][index],
+        createDocument: vi.fn().mockResolvedValue(doc),
+      })),
+      splitTOCHref: (href: string) => href.split('#'),
+    },
+    renderer: { getContents: () => [], primaryIndex: 0 },
+    language: { isCJK: false, canonical: 'en' },
+    getCFI: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2)'),
+    resolveCFI: vi.fn().mockReturnValue({ anchor: () => null }),
+    tts: null,
+  } as unknown as FoliateView;
+};
+
+const makePairedView = () => {
+  const docs = [makeDoc('<p>Front matter.</p>'), makeDoc('<h1>Chapter 1</h1><p>Text.</p>')];
+  return {
+    book: {
+      toc: [{ id: 0, label: 'Chapter 1', href: 'chapter.xhtml', index: 0 }],
+      sections: [
+        { id: 'front.xhtml', createDocument: vi.fn().mockResolvedValue(docs[0]) },
+        { id: 'chapter.xhtml', createDocument: vi.fn().mockResolvedValue(docs[1]) },
+      ],
+      splitTOCHref: (href: string) => href.split('#'),
+    },
+    renderer: { getContents: () => [], primaryIndex: 0 },
+    language: { isCJK: false, canonical: 'en' },
+    getCFI: vi.fn().mockReturnValue('epubcfi(/6/2!/4/2)'),
+    resolveCFI: vi.fn().mockReturnValue({ anchor: () => null }),
+    tts: null,
+  } as unknown as FoliateView;
+};
+
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
+  Object.defineProperty(window, '__TAURI_INTERNALS__', {
+    configurable: true,
+    value: { convertFileSrc: vi.fn((path: string) => `asset://${path}`) },
+  });
   vi.stubGlobal(
     'Audio',
     class {
@@ -173,6 +270,205 @@ describe('narration selection', () => {
     expect(controller.ttsClient).toBe(controller.ttsEdgeClient);
   });
 
+  test('a paired audiobook is offered as narration without EPUB media overlays', async () => {
+    const view = makePairedView();
+    const appService = {
+      openFile: vi.fn(async () => new File(['audio'], 'chapter.mp3')),
+    } as unknown as AppService;
+    const controller = new TTSController(appService, view);
+    controller.pairedAudiobook = PAIRED_AUDIOBOOK;
+
+    await controller.init();
+    await controller.initViewTTS(0);
+
+    expect(controller.narrationAvailable).toBe(true);
+    expect(controller.narrationActive).toBe(true);
+    expect(view.book.sections[0]!.createDocument).not.toHaveBeenCalled();
+    expect(view.book.sections[1]!.createDocument).toHaveBeenCalled();
+    expect(view.tts!.start()).toContain('<mark name="0"/>');
+    expect((await controller.getVoices('en'))[0]!.voices[0]!.name).toBe('External Narrator');
+  });
+
+  test('streams a paired audiobook from a direct asset URL on desktop Tauri', async () => {
+    const view = makePairedView();
+    const appService = {
+      appPlatform: 'tauri',
+      isMobileApp: false,
+      openFile: vi.fn(async () => new File(['audio'], 'chapter.mp3')),
+      resolveFilePath: vi.fn(async () => '/books/hash/audiobook/chapter.mp3'),
+    } as unknown as AppService;
+    const controller = new TTSController(appService, view);
+    controller.pairedAudiobook = PAIRED_AUDIOBOOK;
+    const attachSource = vi.spyOn(controller.ttsMediaOverlayClient, 'attachSource');
+
+    await controller.init();
+
+    const source = attachSource.mock.calls.at(-1)?.[0];
+    await expect(source?.resolveUrl?.(PAIRED_AUDIOBOOK.files[0]!.path)).resolves.toBe(
+      'asset:///books/hash/audiobook/chapter.mp3',
+    );
+    expect(appService.resolveFilePath).toHaveBeenCalledWith(
+      PAIRED_AUDIOBOOK.files[0]!.path,
+      'Books',
+    );
+    expect(appService.openFile).not.toHaveBeenCalled();
+  });
+
+  test('streams an Audiobookshelf pairing as tokened track URLs on one timeline', async () => {
+    useABSServerStore.setState({
+      servers: [{ id: 'srv1', name: 'Home', url: 'http://abs.local/', accessToken: 'tok-1' }],
+    });
+    const view = makePairedView();
+    const appService = {
+      appPlatform: 'tauri',
+      isMobileApp: true,
+      openFile: vi.fn(),
+      resolveFilePath: vi.fn(),
+    } as unknown as AppService;
+    const controller = new TTSController(appService, view);
+    controller.pairedAudiobook = ABS_PAIRED_AUDIOBOOK;
+    const attachSource = vi.spyOn(controller.ttsMediaOverlayClient, 'attachSource');
+
+    await controller.init();
+    await controller.initViewTTS(0);
+
+    expect(controller.narrationAvailable).toBe(true);
+    expect((await controller.getVoices('en'))[0]!.voices[0]!.name).toBe('Server Narrator');
+    const source = attachSource.mock.calls.at(-1)?.[0];
+    expect(source?.textHighlight).toBe(false);
+    await expect(source?.resolveTracks?.('abs://srv1/item1')).resolves.toEqual([
+      { url: 'http://abs.local/api/items/item1/file/1?token=tok-1', startOffset: 0, duration: 20 },
+      { url: 'http://abs.local/api/items/item1/file/2?token=tok-1', startOffset: 20, duration: 10 },
+    ]);
+    // The token is read per call, so a rotation is picked up by the next load.
+    useABSServerStore.getState().updateServer('srv1', { accessToken: 'tok-2' });
+    await expect(source?.resolveTracks?.('abs://srv1/item1')).resolves.toMatchObject([
+      { url: 'http://abs.local/api/items/item1/file/1?token=tok-2' },
+      { url: 'http://abs.local/api/items/item1/file/2?token=tok-2' },
+    ]);
+    // Nothing local exists to open or resolve for a streamed pairing.
+    expect(appService.openFile).not.toHaveBeenCalled();
+    expect(appService.resolveFilePath).not.toHaveBeenCalled();
+    useABSServerStore.setState({ servers: [] });
+  });
+
+  test('a streamed pairing whose server was removed cannot load audio', async () => {
+    useABSServerStore.setState({ servers: [] });
+    const controller = new TTSController({} as AppService, makePairedView());
+    controller.pairedAudiobook = ABS_PAIRED_AUDIOBOOK;
+    const attachSource = vi.spyOn(controller.ttsMediaOverlayClient, 'attachSource');
+
+    await controller.init();
+
+    const source = attachSource.mock.calls.at(-1)?.[0];
+    await expect(source?.resolveTracks?.('abs://srv1/item1')).resolves.toBeNull();
+    await expect(source?.loadBlob('abs://srv1/item1')).rejects.toThrow(/server not found/i);
+  });
+
+  test('starts paired narration at the current text position without drawing a chapter highlight', async () => {
+    const view = makePairedView();
+    const appService = {
+      openFile: vi.fn(async () => new File(['audio'], 'chapter.mp3')),
+      resolveFilePath: vi.fn(async () => '/books/chapter.mp3'),
+    } as unknown as AppService;
+    const controller = new TTSController(appService, view);
+    controller.pairedAudiobook = PAIRED_AUDIOBOOK;
+    await controller.init();
+    await controller.initViewTTS(0);
+
+    const doc = view.tts!.doc;
+    const text = doc.querySelector('p')!.firstChild as Text;
+    const page = doc.createRange();
+    page.setStart(text, 2);
+    page.setEnd(text, text.length);
+    const setStart = vi.spyOn(controller.ttsMediaOverlayClient, 'setNextChunkPosition');
+    const overlayer = { remove: vi.fn(), add: vi.fn() };
+    (
+      view.renderer as unknown as { getContents: () => unknown[]; primaryIndex: number }
+    ).getContents = () => [{ doc, index: 1, overlayer }];
+    (view.renderer as unknown as { primaryIndex: number }).primaryIndex = 1;
+    view.getCFI = vi.fn((_index: number, range?: Range) => `cfi:${range?.toString() ?? ''}`);
+
+    expect(controller.startFromRange(page)).toContain('<mark name="0"/>');
+    expect(setStart).toHaveBeenCalledOnce();
+    expect(setStart.mock.calls[0]![0]).toBeGreaterThan(0);
+
+    const location = vi.fn();
+    controller.addEventListener('tts-highlight-mark', location);
+    controller.dispatchSpeakMark({ offset: 0, name: '0', text: 'Chapter', language: 'en' });
+
+    expect(overlayer.add).not.toHaveBeenCalled();
+    expect((location.mock.calls[0]![0] as CustomEvent).detail.cfi).not.toContain('Chapter 1Text.');
+    vi.spyOn(controller.ttsMediaOverlayClient, 'getChunkProgress').mockReturnValue(0.75);
+    expect(controller.getCurrentPlaybackCfi()).toMatch(/^cfi:.$/);
+    expect(controller.isSoundingSentenceOnScreen()).toBe(false);
+  });
+
+  test('gives page-follow the whole chapter range, not the one-character reading position', async () => {
+    const view = makePairedView();
+    const appService = {
+      openFile: vi.fn(async () => new File(['audio'], 'chapter.mp3')),
+      resolveFilePath: vi.fn(async () => '/books/chapter.mp3'),
+    } as unknown as AppService;
+    const controller = new TTSController(appService, view);
+    controller.pairedAudiobook = PAIRED_AUDIOBOOK;
+    await controller.init();
+    await controller.initViewTTS(0);
+
+    const doc = view.tts!.doc;
+    (
+      view.renderer as unknown as { getContents: () => unknown[]; primaryIndex: number }
+    ).getContents = () => [{ doc, index: 1, overlayer: { remove: vi.fn(), add: vi.fn() } }];
+    (view.renderer as unknown as { primaryIndex: number }).primaryIndex = 1;
+    view.getCFI = vi.fn((_index: number, range?: Range) => `cfi:${range?.toString() ?? ''}`);
+
+    const marks: CustomEvent[] = [];
+    controller.addEventListener('tts-highlight-mark', (e) => marks.push(e as CustomEvent));
+    controller.dispatchSpeakMark({ offset: 0, name: '0', text: 'Chapter', language: 'en' });
+
+    const detail = marks[0]!.detail as { cfi: string; sentenceCfi?: string };
+    // The reading dot is one character; a chapter-only pairing has no finer
+    // text timing.
+    expect(detail.cfi).toMatch(/^cfi:.$/);
+    // Page-follow needs the whole chapter's extent to know where the page cuts
+    // it off, so the mark carries that separately.
+    expect(detail.sentenceCfi).toContain('Chapter 1Text.');
+    expect(detail.sentenceCfi).not.toBe(detail.cfi);
+  });
+
+  test('keeps paired-audiobook scrubber preview and seek aligned with the audio offset', async () => {
+    const view = makePairedView();
+    const appService = {
+      openFile: vi.fn(async () => new File(['audio'], 'chapter.mp3')),
+      resolveFilePath: vi.fn(async () => '/books/chapter.mp3'),
+    } as unknown as AppService;
+    const controller = new TTSController(appService, view);
+    controller.pairedAudiobook = PAIRED_AUDIOBOOK;
+    view.getCFI = vi.fn((_index: number, range?: Range) => `cfi:${range?.toString() ?? ''}`);
+    await controller.init();
+    await controller.initViewTTS(0);
+    await controller.ensureTimeline();
+    controller.dispatchSpeakMark({ offset: 0, name: '0', text: 'Chapter 1', language: 'en' });
+
+    const locations: { cfi: string; preview?: boolean }[] = [];
+    controller.addEventListener('tts-highlight-mark', (event) => {
+      locations.push((event as CustomEvent<{ cfi: string; preview?: boolean }>).detail);
+    });
+    controller.previewSeekTime(15);
+
+    const seekWithin = vi
+      .spyOn(controller.ttsMediaOverlayClient, 'seekToChunkPosition')
+      .mockResolvedValue(true);
+    await controller.seekToTime(20);
+
+    expect(locations).toHaveLength(2);
+    expect(locations[0]!.preview).toBe(true);
+    expect(locations[0]!.cfi).toMatch(/^cfi:.$/);
+    expect(locations[1]!.preview).toBeUndefined();
+    expect(locations[1]!.cfi).toMatch(/^cfi:.$/);
+    expect(seekWithin).toHaveBeenCalledWith(20);
+  });
+
   test('the narrator leads the voice list, and only for narrated books', async () => {
     const narrated = new TTSController(null, makeView([true]));
     await narrated.init();
@@ -209,6 +505,104 @@ describe('narration selection', () => {
   });
 });
 
+describe('paired audiobook transport', () => {
+  const appService = {
+    openFile: vi.fn(async () => new File(['audio'], 'book.m4b')),
+    resolveFilePath: vi.fn(async () => '/books/book.m4b'),
+  } as unknown as AppService;
+
+  const startPaired = async () => {
+    const view = makeSubChapterView();
+    const controller = new TTSController(appService, view);
+    controller.pairedAudiobook = SUB_CHAPTER_AUDIOBOOK;
+    await controller.init();
+    await controller.initViewTTS(0);
+    await controller.ensureTimeline();
+    controller.dispatchSpeakMark({ offset: 0, name: '0', text: 'Chapter 1', language: 'en' });
+    // Installed after setup so only the transport's own page turns count.
+    controller.onSectionChange = vi.fn();
+    const client = controller.ttsMediaOverlayClient;
+    const position = vi.spyOn(client, 'getChunkPosition').mockReturnValue(0);
+    const seekWithin = vi.spyOn(client, 'seekToChunkPosition').mockResolvedValue(true);
+    const startAt = vi.spyOn(client, 'setNextChunkPosition');
+    return { controller, position, seekWithin, startAt };
+  };
+
+  test('only a chapter-timed recording drives the transport by audio', async () => {
+    const paired = new TTSController(appService, makeSubChapterView());
+    paired.pairedAudiobook = SUB_CHAPTER_AUDIOBOOK;
+    await paired.init();
+    expect(paired.usesAudioTransport()).toBe(true);
+
+    const overlays = new TTSController(null, makeView([true]));
+    await overlays.init();
+    expect(overlays.usesAudioTransport()).toBe(false);
+
+    const synthesized = new TTSController(null, makeView([false]));
+    await synthesized.init();
+    expect(synthesized.usesAudioTransport()).toBe(false);
+  });
+
+  test('the small step skips 30s forward and 15s back through the recording, whatever the rate', async () => {
+    const { controller, position, seekWithin } = await startPaired();
+
+    await controller.forward(true);
+    expect(seekWithin).toHaveBeenLastCalledWith(30);
+
+    position.mockReturnValue(25);
+    await controller.backward(true);
+    expect(seekWithin).toHaveBeenLastCalledWith(10);
+
+    // The timeline counts seconds at the rate; the skip is recording time.
+    await controller.setRate(2);
+    position.mockReturnValue(10);
+    await controller.forward(true);
+    expect(seekWithin).toHaveBeenLastCalledWith(40);
+
+    position.mockReturnValue(4);
+    await controller.backward(true);
+    expect(seekWithin).toHaveBeenLastCalledWith(0);
+    expect(controller.onSectionChange).not.toHaveBeenCalled();
+  });
+
+  test('the large step walks the audiobook chapters, turning the page only into a mapped one', async () => {
+    const { controller, position, seekWithin, startAt } = await startPaired();
+    const stop = vi.spyOn(controller.ttsMediaOverlayClient, 'stop');
+
+    // Chapter 1 -> One.1: the same recording span, so no restart and no page turn.
+    await controller.forward();
+    expect(seekWithin).toHaveBeenLastCalledWith(30);
+    expect(stop).not.toHaveBeenCalled();
+    expect(controller.onSectionChange).not.toHaveBeenCalled();
+
+    // One.1 -> Two: a mapped chapter in the next section.
+    position.mockReturnValue(30);
+    await controller.forward();
+    expect(controller.onSectionChange).toHaveBeenLastCalledWith(2);
+    expect(startAt).toHaveBeenLastCalledWith(0);
+
+    // Two, five seconds in: backward restarts it.
+    position.mockReturnValue(5);
+    await controller.backward();
+    expect(seekWithin).toHaveBeenLastCalledWith(0);
+
+    // Two, at its start: backward returns to One.1, inside Chapter 1's section.
+    position.mockReturnValue(0);
+    await controller.backward();
+    expect(controller.onSectionChange).toHaveBeenLastCalledWith(1);
+    expect(startAt).toHaveBeenLastCalledWith(30);
+  });
+
+  test('auto-advance still moves by narration block', async () => {
+    const { controller, seekWithin } = await startPaired();
+
+    await controller.forward(false, true);
+
+    expect(seekWithin).not.toHaveBeenCalled();
+    expect(controller.onSectionChange).toHaveBeenLastCalledWith(2);
+  });
+});
+
 describe('narration mark source and timeline', () => {
   test('the section is driven by SMIL pars, with the recording as the clock', async () => {
     const controller = new TTSController(null, makeView([true]));
@@ -231,6 +625,23 @@ describe('narration mark source and timeline', () => {
     // 3s + 4s of narration, reported as fully measured.
     expect(timeline!.getDuration()).toBeCloseTo(7, 5);
     expect(timeline!.getMeasuredFraction()).toBeCloseTo(1, 5);
+  });
+
+  test('seeks inside the active narration clip instead of restarting it', async () => {
+    const controller = new TTSController(null, makeView([true]));
+    await controller.init();
+    await controller.initViewTTS(0);
+    await controller.ensureTimeline();
+    controller.dispatchSpeakMark({ offset: 0, name: '0', text: 'First', language: 'en' });
+    const seekWithin = vi
+      .spyOn(controller.ttsMediaOverlayClient, 'seekToChunkPosition')
+      .mockResolvedValue(true);
+    const stop = vi.spyOn(controller.ttsMediaOverlayClient, 'stop');
+
+    await controller.seekToTime(2);
+
+    expect(seekWithin).toHaveBeenCalledWith(2);
+    expect(stop).not.toHaveBeenCalled();
   });
 
   test('synthesis still uses foliate segmentation for the same book', async () => {

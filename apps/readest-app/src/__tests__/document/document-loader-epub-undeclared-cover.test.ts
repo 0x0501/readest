@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { Blob as NodeBlob, File as NodeFile } from 'node:buffer';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { DocumentLoader } from '@/libs/document';
+
+beforeAll(() => {
+  vi.stubGlobal('Blob', NodeBlob);
+  vi.stubGlobal('File', NodeFile);
+});
+afterAll(() => vi.unstubAllGlobals());
 
 // Minimal JPEG SOI marker + filler. Nothing decodes these bytes on the JS
 // side, we only assert that they made it out of the zip untouched.
@@ -60,7 +67,9 @@ const createUndeclaredCoverEpub = async (imageEntry: string | null) => {
 
   const blob = await writer.close();
   const arrayBuffer = await blob.arrayBuffer();
-  return new File([arrayBuffer], 'undeclared-cover.epub', { type: 'application/epub+zip' });
+  return new File([new Uint8Array(arrayBuffer)], 'undeclared-cover.epub', {
+    type: 'application/epub+zip',
+  });
 };
 
 const openCover = async (imageEntry: string | null) => {

@@ -2,7 +2,12 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { validateUserAndToken } from '@/libs/auth/verify';
 import { schema, withDb } from '@/libs/db';
-import { EMAIL_IN_PLANS, getUserProfilePlan, isEmailInPlan } from '@/utils/access';
+import {
+  EMAIL_IN_PLANS,
+  getCustomizationPurchased,
+  getUserProfilePlan,
+  isEmailInPlan,
+} from '@/utils/access';
 import { corsAllMethods, runMiddleware } from '@/utils/cors';
 import { normalizeSenderEmail } from '@/services/send/sendAddress';
 import type { DBSendAllowedSender } from '@/types/sendRecords';
@@ -31,7 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Sender allowlist only matters for the email-in channel — gate it too.
     const plan = getUserProfilePlan(token);
-    if (!isEmailInPlan(plan)) {
+    if (!isEmailInPlan(plan, getCustomizationPurchased(token))) {
       return res.status(403).json({
         error: 'Email-in is available on the Plus, Pro, and Lifetime plans',
         code: 'plan_required',

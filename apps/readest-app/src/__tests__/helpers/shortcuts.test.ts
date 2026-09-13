@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 const getModule = async () => {
   return await import('../../helpers/shortcuts');
@@ -8,6 +8,10 @@ const getDefaults = async () => {
   const mod = await getModule();
   return mod.loadShortcuts();
 };
+
+beforeEach(() => {
+  localStorage.clear();
+});
 
 describe('Shortcut entry structure', () => {
   it('each shortcut entry has keys, description, and section', async () => {
@@ -124,19 +128,15 @@ describe('getShortcutsForDisplay', () => {
       'Selection',
       'Zoom',
       'Window',
+      'Notes',
     ]);
   });
 
-  it('excludes entries with empty section', async () => {
+  it('assigns every action to a visible section', async () => {
     const mod = await getModule();
-    const result = mod.getShortcutsForDisplay(true);
-    const allDescriptions = result.flatMap((s) => s.items.map((i) => i.description));
-    // onEscape and onSaveNote have empty section, should be excluded
     const shortcuts = mod.loadShortcuts();
     const hiddenEntries = Object.values(shortcuts).filter((e) => e.section === '');
-    for (const hidden of hiddenEntries) {
-      expect(allDescriptions).not.toContain(hidden.description);
-    }
+    expect(hiddenEntries).toEqual([]);
   });
 
   it('each item has a description and non-empty keys', async () => {
@@ -172,5 +172,115 @@ describe('getShortcutsForDisplay', () => {
     expect(searchItem).toBeDefined();
     expect(searchItem!.keys.some((k) => k.includes('ctrl'))).toBe(true);
     expect(searchItem!.keys.some((k) => k.includes('cmd'))).toBe(false);
+  });
+});
+
+describe('shortcut customization', () => {
+  it('loads, reassigns, resets, persists, and notifies safely', async () => {
+    localStorage.setItem('customShortcuts', '{not-json');
+    const mod = await getModule();
+    const initial = mod.loadShortcuts();
+    expect(initial.onToggleSideBar.keys).toEqual(['s']);
+
+    const listener = vi.fn();
+    window.addEventListener('shortcutUpdate', listener);
+
+    const updated = mod.setShortcutBinding(initial, 'onToggleNotebook', 's');
+    mod.saveShortcuts(updated);
+
+    expect(initial.onToggleSideBar.keys).toEqual(['s']);
+    expect(updated.onToggleSideBar.keys).toEqual([]);
+    expect(updated.onToggleNotebook.keys).toEqual(['s']);
+    expect(JSON.parse(localStorage.getItem('customShortcuts')!)).toEqual({
+      onToggleSideBar: [],
+      onToggleNotebook: ['s'],
+    });
+    expect(listener).toHaveBeenCalledOnce();
+
+    const reset = mod.resetShortcutBinding(updated, 'onToggleSideBar');
+    expect(reset.onToggleSideBar.keys).toEqual(['s']);
+    expect(reset.onToggleNotebook.keys).toEqual([]);
+
+    window.removeEventListener('shortcutUpdate', listener);
+  });
+});
+
+describe('Default bindings that always fire', () => {
+  // useBookShortcuts registers one action map, and useShortcuts stops at the
+  // first action whose handler does not return `false`. Actions listed here
+  // never decline, so a binding claimed by an earlier one can never reach a
+  // later one — the Shortcuts settings page would advertise a dead key.
+  // Order mirrors the useShortcuts({...}) call in useBookShortcuts.ts.
+  const ALWAYS_FIRING_IN_ORDER = [
+    'onSwitchSideBar',
+    'onToggleSideBar',
+    'onToggleNotebook',
+    'onToggleScrollMode',
+    'onToggleBookmark',
+    'onStartRSVP',
+    'onToggleAutoScroll',
+    'onOpenFontLayoutSettings',
+    'onShowSearchBar',
+    'onToggleTTS',
+    'onTTSGoNextSentence',
+    'onTTSGoPreviousSentence',
+    'onTTSGoNextParagraph',
+    'onTTSGoPreviousParagraph',
+    'onTTSHighlightSentence',
+    'onReloadPage',
+    'onGoLeft',
+    'onGoRight',
+    'onGoPrev',
+    'onGoNext',
+    'onGoHalfPageDown',
+    'onGoHalfPageUp',
+    'onGoPrevSection',
+    'onGoNextSection',
+    'onGoLeftSection',
+    'onGoRightSection',
+    'onGoBookStart',
+    'onGoBookEnd',
+    'onGoBack',
+    'onGoForward',
+    'onZoomIn',
+    'onZoomOut',
+    'onResetZoom',
+  ] as const;
+
+  it('no action shadows a later one', async () => {
+    const { normalizeShortcut } = await import('../../utils/shortcutKeys');
+    const shortcuts = await getDefaults();
+    const claimedBy = new Map<string, string>();
+    const shadowed: string[] = [];
+    for (const action of ALWAYS_FIRING_IN_ORDER) {
+      for (const key of shortcuts[action].keys) {
+        const normalized = normalizeShortcut(key);
+        const owner = claimedBy.get(normalized);
+        // Within one action, `alt+X`/`opt+X` are deliberate platform aliases
+        // that normalize to the same binding — only cross-action collisions
+        // shadow anything.
+        if (owner && owner !== action) {
+          shadowed.push(`${action} '${key}' is already claimed by ${owner}`);
+        } else if (!owner) {
+          claimedBy.set(normalized, action);
+        }
+      }
+    }
+    expect(shadowed).toEqual([]);
+  });
+});
+
+describe('macOS command bindings', () => {
+  it('offers a cmd variant wherever a ctrl-only binding would be shown on Mac', async () => {
+    const { filterPlatformKeys } = await import('../../utils/shortcutKeys');
+    const shortcuts = await getDefaults();
+    const ctrlOnlyOnMac: string[] = [];
+    for (const [action, entry] of Object.entries(shortcuts)) {
+      const macKeys = filterPlatformKeys(entry.keys, true);
+      if (macKeys.length && macKeys.every((key) => /(^|\+)ctrl\+/.test(key.toLowerCase()))) {
+        ctrlOnlyOnMac.push(action);
+      }
+    }
+    expect(ctrlOnlyOnMac).toEqual([]);
   });
 });

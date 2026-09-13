@@ -11,6 +11,7 @@ import {
   integer,
   boolean,
   check,
+  smallint,
   primaryKey,
   date,
   jsonb,
@@ -351,14 +352,6 @@ export const verification = pgTable(
   ],
 );
 
-export const jwks = pgTable('jwks', {
-  id: uuid().defaultRandom().primaryKey().notNull(),
-  publicKey: text().notNull(),
-  privateKey: text().notNull(),
-  createdAt: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
-  expiresAt: timestamp({ withTimezone: true, mode: 'string' }),
-});
-
 export const apikey = pgTable(
   'apikey',
   {
@@ -435,6 +428,33 @@ export const rateLimit = pgTable(
   },
   (table) => [unique('rateLimit_key_key').on(table.key)],
 );
+
+export const statArchiveState = pgTable(
+  'stat_archive_state',
+  {
+    id: smallint().default(1).primaryKey().notNull(),
+    userCursor: uuid('user_cursor'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  () => [check('stat_archive_state_id_check', sql`id = 1`)],
+);
+
+export const statArchiveOrphans = pgTable('stat_archive_orphans', {
+  userId: uuid('user_id').primaryKey().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+});
+
+export const jwks = pgTable('jwks', {
+  id: uuid().defaultRandom().primaryKey().notNull(),
+  publicKey: text().notNull(),
+  privateKey: text().notNull(),
+  createdAt: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+  expiresAt: timestamp({ withTimezone: true, mode: 'string' }),
+  alg: text(),
+  crv: text(),
+});
 
 export const replicaKeys = pgTable(
   'replica_keys',
@@ -527,6 +547,50 @@ export const usageStats = pgTable(
     primaryKey({
       columns: [table.userId, table.usageType, table.usageDate],
       name: 'usage_stats_pkey',
+    }),
+  ],
+);
+
+export const statArchives = pgTable(
+  'stat_archives',
+  {
+    userId: uuid('user_id').notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: 'number' }).generatedAlwaysAsIdentity({
+      name: 'stat_archives_id_seq',
+      startWith: 1,
+      increment: 1,
+      minValue: 1,
+      maxValue: '9223372036854775807',
+      cache: 1,
+    }),
+    updatedFrom: timestamp('updated_from', { withTimezone: true, mode: 'string' }).notNull(),
+    updatedTo: timestamp('updated_to', { withTimezone: true, mode: 'string' }).notNull(),
+    rowCount: integer('row_count').notNull(),
+    bytes: integer().notNull(),
+    objectKey: text('object_key').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_stat_archives_user_to').using(
+      'btree',
+      table.userId.asc().nullsLast().op('uuid_ops'),
+      table.updatedTo.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [user.id],
+      name: 'stat_archives_user_id_fkey',
+    }).onDelete('cascade'),
+    primaryKey({ columns: [table.userId, table.id], name: 'stat_archives_pkey' }),
+    unique('stat_archives_object_key_key').on(table.objectKey),
+    pgPolicy('stat_archives_select', {
+      as: 'permissive',
+      for: 'select',
+      to: ['authenticated'],
+      using: sql`(( SELECT auth.uid() AS uid) = user_id)`,
     }),
   ],
 );
@@ -728,6 +792,7 @@ export const books = pgTable(
     groupId: text('group_id'),
     groupName: text('group_name'),
     metadata: json(),
+    groupUpdatedAt: timestamp('group_updated_at', { withTimezone: true, mode: 'string' }),
   },
   (table) => [
     index('idx_books_user_synced').using(

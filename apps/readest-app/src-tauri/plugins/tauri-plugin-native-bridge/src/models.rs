@@ -33,6 +33,20 @@ pub struct CopyURIResponse {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RenderPdfCoverRequest {
+    pub file_path: String,
+    pub max_long_edge: u32,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenderPdfCoverResponse {
+    pub cover_base64: String,
+    pub cover_mime: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SaveImageToGalleryRequest {
     /// Absolute path of the source image file on disk.
     pub src_path: String,
@@ -190,6 +204,9 @@ pub struct IAPFetchProductsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct IAPPurchaseProductRequest {
     pub product_id: String,
+    /// Supabase user id, surfaced by StoreKit as the transaction's
+    /// `appAccountToken` so a purchase can be attributed server-side.
+    pub app_account_token: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -383,6 +400,8 @@ pub struct ClipUrlRequest {
     #[serde(default)]
     pub interactive: Option<bool>,
     #[serde(default)]
+    pub background_capture: Option<bool>,
+    #[serde(default)]
     pub sign_in_hint: Option<String>,
     #[serde(default)]
     pub capture_label: Option<String>,
@@ -396,6 +415,51 @@ pub struct ClipUrlResponse {
     /// Rendered `document.documentElement.outerHTML` captured from the
     /// hidden WKWebView / WebView once load+settle completed.
     pub html: String,
+}
+
+/// Args for the in-app web browser (#5775). Mirrors `WebBrowserOptions`
+/// in `web_browser.rs` plus the absolute `download_dir` Rust resolved from
+/// `app_cache_dir()` so native downloads land inside the fs scope.
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebBrowserRequest {
+    pub url: String,
+    pub download_dir: String,
+    pub capture_script: String,
+    #[serde(default)]
+    pub background: Option<String>,
+    #[serde(default)]
+    pub foreground: Option<String>,
+    #[serde(default)]
+    pub is_eink: Option<bool>,
+    #[serde(default)]
+    pub labels: HashMap<String, String>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebBrowserResponse {
+    /// Set when the user tapped [Open] on an imported book in the chrome.
+    #[serde(default)]
+    pub open_book_hash: Option<String>,
+    #[serde(default)]
+    pub page: Option<WebBrowserPage>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct WebBrowserPage {
+    pub url: String,
+    pub html: String,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebBrowserStatusRequest {
+    /// `importing` | `added` | `failed` | `unsupported`
+    pub state: String,
+    pub filename: String,
+    #[serde(default)]
+    pub book_hash: Option<String>,
 }
 
 /// Read (and delete) a page-HTML file the iOS Share Extension captured
@@ -516,6 +580,21 @@ pub struct CaptureWebviewRegionResponse {
     pub data: String,
 }
 
+/// Token for the native cover layer put up by `cover_webview_region`
+/// (#6106): the two-column page curl freezes the on-screen pixels of the
+/// incoming column behind it while the column is captured underneath.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverWebviewRegionResponse {
+    pub token: u32,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UncoverWebviewRegionRequest {
+    pub token: u32,
+}
+
 /// iCloud ubiquity-container probe result. `documents_path` is the absolute
 /// path of the container's Documents folder (created on first probe);
 /// `available: false` covers no-iCloud-session, missing entitlement, and
@@ -542,4 +621,16 @@ pub struct ICloudEnsureDownloadedRequest {
 pub struct ICloudEnsureDownloadedResponse {
     /// "ready" | "notFound" | "timeout"
     pub status: String,
+}
+
+/// Native-only cookie exchange for Android, whose Tauri cookie API is unsupported.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebBrowserCookiesRequest {
+    pub url: String,
+    pub set_cookies: Vec<String>,
+}
+#[derive(Debug, Deserialize)]
+pub struct WebBrowserCookiesResponse {
+    pub cookies: String,
 }

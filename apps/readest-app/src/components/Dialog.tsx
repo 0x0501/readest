@@ -16,6 +16,12 @@ import { Overlay } from './Overlay';
 
 const VELOCITY_THRESHOLD = 0.5;
 const SNAP_THRESHOLD = 0.2;
+// How far a downward swipe that starts on the sheet body must travel before it
+// takes the gesture over from the content. Below it the touch still belongs to
+// the content, so taps and scrolls are unaffected.
+const SWIPE_DISMISS_THRESHOLD = 8;
+// How long the modal takes to fade and scale away once `isOpen` goes false.
+const CLOSE_TRANSITION_MS = 300;
 
 interface DialogProps {
   id?: string;
@@ -41,6 +47,20 @@ interface DialogProps {
   onClose: () => void;
 }
 
+// A swipe that starts on a scroller which is not at its top belongs to that
+// scroller: the user is scrolling back up, not dismissing the sheet.
+const hasScrolledAncestor = (target: HTMLElement, root: HTMLElement) => {
+  for (let el: HTMLElement | null = target; el && el !== root; el = el.parentElement) {
+    if (el.scrollTop > 0) return true;
+  }
+  return false;
+};
+
+// Dragging inside a text field moves the caret; it must never close the sheet
+// the field lives in (the Annotate note editor is one).
+const isEditable = (target: HTMLElement) =>
+  !!target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
+
 const Dialog: React.FC<DialogProps> = ({
   id,
   isOpen,
@@ -63,9 +83,36 @@ const Dialog: React.FC<DialogProps> = ({
   const [isFullHeightInMobile, setIsFullHeightInMobile] = useState(!snapHeight);
   const [isRtl] = useState(() => getDirFromUILanguage() === 'rtl');
   const dialogRef = useRef<HTMLDialogElement>(null);
+  // Where the finger sits relative to the sheet's top edge, so the sheet slides
+  // with it instead of snapping its top edge under it — the drag handle sits at
+  // that edge, the body does not.
+  const dragOffsetRef = useRef(0);
+  const pendingSwipeRef = useRef<{ x: number; y: number } | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const iconSize22 = useResponsiveSize(22);
   const isMobile = window.innerWidth < 640 || window.innerHeight < 640;
+
+  // Callers gate the body on the same flag they pass as `isOpen`
+  // (`<Dialog isOpen={open}>{open && <Body />}</Dialog>`), so the body would
+  // vanish on the frame the close starts and the box would collapse onto its
+  // title bar for the length of the fade. Keep the last body until the fade is
+  // over. The closing render picks it up itself rather than an effect handing
+  // it back: an effect only runs once React has already committed the tree
+  // without it, and a passive one only once the browser may have painted that.
+  // The state below just ends the hold.
+  const lastBodyRef = useRef<ReactNode>(null);
+  const [isBodyHoldOver, setIsBodyHoldOver] = useState(false);
+  if (isOpen) lastBodyRef.current = children;
+  const body = isOpen ? children : isBodyHoldOver ? null : lastBodyRef.current;
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsBodyHoldOver(false);
+      return;
+    }
+    const timer = setTimeout(() => setIsBodyHoldOver(true), CLOSE_TRANSITION_MS);
+    return () => clearTimeout(timer);
+  }, [isOpen]);
 
   const handleKeyDown = (event: KeyboardEvent | CustomEvent) => {
     if (event instanceof CustomEvent) {
@@ -125,7 +172,8 @@ const Dialog: React.FC<DialogProps> = ({
     const modal = dialogRef.current.querySelector('.modal-box') as HTMLElement;
     const overlay = dialogRef.current.querySelector('.overlay') as HTMLElement;
 
-    const heightFraction = data.clientY / window.innerHeight;
+    const top = data.clientY - dragOffsetRef.current;
+    const heightFraction = top / window.innerHeight;
     const newTop = Math.max(0.0, Math.min(1, heightFraction));
 
     if (modal && overlay) {
@@ -133,22 +181,26 @@ const Dialog: React.FC<DialogProps> = ({
       modal.style.transform = `translateY(${newTop * 100}%)`;
       overlay.style.opacity = `${1 - heightFraction}`;
 
-      setIsFullHeightInMobile(data.clientY < 44);
+      setIsFullHeightInMobile(top < 44);
       modal.style.transition = `padding-top 0.3s ease-out`;
     }
   };
 
-  const handleDragEnd = (data: { velocity: number; clientY: number }) => {
+  const handleDragEnd = (data: { velocity: number; clientY: number; canceled: boolean }) => {
     if (!dismissible || !isMobile || !dialogRef.current) return;
     const modal = dialogRef.current.querySelector('.modal-box') as HTMLElement;
     const overlay = dialogRef.current.querySelector('.overlay') as HTMLElement;
     if (!modal || !overlay) return;
 
+    const top = data.clientY - dragOffsetRef.current;
     const snapUpper = snapHeight ? 1 - snapHeight - SNAP_THRESHOLD : 0.5;
     const snapLower = snapHeight ? 1 - snapHeight + SNAP_THRESHOLD : 0.5;
+    // A cancelled drag is the system taking the touch away, not the user letting
+    // go: put the sheet back where it was rather than reading a decision into it.
     if (
-      data.velocity > VELOCITY_THRESHOLD ||
-      (data.velocity >= 0 && data.clientY >= window.innerHeight * snapLower)
+      !data.canceled &&
+      (data.velocity > VELOCITY_THRESHOLD ||
+        (data.velocity >= 0 && top >= window.innerHeight * snapLower))
     ) {
       // dialog is dismissed
       const transitionDuration = 0.15 / Math.max(data.velocity, 0.5);
@@ -163,8 +215,8 @@ const Dialog: React.FC<DialogProps> = ({
       }, 300);
     } else if (
       snapHeight &&
-      data.clientY > window.innerHeight * snapUpper &&
-      data.clientY < window.innerHeight * snapLower
+      (data.canceled ||
+        (top > window.innerHeight * snapUpper && top < window.innerHeight * snapLower))
     ) {
       // dialog is snapped
       overlay.style.transition = `opacity 0.3s ease-out`;
@@ -181,7 +233,7 @@ const Dialog: React.FC<DialogProps> = ({
       modal.style.transform = `translateY(0%)`;
       overlay.style.opacity = '0';
     }
-    if (appService?.hasHaptics) {
+    if (appService?.hasHaptics && !data.canceled) {
       impactFeedback('medium');
     }
   };
@@ -189,6 +241,51 @@ const Dialog: React.FC<DialogProps> = ({
   const handleDragKeyDown = () => {};
 
   const { handleDragStart } = useDrag(handleDragMove, handleDragKeyDown, handleDragEnd);
+
+  const beginDrag = (e: React.MouseEvent | React.TouchEvent) => {
+    const modal = dialogRef.current?.querySelector('.modal-box') as HTMLElement | null;
+    const clientY = 'touches' in e ? e.touches[0]!.clientY : e.clientY;
+    dragOffsetRef.current = modal ? clientY - modal.getBoundingClientRect().top : 0;
+    handleDragStart(e);
+  };
+
+  // The drag handle is a 24px strip at the top of the sheet, out of reach of the
+  // thumb that just finished reading (#6089), so a downward swipe anywhere on the
+  // sheet dismisses it too. It only takes over once the finger has clearly gone
+  // down rather than sideways, and only when the content under it has nothing
+  // left to scroll — so the sheet never steals a tap, a scroll or a page swipe.
+  const handleSheetTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    pendingSwipeRef.current = null;
+    if (!dismissible || !isMobile || e.touches.length !== 1) return;
+    const target = e.target as HTMLElement;
+    // The handle starts its own drag on touchstart; don't arm a second one.
+    if (target.closest('.drag-handle')) return;
+    if (isEditable(target) || hasScrolledAncestor(target, e.currentTarget)) return;
+    const touch = e.touches[0]!;
+    pendingSwipeRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleSheetTouchMove = (e: React.TouchEvent) => {
+    const pending = pendingSwipeRef.current;
+    if (!pending || e.touches.length !== 1) return;
+    const touch = e.touches[0]!;
+    const deltaX = touch.clientX - pending.x;
+    const deltaY = touch.clientY - pending.y;
+    if (Math.abs(deltaX) > Math.abs(deltaY) || deltaY < -SWIPE_DISMISS_THRESHOLD) {
+      // Sideways, or upwards: the gesture belongs to the content.
+      pendingSwipeRef.current = null;
+      return;
+    }
+    if (deltaY < SWIPE_DISMISS_THRESHOLD) return;
+    pendingSwipeRef.current = null;
+    beginDrag(e);
+  };
+
+  // Android hands the touch to its own selection handles once a long press turns
+  // into a selection drag, and cancels the page's sequence; disarm with it.
+  const handleSheetTouchCancel = () => {
+    pendingSwipeRef.current = null;
+  };
 
   return (
     <dialog
@@ -204,7 +301,7 @@ const Dialog: React.FC<DialogProps> = ({
       // there is no frame where the two disagree.
       inert={!isOpen}
       className={clsx(
-        'modal sm:min-w-90 z-50 h-full w-full !items-start !bg-transparent sm:w-full sm:!items-center',
+        'modal sm:min-w-90 z-50 h-full w-full items-start! bg-transparent! sm:w-full sm:items-center!',
         className,
       )}
       dir={isRtl ? 'rtl' : undefined}
@@ -218,7 +315,11 @@ const Dialog: React.FC<DialogProps> = ({
         )}
         onDismiss={onClose}
       />
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
+        onTouchStart={handleSheetTouchStart}
+        onTouchMove={handleSheetTouchMove}
+        onTouchCancel={handleSheetTouchCancel}
         className={clsx(
           'modal-box settings-content absolute z-20 flex flex-col rounded-none rounded-tl-2xl rounded-tr-2xl p-0 sm:rounded-2xl',
           'h-full max-h-full w-full max-w-full',
@@ -245,8 +346,8 @@ const Dialog: React.FC<DialogProps> = ({
             'drag-handle mb-2 h-6 max-h-6 min-h-6 w-full cursor-row-resize items-center justify-center',
             'transition-padding-top flex duration-300 ease-out sm:hidden',
           )}
-          onMouseDown={handleDragStart}
-          onTouchStart={handleDragStart}
+          onMouseDown={beginDrag}
+          onTouchStart={beginDrag}
         >
           <div className='bg-base-content/50 h-1 w-10 rounded-full'></div>
         </div>
@@ -260,7 +361,7 @@ const Dialog: React.FC<DialogProps> = ({
                 onClick={onClose}
                 disabled={!dismissible}
                 className={
-                  'btn btn-ghost btn-circle flex h-8 min-h-8 w-8 hover:bg-transparent focus:outline-none disabled:bg-transparent sm:hidden'
+                  'btn btn-ghost btn-circle flex h-8 min-h-8 w-8 hover:bg-transparent focus:outline-hidden disabled:bg-transparent sm:hidden'
                 }
               >
                 {isRtl ? (
@@ -277,7 +378,7 @@ const Dialog: React.FC<DialogProps> = ({
                 onClick={onClose}
                 disabled={!dismissible}
                 className={
-                  'bg-base-300/65 btn btn-ghost btn-circle ml-auto hidden h-6 min-h-6 w-6 focus:outline-none sm:flex'
+                  'bg-base-300/65 btn btn-ghost btn-circle ml-auto hidden h-6 min-h-6 w-6 focus:outline-hidden sm:flex'
                 }
               >
                 <svg
@@ -302,23 +403,23 @@ const Dialog: React.FC<DialogProps> = ({
           // padding chassis so the body still occupies remaining height
           // and the children's horizontal rhythm is unchanged.
           <OverlayScrollbarsComponent
-            className={clsx('text-base-content my-2 flex-grow px-6 sm:px-[10%]', contentClassName)}
+            className={clsx('text-base-content my-2 grow px-6 sm:px-[10%]', contentClassName)}
             options={{
               scrollbars: { autoHide: 'scroll', clickScroll: true },
               showNativeOverlaidScrollbars: false,
             }}
             defer
           >
-            {children}
+            {body}
           </OverlayScrollbarsComponent>
         ) : (
           <div
             className={clsx(
-              'text-base-content my-2 flex-grow overflow-y-auto px-6 sm:px-[10%]',
+              'text-base-content my-2 grow overflow-y-auto px-6 sm:px-[10%]',
               contentClassName,
             )}
           >
-            {children}
+            {body}
           </div>
         )}
       </div>

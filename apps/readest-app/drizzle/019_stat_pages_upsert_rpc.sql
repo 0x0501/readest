@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/019_stat_pages_upsert_rpc.sql

@@ -82,6 +82,17 @@ try {
   //    came first.
   schema = schema.replaceAll('credentialId', 'credentialID');
 
+  // The archive-state CHECK is a literal SQL expression; drizzle-kit emits
+  // an unused callback argument that fails the app's noUnusedParameters check.
+  schema = schema.replace(
+    /(?:\(table\)|\btable\b)(?=\s*=>\s*\[\s*check\()/,
+    '()',
+  );
+
+  // bigint identity's maximum exceeds Number.MAX_SAFE_INTEGER; Drizzle also
+  // accepts strings for sequence bounds, preserving the exact SQL value.
+  schema = schema.replace('maxValue: 9223372036854775807', 'maxValue: "9223372036854775807"');
+
   // Both repairs are workarounds for bugs in drizzle-kit's introspection, keyed
   // to the exact strings it emits. `drizzle-kit` is on a caret range, so a
   // version that changes those strings would leave the output broken —

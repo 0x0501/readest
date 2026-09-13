@@ -46,7 +46,9 @@ const makeCbzFixture = async ({
     await writer.add(comicInfoPath, new TextReader(comicInfo));
   }
   const blob = await writer.close();
-  return new File([blob], 'page-count.cbz', { type: 'application/vnd.comicbook+zip' });
+  return new File([new Uint8Array(await blob.arrayBuffer())], 'page-count.cbz', {
+    type: 'application/vnd.comicbook+zip',
+  });
 };
 
 describe('Calibre series metadata', () => {
@@ -54,7 +56,7 @@ describe('Calibre series metadata', () => {
     let book: BookDoc;
 
     beforeAll(async () => {
-      await import('foliate-js/pdf.js');
+      await import('@pdfjs/pdf.min.mjs');
       const pdfjsLib = (globalThis as Record<string, unknown>)['pdfjsLib'] as {
         GlobalWorkerOptions: { workerSrc: string };
       };

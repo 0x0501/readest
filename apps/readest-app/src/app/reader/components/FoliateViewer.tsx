@@ -30,12 +30,15 @@ import { bookOrbitProgressProvider } from '../hooks/bookOrbitProgressProvider';
 import { useKOSync } from '../hooks/useKOSync';
 import { useFileSync } from '../hooks/useFileSync';
 import {
+  applyEinkModeAttribute,
   applyFixedlayoutStyles,
   applyImageStyle,
+  applyNamespacedAttributes,
   applyScrollbarStyle,
   applyScrollModeClass,
   applyThemeModeClass,
   applyTranslationStyle,
+  getOverlayerBlendMode,
   getStyles,
   getThemeCode,
   keepTextAlignment,
@@ -84,6 +87,7 @@ import { isMetered } from '@/utils/network';
 import { eventDispatcher } from '@/utils/event';
 import { isFontType } from '@/utils/font';
 import { getScrollGapAttr } from '@/utils/webtoon';
+import { observeDynamicResources } from '@/utils/dynamicResources';
 import { useMiddleClickAutoscroll } from '../hooks/useMiddleClickAutoscroll';
 import { useAutoScroll } from '../hooks/useAutoScroll';
 import { useAutoScrollSpeedGesture } from '../hooks/useAutoScrollSpeedGesture';
@@ -234,6 +238,10 @@ const FoliateViewer: React.FC<{
   }, [bookKey, setProgress]);
 
   const progressRelocateHandler = (event: Event) => {
+    // Foliate can emit a late relocation after close() clears its progress
+    // resolver. Keep any valid pending position instead of replacing it.
+    if (!(event as CustomEvent).detail.location) return;
+
     // Always stash the latest detail; if another rAF is already pending
     // it'll pick this up and the intermediate states are skipped.
     pendingRelocateRef.current = event as CustomEvent;
@@ -300,7 +308,9 @@ const FoliateViewer: React.FC<{
               userLocale: getLocale(),
               content: data,
               sectionHref: detail.name,
+              sectionCfi: bookData.bookDoc?.sections?.find((s) => s.id === detail.name)?.cfi,
               transformers: [
+                'epubSwitch',
                 'style',
                 'punctuation',
                 'footnote',
@@ -346,6 +356,9 @@ const FoliateViewer: React.FC<{
     const detail = (event as CustomEvent).detail;
     console.log('doc index loaded:', detail.index);
     if (detail.doc) {
+      // Repair the parsed DOM before anything reads it: the renderer and the
+      // fix-ups below both resolve styles off this document.
+      applyNamespacedAttributes(detail.doc);
       const renderer = viewRef.current?.renderer;
       const writingDir = renderer?.setStyles && getDirection(detail.doc);
       const viewSettings = getViewSettings(bookKey)!;
@@ -394,6 +407,7 @@ const FoliateViewer: React.FC<{
       applyTableTouchScroll(detail.doc);
       applyThemeModeClass(detail.doc, isDarkMode);
       applyScrollModeClass(detail.doc, viewSettings.scrolled || false);
+      applyEinkModeAttribute(detail.doc, viewSettings.isEink || false);
       applyScrollbarStyle(document, viewSettings.hideScrollbar || false);
       keepTextAlignment(detail.doc);
       handleA11yNavigation(viewRef.current, detail.doc, {
@@ -402,6 +416,13 @@ const FoliateViewer: React.FC<{
         skipToNextSectionCallback: skipToNextSection,
         skipToNextSectionLabel: _('End of this section. Continue to the next.'),
       });
+
+      if (viewSettings.allowScript) {
+        // Book scripts may add media, or a background image, with a path
+        // relative to the section long after foliate's load-time URL rewrite.
+        const section = bookDoc.sections?.[detail.index];
+        if (section?.loadHref) observeDynamicResources(detail.doc, section.loadHref);
+      }
 
       // Inline scripts in tauri platforms are not executed by default
       if (viewSettings.allowScript && isTauriAppPlatform()) {
@@ -449,7 +470,13 @@ const FoliateViewer: React.FC<{
         });
         detail.doc.addEventListener(
           'click',
-          handleClick.bind(null, bookKey, doubleClickDisabled, !!bookData?.isFixedLayout),
+          handleClick.bind(
+            null,
+            bookKey,
+            doubleClickDisabled,
+            !!bookData?.isFixedLayout,
+            bookData?.book?.format === 'CBZ',
+          ),
         );
         detail.doc.addEventListener('wheel', handleWheel.bind(null, bookKey));
         detail.doc.addEventListener('touchstart', handleTouchStart.bind(null, bookKey));
@@ -773,19 +800,18 @@ const FoliateViewer: React.FC<{
       if (appService?.isIOSApp) {
         view.renderer.setAttribute('gpu-composite', '');
       }
-      if (appService?.isAndroidApp) {
-        if (eink) {
-          view.renderer.setAttribute('eink', '');
-        } else {
-          view.renderer.removeAttribute('eink');
-        }
-        applyEinkMode(eink);
+      if (eink) {
+        view.renderer.setAttribute('eink', '');
+      } else {
+        view.renderer.removeAttribute('eink');
       }
+      applyEinkMode(eink);
       if (bookDoc?.rendition?.layout === 'pre-paginated') {
         view.renderer.setAttribute('zoom', viewSettings.zoomMode);
         view.renderer.setAttribute('spread', viewSettings.spreadMode);
         view.renderer.setAttribute('scale-factor', viewSettings.zoomLevel);
         view.renderer.setAttribute('scroll-gap', getScrollGapAttr(viewSettings.webtoonMode));
+        view.renderer.toggleAttribute('lock-pan-x', !!viewSettings.lockHorizontalPan);
       } else {
         view.renderer.setAttribute('max-column-count', maxColumnCount);
         view.renderer.setAttribute('max-inline-size', `${maxInlineSize}px`);
@@ -948,6 +974,7 @@ const FoliateViewer: React.FC<{
         }
         applyThemeModeClass(doc, isDarkMode);
         applyScrollModeClass(doc, viewSettings.scrolled || false);
+        applyEinkModeAttribute(doc, viewSettings.isEink || false);
         applyScrollbarStyle(document, viewSettings.hideScrollbar || false);
       });
 
@@ -970,6 +997,34 @@ const FoliateViewer: React.FC<{
     viewSettings?.applyThemeToPDF,
     viewSettings?.contrast,
     viewSettings?.hideScrollbar,
+    viewSettings?.isEink,
+  ]);
+
+  // The annotation overlay lives outside the content iframe, so its blend mode
+  // has to follow the page the highlight sits on rather than the app theme: a
+  // PDF keeps its own white bitmap in a dark theme unless the reader asked us
+  // to darken it (#5790, #5930, #5943). Scoped to this view so the library and
+  // reflowable books keep the global default from useTheme.
+  useEffect(() => {
+    if (!containerRef.current || !viewSettings) return;
+    containerRef.current.style.setProperty(
+      '--overlayer-highlight-blend-mode',
+      getOverlayerBlendMode({
+        isDarkMode,
+        isBwEink: !!viewSettings.isEink && !viewSettings.isColorEink,
+        isFixedLayout: bookDoc.rendition?.layout === 'pre-paginated',
+        invertImgColorInDark: !!viewSettings.invertImgColorInDark,
+        applyThemeToPDF: !!viewSettings.applyThemeToPDF,
+        format: bookData?.book?.format,
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isDarkMode,
+    viewSettings?.isEink,
+    viewSettings?.isColorEink,
+    viewSettings?.invertImgColorInDark,
+    viewSettings?.applyThemeToPDF,
   ]);
 
   useEffect(() => {
@@ -1073,7 +1128,7 @@ const FoliateViewer: React.FC<{
         role='main'
         aria-label={_('Book Content')}
         className={clsx(
-          'foliate-viewer absolute h-[100%] w-[100%] focus:outline-none',
+          'foliate-viewer absolute h-[100%] w-[100%] focus:outline-hidden',
           viewState?.loading && 'bg-base-100',
         )}
         style={{

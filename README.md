@@ -52,16 +52,18 @@
 | **Scroll/Page View Modes**                 | Switch between scrolling or paginated reading modes.                                                                   | ✅         |
 | **Full-Text Search**                       | Search inside a book or across the current library shelf to find relevant sections.                                    | ✅         |
 | **Annotations and Highlighting**           | Add highlights, bookmarks, and notes to enhance your reading experience and use instant mode for quicker interactions. | ✅         |
-| **Dictionary/Wikipedia Lookup**            | Instantly look up words and terms when reading.                                                                        | ✅         |
+| **Dictionary/Wikipedia Lookup**            | Look up words with built-in sources or import local packs, including Yomitan ZIP/RDICT, from Settings → Custom Dictionaries. | ✅         |
 | **[Parallel Read][link-parallel-read]**    | Read two books or documents simultaneously in a split-screen view.                                                     | ✅         |
 | **Customize Font and Layout**              | Adjust font, layout, theme mode, and theme colors for a personalized experience.                                       | ✅         |
 | **Code Syntax Highlighting**               | Read software manuals with rich coloring of code examples.                                                             | ✅         |
 | **File Association and Open With**         | Quickly open files in Readest in your file browser with one-click.                                                     | ✅         |
 | **Library Management**                     | Organize, sort, and manage your entire ebook library.                                                                  | ✅         |
 | **OPDS/Calibre Integration**               | Integrate OPDS/Calibre to access online libraries and catalogs.                                                        | ✅         |
+| **Web Page Clipping**                      | Open websites, sign in, and clip pages with **From Web Browser**. **From Web Novel** can reuse your browser session to import selected chapters and their images. | ✅         |
 | **Translate with DeepL and Yandex**        | From a single sentence to the entire book—translate instantly.                                                         | ✅         |
+| **Audiobook Support**                      | Extend functionality to play and manage audiobooks.                                                        | ✅           |
 | **Text-to-Speech (TTS) Support**           | Enjoy smooth, multilingual narration—even within a single book.                                                        | ✅         |
-| [**Read-Along Narration**][link-readalong] | Play a book's own recorded narration with the text highlighted in step — Kindle Immersion Reading / Audible Read & Listen, on the open EPUB standard. Reads EPUB 3 Media Overlays; pair an ebook with its audiobook using [Storyteller][link-storyteller]. | ✅         |
+| [**Read-Along Narration**][link-readalong] | Play embedded EPUB 3 Media Overlays with timed highlighting, or pair a reflowable EPUB locally with DRM-free MP3, M4A, or M4B narration. [Storyteller][link-storyteller] remains an option for generating phrase-aligned EPUBs. | ✅         |
 | **Sync across Platforms**                  | Synchronize book files, reading progress, notes, and bookmarks across all supported platforms.                         | ✅         |
 | [**Sync with Koreader**][link-kosync-wiki] | Synchronize reading progress, notes, and bookmarks with [Koreader][link-koreader] devices.                             | ✅         |
 | **Accessibility**                          | Provides full keyboard navigation and support for screen readers such as VoiceOver, TalkBack, NVDA, and Orca.         | ✅         |
@@ -76,7 +78,6 @@
 | ------------------------------- | -------------------------------------------------------------------------- | ------------ |
 | **AI-Powered Summarization**    | Generate summaries of books or chapters using AI for quick insights.       | 🛠           |
 | **Advanced Reading Stats**      | Track reading time, pages read, and more for detailed insights.            | 🛠           |
-| **Audiobook Support**           | Extend functionality to play and manage audiobooks.                        | 🔄           |
 | **Handwriting Annotations**     | Add support for handwriting annotations using a pen on compatible devices. | 🔄           |
 
 Stay tuned for continuous improvements and updates! Contributions and suggestions are always welcome—let's build the ultimate reading experience together. 😊
@@ -115,11 +116,55 @@ Stay tuned for continuous improvements and updates! Contributions and suggestion
 - Linux users can also install [Readest on Flathub][link-flathub].
 - Web: Visit and use **Readest for Web** at [https://web.readest.com][link-web-readest].
 
+#### Nix
+
+> [!NOTE]
+> The Nix package supports `x86_64-linux` only. nix-darwin is not supported.
+
+Try it without installing. `--accept-flake-config` opts in to the project's
+binary cache; without it Nix builds the whole Rust/Tauri stack from source.
+
+```sh
+nix run --accept-flake-config github:readest/readest
+```
+
+To install it, add the input to your `flake.nix`:
+
+```nix
+# Due to a limitation in how Nix fetches submodules, a regular GitHub input type will fail to evaluate.
+inputs.readest = {
+  url = "https://github.com/readest/readest.git";
+  type = "git";
+  submodules = true;
+};
+```
+
+then in `configuration.nix` add the package and the cache. The cache is needed
+here as well because a flake input's own `nixConfig` does not apply to your
+system build:
+
+```nix
+environment.systemPackages = [
+  inputs.readest.packages.${pkgs.stdenv.hostPlatform.system}.default
+];
+
+nix.settings = {
+  substituters = [ "https://readest.cachix.org" ];
+  trusted-public-keys = [
+    "readest.cachix.org-1:KvKAePcZZCZB8ytFIAOGdgN3VRdmFHGRMHqMVckbt5c="
+  ];
+};
+```
+
 ## Documentation
 
 Guides, tutorials, and FAQs for installing and using Readest live in the official documentation:
 
 📖 **[https://readest.com/docs][link-docs]**
+
+Contributor references live in the repository: [architecture](./apps/readest-app/docs/architecture.md),
+[code layout](./apps/readest-app/docs/code-layout.md), and
+[testing](./apps/readest-app/docs/testing.md).
 
 ## Building from Source
 
@@ -186,7 +231,7 @@ If you prefer a more reliable out-of-the-box experience on Arch Linux, consider 
 
 ## Contributors
 
-Readest is open-source, and contributions are welcome! Feel free to open issues, suggest features, or submit pull requests. Please **review our [contributing guidelines](CONTRIBUTING.md) before you start**. We also welcome you to join our [Discord][link-discord] community for either support or contributing guidance.
+Readest is open-source, and contributions are welcome! Feel free to open issues, suggest features, or submit pull requests. Please **review our [contributing guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before you start**. We also welcome you to join our [Discord][link-discord] community for either support or contributing guidance.
 
 <a href="https://github.com/readest/readest/graphs/contributors">
   <p align="left">
@@ -196,7 +241,7 @@ Readest is open-source, and contributions are welcome! Feel free to open issues,
 
 ## Support
 
-If Readest has been useful to you, consider supporting its development at [donate.readest.com](https://donate.readest.com), where you'll find all available donation methods, including GitHub Sponsors, card payments, and crypto. Your contribution helps us fix bugs faster, improve performance, and keep building great features.
+If Readest has been useful to you, consider supporting its development at [donate.readest.com](https://donate.readest.com), where you'll find all available donation methods, including GitHub Sponsors, PayPal, card payments, and crypto. Your contribution helps us fix bugs faster, improve performance, and keep building great features.
 
 ### Sponsors
 

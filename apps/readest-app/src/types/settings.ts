@@ -3,6 +3,8 @@ import { CustomFont } from '@/styles/fonts';
 import { CustomTexture } from '@/styles/textures';
 import { HighlightColor, HighlightStyle, UserHighlightColor, ViewSettings } from './book';
 import { OPDSCatalog } from './opds';
+import { WebSource } from './webSource';
+import { ABSServer } from './audiobookshelf';
 import type { AISettings } from '@/services/ai/types';
 import type { NotebookTab } from '@/store/notebookStore';
 import type { DictionarySettings, ImportedDictionary } from '@/services/dictionaries/types';
@@ -42,6 +44,7 @@ export const LibraryGroupByType = {
   Author: 'author',
   Tag: 'tag',
   Subject: 'subject',
+  Status: 'status',
 } as const;
 
 export type LibraryGroupByType = (typeof LibraryGroupByType)[keyof typeof LibraryGroupByType];
@@ -110,6 +113,15 @@ export interface BookOrbitSettings {
   syncStats: boolean;
   syncBookStates: boolean;
   customHeaders?: Record<string, string>;
+  /**
+   * Manual-sync opt-out (#6029). BookOrbit records a reading log entry per
+   * push, so a few hours of reading buries the real sessions under
+   * debounce-sized updates. With this off nothing is pushed until the user
+   * asks; pulls stay automatic (they add nothing server-side and are what
+   * keeps a second device in step). Default ON — settings written before this
+   * option existed keep the automatic pushes they already had.
+   */
+  autoSync?: boolean;
 }
 
 export interface ReadwiseSettings {
@@ -137,6 +149,21 @@ export interface HardcoverSettings {
   // user reads (debounced) instead of only via the reader menu. Default OFF;
   // existing connected users (undefined) stay manual until they opt in.
   autoSync?: boolean;
+}
+
+export interface NotionSettings {
+  enabled: boolean;
+  /** Notion integration token (`secret_...`). */
+  accessToken: string;
+  /**
+   * Target Notion data source id. The connection form also accepts a database
+   * container or a page containing a child database and resolves it before
+   * persisting settings.
+   */
+  databaseId: string;
+  lastSyncedAt: number;
+  /** Append a chapter heading block before each highlight (default ON). */
+  includeChapterHeading?: boolean;
 }
 
 /**
@@ -319,6 +346,7 @@ export type SyncCategory =
   | 'font'
   | 'texture'
   | 'opds_catalog'
+  | 'abs_server'
   | 'settings'
   | 'credentials'
   | 'stats';
@@ -331,6 +359,7 @@ export const SYNC_CATEGORIES: readonly SyncCategory[] = [
   'font',
   'texture',
   'opds_catalog',
+  'abs_server',
   'settings',
   'stats',
   'credentials',
@@ -411,6 +440,13 @@ export interface SystemSettings {
   autoScreenBrightness: boolean;
   swipeBrightnessGesture: boolean;
   hardwarePageTurner: HardwarePageTurnerSettings;
+  /**
+   * Replay a connected controller's buttons and sticks as key events in the
+   * reader. Off is a real need on handhelds whose own remapper (Steam Input on
+   * the Steam Deck) already binds those buttons to keys, so every press would
+   * otherwise land twice (issue #5979).
+   */
+  gamepadEnabled: boolean;
   alwaysShowStatusBar: boolean;
   openLastBooks: boolean;
   lastOpenBooks: string[];
@@ -462,6 +498,9 @@ export interface SystemSettings {
   customDictionaries: ImportedDictionary[];
   dictionarySettings: DictionarySettings;
   opdsCatalogs: OPDSCatalog[];
+  absServers: ABSServer[];
+  /** Saved sites for the "From Web Browser" import (#5775). Device-local. */
+  webSources?: WebSource[];
   metadataSeriesCollapsed: boolean;
   metadataOthersCollapsed: boolean;
   metadataDescriptionCollapsed: boolean;
@@ -492,6 +531,7 @@ export interface SystemSettings {
   bookorbit: BookOrbitSettings;
   readwise: ReadwiseSettings;
   hardcover: HardcoverSettings;
+  notion: NotionSettings;
   /** Optional by design — see {@link ReadestCloudSettings}. Never defaulted. */
   readestCloud?: ReadestCloudSettings;
   webdav: WebDAVSettings;

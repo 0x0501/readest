@@ -9,32 +9,41 @@
  * handoff is supported, enabling it stays exclusive and locks the rest.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import CustomDictionaries from '@/components/settings/CustomDictionaries';
 import { useCustomDictionaryStore } from '@/store/customDictionaryStore';
 import { BUILTIN_PROVIDER_IDS } from '@/services/dictionaries/types';
 import type { DictionarySettings } from '@/services/dictionaries/types';
+import { eventDispatcher } from '@/utils/event';
 
 // Per-test platform control. `isSystemDictionaryEnabled` (real, from the
 // registry) reads `isSystemDictionarySupported`, so toggling these flips both
 // the row visibility and the lock gate the component now relies on.
 const platform = vi.hoisted(() => ({ supported: false, available: false }));
+const mocks = vi.hoisted(() => ({
+  importDictionaries: vi.fn(),
+  selectFiles: vi.fn(),
+}));
 vi.mock('@/services/dictionaries/systemDictionary', () => ({
   isSystemDictionarySupported: () => platform.supported,
   isSystemDictionaryAvailable: () => platform.available,
 }));
 
 vi.mock('@/hooks/useTranslation', () => ({
-  useTranslation: () => (s: string) => s,
+  useTranslation: () => (s: string, values?: Record<string, string | number>) =>
+    s.replace(/\{\{(\w+)\}\}/gu, (_match, key: string) => String(values?.[key] ?? '')),
 }));
 
 vi.mock('@/context/EnvContext', () => ({
-  useEnv: () => ({ appService: {}, envConfig: {} }),
+  useEnv: () => ({
+    appService: { importDictionaries: mocks.importDictionaries },
+    envConfig: {},
+  }),
 }));
 
 vi.mock('@/hooks/useFileSelector', () => ({
-  useFileSelector: () => ({ selectFiles: vi.fn() }),
+  useFileSelector: () => ({ selectFiles: mocks.selectFiles }),
 }));
 
 vi.mock('@/services/sync/replicaBinaryUpload', () => ({
@@ -75,6 +84,8 @@ const getToggles = (container: HTMLElement) =>
 beforeEach(() => {
   platform.supported = false;
   platform.available = false;
+  mocks.importDictionaries.mockReset();
+  mocks.selectFiles.mockReset();
 });
 
 afterEach(() => {
@@ -115,5 +126,71 @@ describe('CustomDictionaries — system-dictionary lock', () => {
     expect(systemToggle!.title).not.toBe(LOCKED_TITLE);
     expect(otherToggles.every((t) => t.disabled)).toBe(true);
     expect(otherToggles.every((t) => t.title === LOCKED_TITLE)).toBe(true);
+  });
+});
+
+describe('CustomDictionaries — import progress', () => {
+  it('shows the Yomitan indexing percentage while a ZIP import is running', async () => {
+    seedSettings({ providerOrder: [], providerEnabled: {}, webSearches: [] });
+    mocks.selectFiles.mockResolvedValue({
+      files: [{ file: new File(['dictionary'], 'jitendex.zip') }],
+    });
+
+    let finishImport: ((result: unknown) => void) | undefined;
+    mocks.importDictionaries.mockImplementation(
+      (
+        _files: unknown,
+        _existing: unknown,
+        onProgress?: (progress: { stage: string; completed: number; total?: number }) => void,
+      ) =>
+        new Promise((resolve) => {
+          finishImport = resolve;
+          onProgress?.({ stage: 'indexing', completed: 1, total: 4 });
+        }),
+    );
+
+    render(<CustomDictionaries onBack={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Import Dictionary' }));
+
+    expect(
+      (await screen.findByRole('button', { name: 'Indexing… 25%' })) as HTMLButtonElement,
+    ).toMatchObject({ disabled: true });
+
+    await act(async () => {
+      finishImport?.({ imported: [], replacements: [], orphanFiles: [] });
+    });
+    expect(
+      (await screen.findByRole('button', { name: 'Import Dictionary' })) as HTMLButtonElement,
+    ).toMatchObject({ disabled: false });
+  });
+
+  it('reports a failed plugin source while retaining successful imports', async () => {
+    seedSettings({ providerOrder: [], providerEnabled: {}, webSearches: [] });
+    mocks.selectFiles.mockResolvedValue({
+      files: [
+        { file: new File(['valid'], 'valid.zip') },
+        { file: new File(['broken'], 'broken.zip') },
+      ],
+    });
+    mocks.importDictionaries.mockResolvedValue({
+      imported: [],
+      replacements: [],
+      orphanFiles: [],
+      importErrors: [{ name: 'broken.zip', message: 'Invalid Yomitan bank' }],
+    });
+    const dispatch = vi.spyOn(eventDispatcher, 'dispatch');
+
+    render(<CustomDictionaries onBack={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Import Dictionary' }));
+
+    await waitFor(() =>
+      expect(dispatch).toHaveBeenCalledWith(
+        'toast',
+        expect.objectContaining({
+          type: 'error',
+          message: 'Failed to import dictionary: broken.zip: Invalid Yomitan bank',
+        }),
+      ),
+    );
   });
 });

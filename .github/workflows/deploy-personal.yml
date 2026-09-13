@@ -115,6 +115,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Apply database migrations
+        working-directory: apps/readest-app
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_MIGRATION_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_MIGRATION_URL is not configured"
+            exit 1
+          fi
+          pnpm db:migrate
+
       - name: Copy pdfjs / simplecc / jieba assets into public/vendor
         run: pnpm --filter @readest/readest-app setup-vendors
 

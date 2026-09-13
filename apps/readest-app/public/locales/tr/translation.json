@@ -2233,7 +2233,6 @@
   "ReadEra": "ReadEra",
   "ReadEra backup file (.bak)": "ReadEra yedek dosyası (.bak)",
   "BookOrbit Sync": "BookOrbit Senkronizasyonu",
-  "Store your library, reading progress, and highlights in your Readest account. You can change this any time in Settings.": "Kütüphanenizi, okuma ilerlemenizi ve vurgularınızı Readest hesabınızda saklayın. Bunu istediğiniz zaman Ayarlar'dan değiştirebilirsiniz.",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} size {{count}} kitap göndermek istiyor",
   "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} size {{count}} kitap göndermek istiyor",
   "Speech": "Konuşma",

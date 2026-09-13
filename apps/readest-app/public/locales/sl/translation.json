@@ -2351,7 +2351,6 @@
   "ReadEra": "ReadEra",
   "ReadEra backup file (.bak)": "Datoteka varnostne kopije ReadEra (.bak)",
   "BookOrbit Sync": "Sinhronizacija BookOrbit",
-  "Store your library, reading progress, and highlights in your Readest account. You can change this any time in Settings.": "Shranite knjižnico, napredek branja in označbe v svoj račun Readest. To lahko kadar koli spremenite v Nastavitvah.",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} vam želi poslati {{count}} knjigo",
   "{{alias}} wants to send you {{count}} book(s)_two": "{{alias}} vam želi poslati {{count}} knjigi",
   "{{alias}} wants to send you {{count}} book(s)_few": "{{alias}} vam želi poslati {{count}} knjige",

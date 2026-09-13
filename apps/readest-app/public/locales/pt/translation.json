@@ -2292,7 +2292,6 @@
   "ReadEra": "ReadEra",
   "ReadEra backup file (.bak)": "Ficheiro de backup do ReadEra (.bak)",
   "BookOrbit Sync": "Sincronização do BookOrbit",
-  "Store your library, reading progress, and highlights in your Readest account. You can change this any time in Settings.": "Guarde a sua biblioteca, o progresso de leitura e os destaques na sua conta Readest. Pode alterar isto a qualquer momento nas Configurações.",
   "{{alias}} wants to send you {{count}} book(s)_one": "{{alias}} quer enviar-lhe {{count}} livro",
   "{{alias}} wants to send you {{count}} book(s)_many": "{{alias}} quer enviar-lhe {{count}} livros",
   "{{alias}} wants to send you {{count}} book(s)_other": "{{alias}} quer enviar-lhe {{count}} livros",

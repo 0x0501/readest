@@ -17,7 +17,7 @@ import {
   StatBookRecord,
   StatPageRecord,
 } from '@/libs/sync';
-import { DBBook, DBBookConfig } from '@/types/records';
+import { DBBook, DBBookConfig, DBBookNote } from '@/types/records';
 import { clientSafeMessage, describeError, SyncError } from '@/libs/errors';
 
 const ms = (s?: string | number | null) => (s ? new Date(s).getTime() : 0);
@@ -260,6 +260,11 @@ const DBSyncTypeMap = {
 };
 
 type TableName = keyof typeof transformsToDB;
+
+type DBSyncRecord = DBBook | DBBookConfig | DBBookNote;
+
+/** Primary-key columns the upsert looks up. Notes also carry `id`. */
+type SyncKeyFields = Pick<DBBook, 'book_hash'> & Partial<Pick<DBBookNote, 'id'>>;
 
 type DBError = { table: TableName; error: Error };
 
@@ -678,13 +683,17 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const keyOf = (row: BookDataRecord | DBBook | DBBookConfig) =>
-          primaryKeys.map((pk) => (row as BookDataRecord)[pk]).join('|');
+        const keyPart = (row: SyncKeyFields, pk: keyof BookDataRecord): string => {
+          if (pk === 'book_hash') return row.book_hash;
+          if (pk === 'id') return row.id ?? '';
+          return '';
+        };
+        const keyOf = (row: SyncKeyFields) => primaryKeys.map((pk) => keyPart(row, pk)).join('|');
 
         const mergeAgainstServer = (
-          dbRec: DBBook | DBBookConfig,
+          dbRec: DBSyncRecord,
           serverData: BookDataRecord,
-        ): { update: DBBook | DBBookConfig } | { keep: BookDataRecord } => {
+        ): { update: DBSyncRecord } | { keep: BookDataRecord } => {
           const clientUpdatedAt = dbRec.updated_at ? new Date(dbRec.updated_at).getTime() : 0;
           const serverUpdatedAt = serverData.updated_at
             ? new Date(serverData.updated_at).getTime()
@@ -771,8 +780,8 @@ export async function POST(req: NextRequest) {
         };
 
         // Separate into inserts and updates
-        const toInsert: (DBBook | DBBookConfig)[] = [];
-        const toUpdate: (DBBook | DBBookConfig)[] = [];
+        const toInsert: DBSyncRecord[] = [];
+        const toUpdate: DBSyncRecord[] = [];
         const batchAuthoritativeRecords: BookDataRecord[] = [];
 
         for (const { original, db: dbRec } of recordsByKey.values()) {
@@ -810,7 +819,7 @@ export async function POST(req: NextRequest) {
             if (unresolved.length > 0) {
               const extraFilters = primaryKeys.map((pk, idx) =>
                 inArray(cols[keyProps[idx]!]!, [
-                  ...new Set(unresolved.map((row) => (row as BookDataRecord)[pk] as string)),
+                  ...new Set(unresolved.map((row) => keyPart(row, pk))),
                 ]),
               );
               const extraServer = (await db
@@ -839,7 +848,7 @@ export async function POST(req: NextRequest) {
             // it should be copied into a log.
             console.error(
               `Failed to insert ${table} records`,
-              { keys: toInsert.map((row) => (row as { book_hash?: string }).book_hash) },
+              { keys: toInsert.map((row) => row.book_hash) },
               describeError(error),
             );
             return { error: clientSafeMessage(error, 'Insert failed') };
@@ -862,7 +871,7 @@ export async function POST(req: NextRequest) {
           } catch (error) {
             console.error(
               `Failed to update ${table} records`,
-              { keys: toUpdate.map((row) => (row as { book_hash?: string }).book_hash) },
+              { keys: toUpdate.map((row) => row.book_hash) },
               describeError(error),
             );
             return { error: clientSafeMessage(error, 'Update failed') };

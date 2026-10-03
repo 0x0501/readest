@@ -30,6 +30,7 @@ import {
 } from '@/utils/nav';
 import { clearDiscordPresence } from '@/utils/discord';
 import { BOOK_IDS_SEPARATOR } from '@/services/constants';
+import { saveBookMetadataEdit } from '@/services/bookMetadataEdit';
 import { BookDetailModal } from '@/components/metadata';
 import ShareBookDialog from '@/app/library/components/ShareBookDialog';
 import { useAuth } from '@/context/AuthContext';
@@ -51,6 +52,7 @@ import BooksGrid from './BooksGrid';
 import SettingsDialog from '@/components/settings/SettingsDialog';
 import AudiobookPairingDialog from './audiobook/AudiobookPairingDialog';
 import HardcoverLinkDialog from './hardcover/HardcoverLinkDialog';
+import PageboundLinkDialog from './pagebound/PageboundLinkDialog';
 import ModalPortal from '@/components/ModalPortal';
 import NotebookTransitionAlert from './notebook/NotebookTransitionAlert';
 
@@ -76,6 +78,7 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
   const [showDetailsBook, setShowDetailsBook] = useState<Book | null>(null);
   const [audiobookBookKey, setAudiobookBookKey] = useState<string | null>(null);
   const [hardcoverLinkBookKey, setHardcoverLinkBookKey] = useState<string | null>(null);
+  const [pageboundLinkBookKey, setPageboundLinkBookKey] = useState<string | null>(null);
   const [shareDialogState, setShareDialogState] = useState<{
     book: Book;
     cfi: string | null;
@@ -160,11 +163,17 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
       const detail = event.detail as { bookKey?: string } | undefined;
       if (detail?.bookKey) setHardcoverLinkBookKey(detail.bookKey);
     };
+    const handleLinkPageboundBook = (event: CustomEvent) => {
+      const detail = event.detail as { bookKey?: string } | undefined;
+      if (detail?.bookKey) setPageboundLinkBookKey(detail.bookKey);
+    };
     eventDispatcher.on('manage-audiobook', handleManageAudiobook);
     eventDispatcher.on('hardcover-link-book', handleLinkHardcoverBook);
+    eventDispatcher.on('pagebound-link-book', handleLinkPageboundBook);
     return () => {
       eventDispatcher.off('manage-audiobook', handleManageAudiobook);
       eventDispatcher.off('hardcover-link-book', handleLinkHardcoverBook);
+      eventDispatcher.off('pagebound-link-book', handleLinkPageboundBook);
     };
   }, []);
 
@@ -242,6 +251,7 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
       const settings = useSettingsStore.getState().settings;
       eventDispatcher.dispatch('sync-book-progress', { bookKey });
       eventDispatcher.dispatch('flush-kosync', { bookKey });
+      eventDispatcher.dispatch('flush-hardcover-sync', { bookKey });
       // Persist locally before any remote flush. `beforeunload` and `quit-app`
       // can unload the document while a flush is still in flight, and losing
       // the reading position costs the user more than deferring a Notion push
@@ -419,6 +429,12 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
           onClose={() => setHardcoverLinkBookKey(null)}
         />
       )}
+      {pageboundLinkBookKey && (
+        <PageboundLinkDialog
+          bookKey={pageboundLinkBookKey}
+          onClose={() => setPageboundLinkBookKey(null)}
+        />
+      )}
       <Notebook />
       <LocalSendManager />
       {showDetailsBook && (
@@ -426,6 +442,9 @@ const ReaderContent: React.FC<{ ids?: string; settings: SystemSettings }> = ({ i
           isOpen={!!showDetailsBook}
           book={showDetailsBook}
           onClose={() => setShowDetailsBook(null)}
+          handleBookMetadataUpdate={(book, metadata, tags) =>
+            saveBookMetadataEdit(envConfig, book, metadata, tags, !!user)
+          }
         />
       )}
       <ShareBookDialog

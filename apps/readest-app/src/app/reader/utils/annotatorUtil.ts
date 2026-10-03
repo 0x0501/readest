@@ -9,9 +9,11 @@ import {
   ViewSettings,
 } from '@/types/book';
 import { uniqueId } from '@/utils/misc';
+import { nextBooknoteStamp } from '@/utils/booknoteStamp';
 import { SystemSettings } from '@/types/settings';
 import { FoliateView, NOTE_PREFIX } from '@/types/view';
 import { Point, snapRangeToWords } from '@/utils/sel';
+import { expandAllRenderedSections, removeGlobalAnnotationOverlays } from './globalAnnotations';
 
 export const isDefaultHighlightColor = (
   color: HighlightColor,
@@ -119,8 +121,10 @@ export function getExternalDragHandle(
 
 export function toParentViewportPoint(doc: Document, x: number, y: number): Point {
   const frameElement = doc.defaultView?.frameElement;
-  const frameRect = frameElement?.getBoundingClientRect() ?? { top: 0, left: 0 };
-  return { x: x + frameRect.left, y: y + frameRect.top };
+  const frameRect = frameElement?.getBoundingClientRect() ?? { top: 0, left: 0, width: 0 };
+  // Fixed-layout pages are iframes shrunk to fit with a CSS transform.
+  const scale = frameElement?.clientWidth ? frameRect.width / frameElement.clientWidth : 1;
+  return { x: frameRect.left + x * scale, y: frameRect.top + y * scale };
 }
 
 export interface HandlePositions {
@@ -251,6 +255,7 @@ export function removeBookNoteOverlays(view: FoliateView | null, note: BookNote)
   if (note.note && note.note.trim().length > 0) {
     view.addAnnotation({ ...note, value: `${NOTE_PREFIX}${note.cfi}` }, true);
   }
+  if (note.global) removeGlobalAnnotationOverlays(view, note);
 }
 
 /**
@@ -279,7 +284,7 @@ export function removeEmptyAnnotationPlaceholder(
   );
   if (index === -1) return null;
   const placeholder = booknotes[index]!;
-  booknotes[index] = { ...placeholder, deletedAt: now };
+  booknotes[index] = { ...placeholder, deletedAt: nextBooknoteStamp(placeholder, now) };
   return placeholder;
 }
 
@@ -439,10 +444,12 @@ export function findAnnotationAtCfi(booknotes: BookNote[], cfi: string): number 
  * an `existing` annotation, preserving the parts a restyle must not lose: the
  * record id, its note text, the selected text, the original creation time, and
  * the `global` flag. Without preserving `note`, recoloring a unified annotation
- * would wipe the note.
+ * would wipe the note. Fields the restyle does not set (sync anchors such as
+ * `xpointer0`/`xpointer1`, which stay valid for the unchanged cfi) carry over.
  */
 export function mergeRestyledAnnotation(existing: BookNote, restyled: BookNote): BookNote {
   return {
+    ...existing,
     ...restyled,
     id: existing.id,
     createdAt: existing.createdAt,
@@ -558,5 +565,10 @@ export function applyNoteBubbleTransition(
   if (transition === 'none') return;
   for (const view of views) {
     view.addAnnotation({ ...note, value: `${NOTE_PREFIX}${note.cfi}` }, transition === 'remove');
+    // The copies of a global annotation carry the bubble too: redraw them.
+    if (note.global) {
+      removeGlobalAnnotationOverlays(view, note);
+      expandAllRenderedSections(view, note);
+    }
   }
 }

@@ -7,6 +7,7 @@ import { IconContext } from 'react-icons';
 import { AuthProvider } from '@/context/AuthContext';
 import { useEnv } from '@/context/EnvContext';
 import WindowResizeHandles from '@/components/WindowResizeHandles';
+import WindowOutline from '@/components/WindowOutline';
 import { SyncProvider } from '@/context/SyncContext';
 import { initSystemThemeListener, loadDataTheme } from '@/store/themeStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -24,6 +25,8 @@ import { DropdownProvider } from '@/context/DropdownContext';
 import { CommandPaletteProvider, CommandPalette } from '@/components/command-palette';
 import AtmosphereOverlay from '@/components/AtmosphereOverlay';
 import AppLockScreen from '@/components/AppLockScreen';
+import CarMediaLibraryBridge from '@/components/CarMediaLibraryBridge';
+import FileSyncReport from '@/components/FileSyncReport';
 import AppLockDialog from '@/components/settings/AppLockDialog';
 import PassphrasePrompt from '@/components/PassphrasePrompt';
 import { upgradeToKeychainIfAvailable } from '@/libs/crypto/passphrase';
@@ -150,6 +153,7 @@ const Providers = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <AuthProvider>
+      <CarMediaLibraryBridge />
       <IconContext.Provider value={{ size: `${iconSize}px` }}>
         <SyncProvider>
           <DropdownProvider>
@@ -162,10 +166,12 @@ const Providers = ({ children }: { children: React.ReactNode }) => {
                 <CommandPalette />
                 <AtmosphereOverlay />
                 <PassphrasePrompt />
+                {!appShellHidden && <FileSyncReport />}
                 <WindowResizeHandles />
               </div>
               <AppLockDialog />
               {showAppLockScreen && <AppLockScreen />}
+              <WindowOutline />
             </CommandPaletteProvider>
           </DropdownProvider>
         </SyncProvider>

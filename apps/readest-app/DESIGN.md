@@ -140,6 +140,9 @@ be flipped to the logical equivalent.
 
 #### 2.9 Every panel and sub-page starts with title + description (REQUIRED)
 
+Single-sentence descriptions and helper text omit the final period. Keep normal punctuation
+when a description contains multiple sentences.
+
 Every settings panel and every sub-page must open with:
 
 1. **A title** — the panel name. Style: `text-lg font-semibold tracking-tight`. In a
@@ -201,6 +204,8 @@ Border treatment:
 - **View** uses no border or `border-base-200/60` for very soft delineation.
 - **Card** uses `border border-base-200`. In e-ink, `eink-bordered` flips it to 1px
   `border-base-content`.
+- Manage Bookshelves uses the same `border-base-200` boundary for settings boxes, filter
+  fields, labeled groups and the preview panel.
 
 Corner radius:
 
@@ -278,6 +283,14 @@ className={clsx(
   'hover:bg-base-200 transition-colors duration-150',
   'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-base-content/15',
 )}
+```
+
+For low-emphasis actions inside compact editors, use plain text without a hover background or
+underline. Bookshelf filter actions, Reset and Delete use this treatment. Keep a 44px touch target
+and a visible keyboard-focus outline; use `text-error` for Delete.
+
+```tsx
+className = 'min-h-11 min-w-11 cursor-pointer text-sm focus-visible:outline-2 focus-visible:outline-offset-2';
 ```
 
 #### 4.5 Pill / Circular ghost
@@ -704,6 +717,11 @@ rounded-window page frame (`.window-border`, `z-99` in `globals.css`), then laye
 | `120` | Modal / command palette | `ModalPortal`, `CommandPalette` |
 | `130` | Toast / alert | `Alert` |
 | `200` | Security lock screen | `AppLockScreen` |
+| `210` | Windows 10 client-area window frame | `.window-outline`, `globals.css` |
+
+`210` is the one layer above the overlays rather than between them: it stands in for the
+OS's non-client window edge, which no page content ever covered, so it has to survive the
+lock screen covering the window.
 
 The non-obvious invariant: **`ModalPortal` (120) must stay above `SettingsDialog`
 (110)** so a modal opened _from inside_ Settings (e.g. Add OPDS Catalog) isn't buried.

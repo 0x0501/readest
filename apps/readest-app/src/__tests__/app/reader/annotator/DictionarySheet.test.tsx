@@ -428,6 +428,27 @@ describe('DictionarySheet — concurrent lookup', () => {
 });
 
 describe('DictionarySheet — query normalization', () => {
+  it.each([
+    ['Café', 'cafe'],
+    ['rūpa', 'rupa'],
+    ['niño', 'nino'],
+    ['café', 'cafe\u0301'],
+    ['cafe\u0301', 'café'],
+  ])('resolves %s against the stored headword %s', async (word, headword) => {
+    providersForNextRender.push(buildExactProvider(headword));
+    renderSheet({ word });
+    await waitFor(() => screen.getByText(`def for ${headword}`));
+  });
+
+  it('keeps an accented exact match ahead of folding', async () => {
+    const exact = buildExactProvider('café');
+    const spy = vi.spyOn(exact, 'lookup');
+    providersForNextRender.push(exact);
+    renderSheet({ word: 'café' });
+    await waitFor(() => screen.getByText('Exact Match'));
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   it('resolves a lowercase-stored entry from a capitalized selection', async () => {
     const exact = buildExactProvider('hello');
     const spy = vi.spyOn(exact, 'lookup');
@@ -485,6 +506,32 @@ describe('DictionarySheet — expand / collapse', () => {
 
     fireEvent.click(screen.getByTestId('dict-card'));
     await waitFor(() => expect(expanded()).toBe('true'));
+  });
+
+  it('keeps a tap that lands before the auto-expand effects settle', async () => {
+    providersForNextRender.push(buildRealStarDictProvider());
+    renderSheet({ word: 'hello' });
+
+    // Tap the moment the card first renders expanded, before React flushes
+    // that render's effects: the pending auto-expand pass must not undo it.
+    const card = () => screen.queryByTestId('dict-card');
+    let tapped = false;
+    const observer = new MutationObserver(() => {
+      if (tapped || card()?.getAttribute('aria-expanded') !== 'true') return;
+      tapped = true;
+      card()!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    observer.observe(screen.getByTestId('dialog-body'), {
+      attributes: true,
+      attributeFilter: ['aria-expanded'],
+      subtree: true,
+    });
+    await waitFor(() => expect(tapped).toBe(true));
+    observer.disconnect();
+
+    await waitFor(() => expect(card()?.getAttribute('aria-expanded')).toBe('false'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(card()?.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('defaults to collapsed when more than 3 providers have results', async () => {
@@ -733,5 +780,64 @@ describe('DictionarySheet - image zoom', () => {
 
     const viewer = await waitFor(() => screen.getByTestId('dict-image-viewer'));
     expect(viewer.getAttribute('data-src')).toBe('data:image/png;base64,blob:test/pic-fullsize');
+  });
+});
+
+describe('DictionarySheet — auto-play pronunciation fan-out (#6265)', () => {
+  const buildRecordingProvider = (
+    id: string,
+    seen: { id: string; autoPlay: boolean | undefined }[],
+  ): DictionaryProvider => ({
+    id,
+    kind: 'mdict',
+    label: id,
+    async lookup(word, ctx): Promise<DictionaryLookupOutcome> {
+      seen.push({ id, autoPlay: ctx.autoPlayPronunciation });
+      ctx.container.textContent = `${id}:${word}`;
+      return { ok: true, headword: word };
+    },
+  });
+
+  it('arms auto-play on the first MDict provider only, so concurrent lookups cannot interrupt each other', async () => {
+    const seen: { id: string; autoPlay: boolean | undefined }[] = [];
+    useCustomDictionaryStore.setState({
+      dictionaries: [],
+      settings: {
+        providerOrder: ['mdict:first', 'mdict:second'],
+        providerEnabled: { 'mdict:first': true, 'mdict:second': true },
+        webSearches: [],
+        autoPlayPronunciation: true,
+      },
+    });
+    providersForNextRender.push(
+      buildRecordingProvider('mdict:first', seen),
+      buildRecordingProvider('mdict:second', seen),
+    );
+
+    renderSheet({ word: 'hello' });
+    await waitFor(() => expect(seen).toHaveLength(2));
+
+    // They share one module-scoped <audio>, so arming both lets whichever
+    // resolves its bytes last cut off the other.
+    expect(seen.find((s) => s.id === 'mdict:first')?.autoPlay).toBe(true);
+    expect(seen.find((s) => s.id === 'mdict:second')?.autoPlay).toBe(false);
+  });
+
+  it('arms nothing while the setting is off', async () => {
+    const seen: { id: string; autoPlay: boolean | undefined }[] = [];
+    useCustomDictionaryStore.setState({
+      dictionaries: [],
+      settings: {
+        providerOrder: ['mdict:first'],
+        providerEnabled: { 'mdict:first': true },
+        webSearches: [],
+      },
+    });
+    providersForNextRender.push(buildRecordingProvider('mdict:first', seen));
+
+    renderSheet({ word: 'hello' });
+    await waitFor(() => expect(seen).toHaveLength(1));
+
+    expect(seen[0]!.autoPlay).toBe(false);
   });
 });

@@ -12,6 +12,7 @@ import { useResponsiveSize } from '@/hooks/useResponsiveSize';
 import { impactFeedback } from '@tauri-apps/plugin-haptics';
 import { getDirFromUILanguage } from '@/utils/rtl';
 import { eventDispatcher } from '@/utils/event';
+import { getHorizontalInsetStyle } from '@/utils/insets';
 import { Overlay } from './Overlay';
 
 const VELOCITY_THRESHOLD = 0.5;
@@ -28,6 +29,7 @@ interface DialogProps {
   isOpen: boolean;
   children: ReactNode;
   snapHeight?: number;
+  fullScreen?: boolean;
   dismissible?: boolean;
   header?: ReactNode;
   title?: string;
@@ -44,14 +46,26 @@ interface DialogProps {
    * native scrolling is fine.
    */
   useOverlayScroll?: boolean;
+  /**
+   * Rest a mobile sheet on the on-screen keyboard instead of letting the
+   * keyboard cover it. For sheets holding a text field, whose actions would
+   * otherwise sit under the keyboard (#6390).
+   */
+  aboveKeyboard?: boolean;
   onClose: () => void;
 }
 
-// A swipe that starts on a scroller which is not at its top belongs to that
-// scroller: the user is scrolling back up, not dismissing the sheet.
-const hasScrolledAncestor = (target: HTMLElement, root: HTMLElement) => {
+// Scrollable content owns the whole gesture, including at its edges where
+// native overscroll should remain available.
+const hasScrollableAncestor = (target: HTMLElement, root: HTMLElement) => {
   for (let el: HTMLElement | null = target; el && el !== root; el = el.parentElement) {
-    if (el.scrollTop > 0) return true;
+    const style = getComputedStyle(el);
+    if (
+      (el.scrollHeight > el.clientHeight && /auto|scroll/.test(style.overflowY)) ||
+      (el.scrollWidth > el.clientWidth && /auto|scroll/.test(style.overflowX))
+    ) {
+      return true;
+    }
   }
   return false;
 };
@@ -66,6 +80,7 @@ const Dialog: React.FC<DialogProps> = ({
   isOpen,
   children,
   snapHeight,
+  fullScreen = false,
   dismissible = true,
   header,
   title,
@@ -74,11 +89,12 @@ const Dialog: React.FC<DialogProps> = ({
   boxClassName,
   contentClassName,
   useOverlayScroll = false,
+  aboveKeyboard = false,
   onClose,
 }) => {
   const _ = useTranslation();
   const { appService } = useEnv();
-  const { systemUIVisible, statusBarHeight, safeAreaInsets } = useThemeStore();
+  const { systemUIVisible, statusBarHeight, safeAreaInsets, isIPhoneDuo } = useThemeStore();
   const { acquireBackKeyInterception, releaseBackKeyInterception } = useDeviceControlStore();
   const [isFullHeightInMobile, setIsFullHeightInMobile] = useState(!snapHeight);
   const [isRtl] = useState(() => getDirFromUILanguage() === 'rtl');
@@ -91,6 +107,35 @@ const Dialog: React.FC<DialogProps> = ({
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const iconSize22 = useResponsiveSize(22);
   const isMobile = window.innerWidth < 640 || window.innerHeight < 640;
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  // Where a drag that began on a sheet lifted onto the keyboard started: that
+  // sheet's top sits far above its resting place, so the usual snap bands
+  // would read a short pull down as a pull up to full height.
+  const liftedDragStartRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!isOpen || !aboveKeyboard || !vv) return;
+    // The webview learns the keyboard's final height in one step as the
+    // keyboard starts to slide in, and the sheet goes straight there: gliding
+    // after it left the caret under the keyboard long enough for Android to
+    // pan the whole window, and pan it back once the sheet caught up.
+    const update = () => {
+      const inset = document.documentElement.clientHeight - vv.height;
+      setKeyboardInset(inset > 1 ? inset : 0);
+      // Should the webview itself have panned the page up to reveal the
+      // caret, resting on the keyboard reveals it anyway; take the pan back.
+      if (vv.offsetTop > 0) document.documentElement.scrollIntoView({ block: 'start' });
+    };
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    update();
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      setKeyboardInset(0);
+    };
+  }, [isOpen, aboveKeyboard]);
 
   // Callers gate the body on the same flag they pass as `isOpen`
   // (`<Dialog isOpen={open}>{open && <Body />}</Dialog>`), so the body would
@@ -115,6 +160,8 @@ const Dialog: React.FC<DialogProps> = ({
   }, [isOpen]);
 
   const handleKeyDown = (event: KeyboardEvent | CustomEvent) => {
+    // A nested confirmation owns dismissal until it closes.
+    if (dialogRef.current?.querySelector('dialog[open]')) return false;
     if (event instanceof CustomEvent) {
       if (event.detail.keyName === 'Back') {
         onClose();
@@ -151,7 +198,11 @@ const Dialog: React.FC<DialogProps> = ({
     }
 
     const timer = setTimeout(() => {
-      if (dialogRef.current) {
+      if (
+        dialogRef.current &&
+        !dialogRef.current.querySelector('dialog[open]') &&
+        !dialogRef.current.contains(document.activeElement)
+      ) {
         dialogRef.current.focus();
       }
     }, 100);
@@ -178,6 +229,7 @@ const Dialog: React.FC<DialogProps> = ({
 
     if (modal && overlay) {
       modal.style.height = '100%';
+      modal.style.bottom = '0';
       modal.style.transform = `translateY(${newTop * 100}%)`;
       overlay.style.opacity = `${1 - heightFraction}`;
 
@@ -193,6 +245,9 @@ const Dialog: React.FC<DialogProps> = ({
     if (!modal || !overlay) return;
 
     const top = data.clientY - dragOffsetRef.current;
+    const liftedDragStart = liftedDragStartRef.current;
+    liftedDragStartRef.current = null;
+    const pulledDownFromLift = liftedDragStart !== null && data.clientY >= liftedDragStart;
     const snapUpper = snapHeight ? 1 - snapHeight - SNAP_THRESHOLD : 0.5;
     const snapLower = snapHeight ? 1 - snapHeight + SNAP_THRESHOLD : 0.5;
     // A cancelled drag is the system taking the touch away, not the user letting
@@ -210,21 +265,38 @@ const Dialog: React.FC<DialogProps> = ({
       overlay.style.transition = `opacity ${transitionDuration}s ease-out`;
       overlay.style.opacity = '0';
       onClose();
+      if (appService?.hasHaptics) {
+        impactFeedback('light');
+      }
       setTimeout(() => {
         modal.style.transform = 'translateY(0%)';
       }, 300);
     } else if (
       snapHeight &&
       (data.canceled ||
+        pulledDownFromLift ||
         (top > window.innerHeight * snapUpper && top < window.innerHeight * snapLower))
     ) {
-      // dialog is snapped
-      overlay.style.transition = `opacity 0.3s ease-out`;
-      overlay.style.opacity = `${1 - snapHeight}`;
+      // Preserve the visible top while restoring the snapped height. Keeping
+      // the drag's percentage transform during that resize would jump the sheet
+      // down before the return animation even starts.
+      const currentTop = modal.getBoundingClientRect().top;
+      modal.style.transition = 'none';
       modal.style.height = `${snapHeight * 100}%`;
       modal.style.bottom = '0';
-      modal.style.transition = `transform 0.3s ease-out`;
       modal.style.transform = '';
+      const restingTop = modal.getBoundingClientRect().top;
+      modal.style.transform = `translateY(${currentTop - restingTop}px)`;
+      // Commit the equivalent position before animating back to rest.
+      modal.getBoundingClientRect();
+      const reduceMotion =
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+        document.documentElement.dataset['eink'] === 'true';
+      const easing = '0.3s cubic-bezier(0.22, 1, 0.36, 1)';
+      modal.style.transition = reduceMotion ? 'none' : `transform ${easing}`;
+      modal.style.transform = '';
+      overlay.style.transition = reduceMotion ? 'none' : `opacity ${easing}`;
+      overlay.style.opacity = `${1 - snapHeight}`;
     } else {
       // dialog is opened without snap
       setIsFullHeightInMobile(true);
@@ -233,9 +305,6 @@ const Dialog: React.FC<DialogProps> = ({
       modal.style.transform = `translateY(0%)`;
       overlay.style.opacity = '0';
     }
-    if (appService?.hasHaptics && !data.canceled) {
-      impactFeedback('medium');
-    }
   };
 
   const handleDragKeyDown = () => {};
@@ -243,24 +312,28 @@ const Dialog: React.FC<DialogProps> = ({
   const { handleDragStart } = useDrag(handleDragMove, handleDragKeyDown, handleDragEnd);
 
   const beginDrag = (e: React.MouseEvent | React.TouchEvent) => {
+    // The sheet follows the finger from the bottom of the window; put the
+    // keyboard away so it neither covers the sheet nor pans the page meanwhile.
+    if (aboveKeyboard) (document.activeElement as HTMLElement | null)?.blur();
     const modal = dialogRef.current?.querySelector('.modal-box') as HTMLElement | null;
     const clientY = 'touches' in e ? e.touches[0]!.clientY : e.clientY;
     dragOffsetRef.current = modal ? clientY - modal.getBoundingClientRect().top : 0;
+    liftedDragStartRef.current = keyboardInset > 0 ? clientY : null;
     handleDragStart(e);
   };
 
   // The drag handle is a 24px strip at the top of the sheet, out of reach of the
   // thumb that just finished reading (#6089), so a downward swipe anywhere on the
   // sheet dismisses it too. It only takes over once the finger has clearly gone
-  // down rather than sideways, and only when the content under it has nothing
-  // left to scroll — so the sheet never steals a tap, a scroll or a page swipe.
+  // down rather than sideways, and only outside scrollable content — so the
+  // sheet never steals a tap, a scroll or a page swipe.
   const handleSheetTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     pendingSwipeRef.current = null;
     if (!dismissible || !isMobile || e.touches.length !== 1) return;
     const target = e.target as HTMLElement;
     // The handle starts its own drag on touchstart; don't arm a second one.
     if (target.closest('.drag-handle')) return;
-    if (isEditable(target) || hasScrolledAncestor(target, e.currentTarget)) return;
+    if (isEditable(target) || hasScrollableAncestor(target, e.currentTarget)) return;
     const touch = e.touches[0]!;
     pendingSwipeRef.current = { x: touch.clientX, y: touch.clientY };
   };
@@ -323,19 +396,33 @@ const Dialog: React.FC<DialogProps> = ({
         className={clsx(
           'modal-box settings-content absolute z-20 flex flex-col rounded-none rounded-tl-2xl rounded-tr-2xl p-0 sm:rounded-2xl',
           'h-full max-h-full w-full max-w-full',
-          window.innerWidth < window.innerHeight
-            ? 'sm:h-[50%] sm:w-3/4'
-            : 'sm:h-[65%] sm:w-1/2 sm:max-w-[600px]',
+          fullScreen
+            ? 'rounded-none!'
+            : window.innerWidth < window.innerHeight
+              ? 'sm:h-[50%] sm:w-3/4'
+              : 'sm:h-[65%] sm:w-1/2 sm:max-w-[600px]',
           boxClassName,
         )}
         style={{
           paddingTop:
-            appService?.hasSafeAreaInset && isFullHeightInMobile
+            appService?.hasSafeAreaInset && (fullScreen || isFullHeightInMobile)
               ? `${Math.max(safeAreaInsets?.top || 0, systemUIVisible ? statusBarHeight : 0)}px`
               : '0px',
+          paddingBottom:
+            appService?.hasSafeAreaInset && fullScreen
+              ? `${(safeAreaInsets?.bottom || 0) * 0.33}px`
+              : undefined,
+          // The mobile sheet is edge to edge; pad (not margin) it clear of a
+          // side status strip / camera cutout (iPhone Duo, #6307).
+          ...(isMobile ? getHorizontalInsetStyle(safeAreaInsets, isIPhoneDuo) : {}),
           ...(isMobile
             ? snapHeight
-              ? { height: `${snapHeight * 100}%`, top: 'auto', bottom: 0 }
+              ? {
+                  height: `${snapHeight * 100}%`,
+                  maxHeight: `calc(100% - ${keyboardInset}px)`,
+                  top: 'auto',
+                  bottom: keyboardInset,
+                }
               : { height: '100%', bottom: 0 }
             : {}),
         }}

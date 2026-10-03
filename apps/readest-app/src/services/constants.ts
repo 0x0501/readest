@@ -19,6 +19,7 @@ import {
 } from '@/types/book';
 import {
   HardcoverSettings,
+  PageboundSettings,
   BookOrbitSettings,
   KOSyncSettings,
   LibraryGroupByType,
@@ -62,6 +63,10 @@ export const SUPPORTED_BOOK_EXTS = [
   'pdf',
   'txt',
   'md',
+  'html',
+  'htm',
+  'mhtml',
+  'mht',
 ];
 export const BOOK_ACCEPT_FORMATS = SUPPORTED_BOOK_EXTS.map((ext) => `.${ext}`).join(', ');
 export const BOOK_UNGROUPED_NAME = '';
@@ -112,6 +117,15 @@ export const DEFAULT_HARDCOVER_SETTINGS = {
   lastSyncedAt: 0,
   autoSync: false,
 } as HardcoverSettings;
+
+export const DEFAULT_PAGEBOUND_SETTINGS = {
+  enabled: false,
+  email: '',
+  refreshToken: '',
+  apiToken: '',
+  lastSyncedAt: 0,
+  autoSync: false,
+} as PageboundSettings;
 
 export const NOTION_API_BASE_URL = 'https://api.notion.com/v1';
 export const NOTION_API_VERSION = '2026-03-11';
@@ -206,6 +220,8 @@ export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
     },
   },
   gamepadEnabled: true,
+  reverseWheelPaging: false,
+  hideBookshelfPageButtons: false,
   openLastBooks: false,
   lastOpenBooks: [],
   autoImportBooksOnOpen: false,
@@ -243,6 +259,7 @@ export const DEFAULT_SYSTEM_SETTINGS: Partial<SystemSettings> = {
   bookorbit: DEFAULT_BOOKORBIT_SETTINGS,
   readwise: DEFAULT_READWISE_SETTINGS,
   hardcover: DEFAULT_HARDCOVER_SETTINGS,
+  pagebound: DEFAULT_PAGEBOUND_SETTINGS,
   notion: DEFAULT_NOTION_SETTINGS,
   webdav: DEFAULT_WEBDAV_SETTINGS,
   googleDrive: DEFAULT_GOOGLE_DRIVE_SETTINGS,
@@ -340,6 +357,7 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   compactMarginLeftPx: 16,
   compactMarginRightPx: 16,
   gapPercent: 5,
+  columnGapPx: 0,
   scrolled: false,
   scrolledDirection: 'vertical',
   webtoonMode: false,
@@ -347,6 +365,7 @@ export const DEFAULT_BOOK_LAYOUT: BookLayout = {
   noContinuousScroll: false,
   disableClick: false,
   disableSwipe: false,
+  disablePullDownToBookmark: false,
   fullscreenClickArea: false,
   swapClickArea: false,
   disableDoubleClick: false,
@@ -385,6 +404,12 @@ export const DEFAULT_BOOK_STYLE: BookStyle = {
   highlightOpacity: 0.4,
   codeHighlighting: false,
   codeLanguage: 'auto-detect',
+  dialogueHighlight: false,
+  dialogueHighlightCustomColor: false,
+  dialogueHighlightColor: HIGHLIGHT_COLOR_HEX['yellow'] ?? '#facc15',
+  dialogueHighlightCustomTextColor: false,
+  dialogueHighlightTextColor: '',
+  dialogueHighlightItalic: false,
   userStylesheet: '',
   userUIStylesheet: '',
 
@@ -464,6 +489,7 @@ export const DEFAULT_VIEW_CONFIG: ViewConfig = {
   pageTurnStyle: 'push',
   isEink: false,
   isColorEink: false,
+  einkAutoRefreshInterval: 0,
 
   paragraphMode: DEFAULT_PARAGRAPH_MODE_CONFIG,
 
@@ -504,6 +530,7 @@ export const DEFAULT_NOTE_EXPORT_CONFIG: NoteExportConfig = {
   includeCoverImage: false,
   includeChapterTitles: true,
   includeQuotes: true,
+  includeContext: false,
   includeNotes: true,
   includePageNumber: true,
   includeTimestamp: false,
@@ -524,6 +551,7 @@ export const DEFAULT_NOTE_EXPORT_CONFIG: NoteExportConfig = {
 export const DEFAULT_ANNOTATOR_CONFIG: AnnotatorConfig = {
   enableAnnotationQuickActions: true,
   annotationQuickAction: null,
+  keepSelectionAfterLookup: false,
   annotationToolbarItems: DEFAULT_ANNOTATION_TOOLBAR_ITEMS,
   copyToNotebook: false,
   noteExportConfig: DEFAULT_NOTE_EXPORT_CONFIG,

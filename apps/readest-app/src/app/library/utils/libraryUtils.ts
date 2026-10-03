@@ -11,9 +11,11 @@ import {
   isCurrentlyReadingBook,
 } from '@/utils/book';
 import { md5Fingerprint } from '@/utils/md5';
+import type { TranslationFunc } from '@/hooks/useTranslation';
 import { stubTranslation as _ } from '@/utils/misc';
 import { SIZE_PER_LOC, SIZE_PER_TIME_UNIT } from '@/services/constants';
 import { isFeedBook } from '@/services/rss/feedBookUrl';
+import { isAbsOfflineCapable, isAudiobook } from '@/utils/audiobook';
 
 /** Valid sort types for the library */
 const VALID_SORT_TYPES: LibrarySortByType[] = Object.values(LibrarySortByType);
@@ -195,6 +197,26 @@ export const selectDownloadableBooks = (
   );
 };
 
+/**
+ * The Audiobookshelf audiobooks a bulk Download should keep on the device
+ * (#6256): the expanded selection narrowed to the books the per-book
+ * "Download for Offline" action applies to and that aren't offline yet.
+ */
+export const selectAbsOfflineBooks = (
+  ids: string[],
+  items: (Book | BooksGroup)[],
+  books: Book[],
+): Book[] => {
+  const hashes = new Set(expandBookshelfSelection(ids, items));
+  return books.filter(
+    (book) =>
+      hashes.has(book.hash) &&
+      !book.deletedAt &&
+      isAbsOfflineCapable(book) &&
+      !book.absDownloadedAt,
+  );
+};
+
 // Calibre custom column names and values, flattened for searching (#4811).
 const getCalibreColumnsText = (item: Book) =>
   (item.metadata?.calibreColumns ?? [])
@@ -209,7 +231,44 @@ export const getBookSubjects = (book: Book): string[] => {
   return getContributorNames(book.metadata?.subject);
 };
 
-const getBookTags = (book: Book): string[] => normalizeValues(book.tags ?? []);
+export const getBookTags = (book: Book): string[] => normalizeValues(book.tags ?? []);
+
+export const getLibraryTags = (books: Book[]): string[] =>
+  normalizeValues(books.filter((book) => !book.deletedAt).flatMap(getBookTags)).sort((a, b) =>
+    a.localeCompare(b),
+  );
+
+export type TagSelectionState = 'all' | 'some' | 'none';
+
+export const getTagSelectionState = (books: Book[], tag: string): TagSelectionState => {
+  const count = books.filter((book) => getBookTags(book).includes(tag)).length;
+  return count === 0 ? 'none' : count === books.length ? 'all' : 'some';
+};
+
+// Applied to the selected books only, never to the rest of the library.
+export interface BookTagEdits {
+  add: string[];
+  remove: string[];
+}
+
+// Returns a new array where only the books whose tags actually change are new
+// objects. Tags merge with the metadata group on its own clock, so a changed
+// book stamps metadataUpdatedAt like a metadata edit does, leaving updatedAt
+// (the Date Read sort key) alone (#6414).
+export const applyBookTagEdits = (
+  books: Book[],
+  selectedHashes: string[],
+  edits: BookTagEdits,
+  now = Date.now(),
+): Book[] =>
+  books.map((book) => {
+    if (book.deletedAt || !selectedHashes.includes(book.hash)) return book;
+    const current = book.tags ?? [];
+    const kept = current.filter((tag) => !edits.remove.includes(tag.trim()));
+    const added = edits.add.filter((tag) => !kept.some((k) => k.trim() === tag));
+    if (kept.length === current.length && added.length === 0) return book;
+    return { ...book, tags: [...kept, ...added], metadataUpdatedAt: now };
+  });
 
 const getBookValuesText = (book: Book): string =>
   [...getBookTags(book), ...getBookSubjects(book)].join(' ');
@@ -260,10 +319,29 @@ const getBookReadRatio = (book: Book): number => {
   return current / total;
 };
 
+/** Percent read, or `null` when there's no progress to show. A total of 1
+ * (e.g. a fixed-layout book with one page) reads as finished (100%). */
+export const getProgressPercentage = (book: Book): number | null => {
+  if (!book.progress || !book.progress[1]) return null;
+  if (book.progress[1] === 1) return 100;
+  const percentage = Math.round((book.progress[0] / book.progress[1]) * 100);
+  return Math.max(0, Math.min(100, percentage));
+};
+
 export const getTimeRemainingMinutes = (
   book: Book,
   medianPageDurationSecs?: number,
 ): number | undefined => {
+  // An audiobook already knows how long it is: `progress` is [seconds,
+  // seconds] against `duration`, with no pages and no reading pace involved.
+  // Running it through the page estimate turned 7h of listening into 446h and
+  // floated every audiobook to the top of a time-remaining sort (#6224).
+  if (isAudiobook(book)) {
+    const total = book.duration ?? 0;
+    const secondsLeft = total - (book.progress?.[0] ?? 0);
+    if (!(secondsLeft > 0)) return undefined;
+    return Math.max(1, Math.round(secondsLeft / 60));
+  }
   const pagesLeft = book.progress ? book.progress[1] - book.progress[0] : undefined;
   if (!pagesLeft) return undefined;
   return convertPagesToTimeRemainingMinutes(pagesLeft, medianPageDurationSecs);
@@ -297,6 +375,19 @@ export const getDisplayedTimeRemaining = (
   return getTimeRemainingMinutes(book, medianPageDurationSecs);
 };
 
+// A tenth of an hour is still meaningful below 10h (1.6h); above it, a tenth
+// stops mattering once there are dozens of hours left.
+const roundedHours = (totalMinutes: number): number => {
+  const hours = totalMinutes / 60;
+  return hours < 10 ? Math.round(hours * 10) / 10 : Math.round(hours);
+};
+
+/** The library tile's short form: "45m left" under an hour, "1.6h left" / "11h left" above it. */
+export const formatTimeLeft = (totalMinutes: number, _: TranslationFunc): string =>
+  totalMinutes < 60
+    ? _('{{minutes}}m left', { minutes: totalMinutes })
+    : _('{{hours}}h left', { hours: roundedHours(totalMinutes) });
+
 /**
  * Remaining minutes for a shelf item, or `undefined` when its tile can show no
  * time at all — that includes every group, since a group tile renders no progress.
@@ -322,7 +413,13 @@ export const withTimeRemainingLast =
     return compare(a, b);
   };
 
-const compareBookByKey = (a: Book, b: Book, sortBy: string, uiLanguage: string): number => {
+const compareBookByKey = (
+  a: Book,
+  b: Book,
+  sortBy: string,
+  uiLanguage: string,
+  pageDurations?: Readonly<Record<string, number>>,
+): number => {
   switch (sortBy) {
     case LibrarySortByType.Title: {
       const aTitle = formatTitle(a.title);
@@ -375,8 +472,8 @@ const compareBookByKey = (a: Book, b: Book, sortBy: string, uiLanguage: string):
       return aDate - bDate;
     }
     case LibrarySortByType.TimeRemaining: {
-      const aTime = getDisplayedTimeRemaining(a);
-      const bTime = getDisplayedTimeRemaining(b);
+      const aTime = getDisplayedTimeRemaining(a, pageDurations?.[a.hash]);
+      const bTime = getDisplayedTimeRemaining(b, pageDurations?.[b.hash]);
       // Never subtract two Infinities here: NaN makes the comparator inconsistent
       // and Array.sort then scatters the no-time books through the shelf.
       if (aTime === undefined && bTime === undefined) return 0;
@@ -405,12 +502,16 @@ export const createBookSorter =
     secondarySortBy: LibrarySecondarySortByType = 'none',
     sortAscending: boolean = true,
     secondaryAscending: boolean = true,
+    pageDurations?: Readonly<Record<string, number>>,
   ) =>
   (a: Book, b: Book): number => {
-    const primary = compareBookByKey(a, b, sortBy, uiLanguage);
+    const primary = compareBookByKey(a, b, sortBy, uiLanguage, pageDurations);
     if (primary !== 0) return primary * (sortAscending ? 1 : -1);
     if (secondarySortBy === 'none') return 0;
-    return compareBookByKey(a, b, secondarySortBy, uiLanguage) * (secondaryAscending ? 1 : -1);
+    return (
+      compareBookByKey(a, b, secondarySortBy, uiLanguage, pageDurations) *
+      (secondaryAscending ? 1 : -1)
+    );
   };
 
 /**
@@ -697,6 +798,7 @@ export const createWithinGroupSorter =
     sortAscending: boolean = true,
     secondarySortBy: LibrarySecondarySortByType = 'none',
     secondaryAscending: boolean = true,
+    pageDurations?: Readonly<Record<string, number>>,
   ) =>
   (a: Book, b: Book): number => {
     const sortDirection = sortAscending ? 1 : -1;
@@ -715,18 +817,26 @@ export const createWithinGroupSorter =
       if (bIndex != null) return 1;
 
       // Neither has series index - fall back to global sort with direction
-      return createBookSorter(sortBy, uiLanguage)(a, b) * sortDirection;
+      return (
+        createBookSorter(sortBy, uiLanguage, 'none', true, true, pageDurations)(a, b) *
+        sortDirection
+      );
     }
 
     // For author and other non-series groupings: when a secondary key is provided,
     // use it as the within-group primary order with the global key as tiebreaker.
     if (secondarySortBy !== 'none') {
-      const bySecondary = compareBookByKey(a, b, secondarySortBy, uiLanguage);
+      const bySecondary = compareBookByKey(a, b, secondarySortBy, uiLanguage, pageDurations);
       if (bySecondary !== 0) return bySecondary * (secondaryAscending ? 1 : -1);
-      return createBookSorter(sortBy, uiLanguage)(a, b) * sortDirection;
+      return (
+        createBookSorter(sortBy, uiLanguage, 'none', true, true, pageDurations)(a, b) *
+        sortDirection
+      );
     }
 
-    return createBookSorter(sortBy, uiLanguage)(a, b) * sortDirection;
+    return (
+      createBookSorter(sortBy, uiLanguage, 'none', true, true, pageDurations)(a, b) * sortDirection
+    );
   };
 
 /**
@@ -896,6 +1006,8 @@ export type BookContextMenuItemId =
   | 'upload'
   | 'share'
   | 'sendNearby'
+  | 'offlineDownload'
+  | 'offlineRemove'
   | 'delete';
 
 /**
@@ -1009,7 +1121,7 @@ export const pickFresherMetadata = (
  */
 export const getBookContextMenuItemIds = (
   book: Book,
-  opts?: { localSend?: boolean },
+  opts?: { localSend?: boolean; absOffline?: boolean },
 ): BookContextMenuItemId[] => {
   const ids: BookContextMenuItemId[] = ['select', 'group'];
   ids.push(book.readingStatus === 'finished' ? 'markUnread' : 'markFinished');
@@ -1033,6 +1145,11 @@ export const getBookContextMenuItemIds = (
     if (book.downloadedAt || book.uploadedAt) ids.push('share');
     // LocalSend needs the file on this device; cloud-only books are excluded.
     if (opts?.localSend && (book.downloadedAt || book.filePath)) ids.push('sendNearby');
+  }
+  // Keep an Audiobookshelf book's media on the device (#6256); needs a native
+  // filesystem, so the caller enables it on Tauri only.
+  if (opts?.absOffline && isAbsOfflineCapable(book)) {
+    ids.push(book.absDownloadedAt ? 'offlineRemove' : 'offlineDownload');
   }
   ids.push('delete');
   return ids;

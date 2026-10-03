@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/023_replica_bookshelf.sql

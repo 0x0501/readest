@@ -206,6 +206,24 @@ export class ReaderPage extends BasePage {
   }
 
   /**
+   * Settings -> Control -> Keep Text Selected After Lookup. The row only shows
+   * while the quick action is Dictionary, so set that first.
+   */
+  async setKeepSelectionAfterLookup(keep: boolean): Promise<void> {
+    await this.openSettings();
+    await this.page.locator('[data-tab="Control"]').click();
+
+    const toggle = this.page
+      .locator('[data-setting-id="settings.control.keepSelectionAfterLookup"]')
+      .getByRole('checkbox')
+      .first();
+    await toggle.waitFor({ state: 'visible' });
+    await toggle.setChecked(keep);
+
+    await this.page.keyboard.press('Escape');
+  }
+
+  /**
    * Turn the in-page header band (the running section title) on or off from
    * the settings dialog. With it off the book text moves up to the compact top
    * margin, right under the header bar's hover strip.
@@ -414,13 +432,14 @@ export class ReaderPage extends BasePage {
    *
    * The instant quick action only fires for a single lookup term, and it fires
    * off the selection itself — so unlike {@link selectText} this waits for no
-   * popup, leaving the spec to say which one it expects.
+   * popup, leaving the spec to say which one it expects. Returns the word, so a
+   * spec can assert the selection is (still) exactly that.
    */
-  async selectWord(): Promise<void> {
+  async selectWord(): Promise<string> {
     await this.openTocChapter(3);
     const frame = await this.visibleSectionFrame();
 
-    await frame.locator('body').evaluate(() => {
+    return frame.locator('body').evaluate(() => {
       const paragraphs = Array.from(document.querySelectorAll('p'));
       const target = paragraphs.find((p) => (p.textContent ?? '').trim().length > 60);
       if (!target) {
@@ -446,6 +465,7 @@ export class ReaderPage extends BasePage {
       const selection = document.getSelection();
       selection?.removeAllRanges();
       selection?.addRange(range);
+      return range.toString();
     });
   }
 

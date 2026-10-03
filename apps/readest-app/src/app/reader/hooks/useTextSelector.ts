@@ -7,6 +7,7 @@ import { useBookDataStore } from '@/store/bookDataStore';
 import { getOSPlatform } from '@/utils/misc';
 import { eventDispatcher } from '@/utils/event';
 import { setSelectionSuppressed } from '@/utils/bridge';
+import { LINK_TOUCH_HOLD_CLASS, TEXT_SELECTED_CLASS } from '@/utils/style';
 import {
   focusCaretWindowPos,
   getCaretPointFromPoint,
@@ -36,6 +37,8 @@ import {
   setNativeDragFrozen,
   toDocPoint,
 } from '../utils/crossDocSelection';
+import { toParentViewportPoint } from '../utils/annotatorUtil';
+import { getContextMenuImage } from '../utils/iframeEventHandlers';
 
 // Instant-highlight quick action: on touch a plain tap and a swipe are both
 // page-turn gestures, so the highlight must not engage on pointer-down or it
@@ -410,6 +413,30 @@ export const useTextSelector = (
     setSelection((prev) => (prev ? { ...prev, handlesSuppressed: true } : prev));
   };
 
+  // Put back a selection the app dropped itself (#6213). The instant dictionary
+  // quick action deselects as it opens so no platform selection UI paints over
+  // the popup; when the lookup closes the word has to be selectable again, or
+  // there is no route left to highlighting or copying it (re-selecting with a
+  // quick action armed just opens the dictionary again).
+  //
+  // The re-add is programmatic, so the native grabbers stay away — the engine
+  // only draws them for a user-initiated selection — and the selectionchange
+  // echo is ignored. The published TextSelection is deliberately left untouched:
+  // a new object there would read as a fresh selection in the Annotator and run
+  // the quick action a second time.
+  const restoreSelectionRange = (range: Range) => {
+    const doc = range.startContainer.ownerDocument;
+    const sel = doc?.getSelection();
+    if (!sel || range.collapsed) return false;
+    guardProgrammaticSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    releaseProgrammaticSelection();
+    if (sel.rangeCount === 0) return false;
+    isTextSelected.current = true;
+    return true;
+  };
+
   const {
     isInstantAnnotationEnabled,
     handleInstantAnnotationPointerDown,
@@ -593,6 +620,9 @@ export const useTextSelector = (
   const handlePointerDown = (doc: Document, index: number, ev: PointerEvent) => {
     beginSelectionDrag();
     lastPointerType.current = ev.pointerType;
+    if (appService?.isAndroidApp && ev.pointerType === 'touch') {
+      doc.documentElement.classList.add(LINK_TOUCH_HOLD_CLASS);
+    }
     isPointerDown.current = true;
     clearCrossDoc();
     dragAnchorRef.current = null;
@@ -719,8 +749,8 @@ export const useTextSelector = (
     noteCorner(corner, (c) => inCorner(c, doc));
   };
 
-  // Android native touchmove — the pointer engagement signal during a native
-  // selection drag (the iframe pointermove doesn't fire there). The native x/y
+  // Native touchmove — the pointer engagement signal during a native
+  // selection drag when the webview withholds DOM moves. The native x/y
   // are physical device pixels relative to the window; convert to CSS px.
   const handleNativeTouchMove = (x: number, y: number, doc: Document) => {
     const dpr = window.devicePixelRatio || 1;
@@ -739,10 +769,12 @@ export const useTextSelector = (
     const armed = valid && pointerDragActive.current && selectionDragging.current;
     const corner = !viewSettings?.scrolled && armed ? pointerCornerNow() : null;
     noteCorner(corner, (c) => inCorner(c, doc));
+    return armed;
   };
 
-  const handlePointerCancel = (_doc: Document, _index: number, _ev: PointerEvent) => {
+  const handlePointerCancel = (doc: Document, _index: number, _ev: PointerEvent) => {
     isPointerDown.current = false;
+    doc.documentElement.classList.remove(LINK_TOUCH_HOLD_CLASS);
     mouseDoubleClickRef.current = null;
     clearCrossDoc();
     dragAnchorRef.current = null;
@@ -750,13 +782,12 @@ export const useTextSelector = (
     // (Android fires pointercancel when the browser starts scrolling) keeps its
     // native page-turn instead of being swallowed.
     cancelInstantHold();
-    // In the Android app pointercancel fires mid edge-drag (the browser takes
-    // over for scrolling) while the finger keeps going, and the native-touch
-    // bridge still reports the rest of the gesture — its touchend is the real
-    // release, so leave the pending turn and the drag latches alone there.
+    // In the mobile apps the native-touch bridge reports the real release,
+    // even when the webview cancels DOM pointer events during a selection
+    // handle drag. Keep the dwell and drag latches until that native release.
     // Everywhere else pointercancel IS the end: no pointerup or touchend
     // follows it, so this is the only chance to drop the turn and the edge mark.
-    if (!appService?.isAndroidApp) endSelectionDrag();
+    if (!appService?.isAndroidApp && !appService?.isIOSApp) endSelectionDrag();
     if (isInstantAnnotating.current) {
       stopInstantAnnotating();
       handleInstantAnnotationPointerCancel();
@@ -870,6 +901,7 @@ export const useTextSelector = (
 
   const handlePointerUp = async (doc: Document, index: number, ev?: PointerEvent) => {
     isPointerDown.current = false;
+    doc.documentElement.classList.remove(LINK_TOUCH_HOLD_CLASS);
     endSelectionDrag();
     const mouseDoubleClick = mouseDoubleClickRef.current;
     mouseDoubleClickRef.current = null;
@@ -962,6 +994,7 @@ export const useTextSelector = (
     }
   };
   const handleTouchStart = () => {
+    lastPointerType.current = 'touch';
     isTouchStarted.current = true;
     beginSelectionDrag();
     pendingTouchSelection.current = false;
@@ -982,6 +1015,8 @@ export const useTextSelector = (
   // Android native-touch bridge calls this without a doc (it never defers).
   const handleTouchEnd = (doc?: Document, index?: number) => {
     isTouchStarted.current = false;
+    isPointerDown.current = false;
+    cancelInstantHold();
     endSelectionDrag();
     if (!pendingTouchSelection.current) return;
     pendingTouchSelection.current = false;
@@ -996,6 +1031,14 @@ export const useTextSelector = (
       handleDismissPopup();
       isTextSelected.current = false;
     }
+  };
+
+  const handleTouchCancel = () => {
+    isTouchStarted.current = false;
+    isPointerDown.current = false;
+    pendingTouchSelection.current = false;
+    endSelectionDrag();
+    cancelInstantHold();
   };
 
   // The corner the latest pointer (pointermove / native touchmove) position is
@@ -1014,6 +1057,9 @@ export const useTextSelector = (
     (pointerDragActive.current && pointerCornerNow() === c) || caretCornerNow(doc) === c;
 
   const handleSelectionchange = (doc: Document, index: number) => {
+    const sel = doc.getSelection() as Selection;
+    doc.documentElement.classList.toggle(TEXT_SELECTED_CLASS, sel?.isCollapsed === false);
+
     // Echo of our own programmatic selection writes (handle suppression or a
     // custom-handle drag) — not user input.
     if (programmaticSelectionRef.current) return;
@@ -1025,7 +1071,6 @@ export const useTextSelector = (
     // selectionchange for touch/pen input to pick up native text selections.
     const isAndroid = osPlatform === 'android' && appService?.isAndroidApp;
     const isTouchInput = lastPointerType.current === 'touch' || lastPointerType.current === 'pen';
-    const sel = doc.getSelection() as Selection;
     const viewSettings = getViewSettings(bookKey);
 
     // Only a selection that moves while a pointer is dragging arms the turn: the
@@ -1132,6 +1177,16 @@ export const useTextSelector = (
       event.stopPropagation();
       return false;
     }
+    // Images get Readest's own menu: the webview's differs per engine and
+    // offers "Copy image address" for a blob URL nobody can use (#6558).
+    const getImage = getContextMenuImage(event as MouseEvent);
+    if (getImage) {
+      event.preventDefault();
+      const { clientX, clientY } = event as MouseEvent;
+      const doc = (event.target as Node).ownerDocument!;
+      const { x, y } = toParentViewportPoint(doc, clientX, clientY);
+      eventDispatcher.dispatch('image-context-menu', { bookKey, getImage, x, y });
+    }
     return;
   };
 
@@ -1144,7 +1199,8 @@ export const useTextSelector = (
       if (isTextSelected.current) {
         handleDismissPopup();
         isTextSelected.current = false;
-        view?.deselect();
+        // Look the view up now: the one captured at mount can be undefined (#6583).
+        getView(bookKey)?.deselect();
         return true;
       }
       if (isPopuped.current) {
@@ -1177,6 +1233,7 @@ export const useTextSelector = (
     handleTouchStart,
     handleTouchMove,
     handleTouchEnd,
+    handleTouchCancel,
     handleMouseDown,
     handlePointerDown,
     handlePointerMove,
@@ -1190,6 +1247,7 @@ export const useTextSelector = (
     handleContextmenu,
     dragSelectionTo,
     suppressNativeSelectionHandles,
+    restoreSelectionRange,
     // The shared corner auto-turn feed/cancel/subscribe, re-exposed so the range
     // editors can drive the same machine from their overlay handle drags.
     noteAutoTurnPoint,

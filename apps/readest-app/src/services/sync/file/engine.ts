@@ -24,6 +24,7 @@ import {
 } from './wire';
 import {
   isRemoteBookClockNewer,
+  isRemoteBookRowNewer,
   isRemoteBookMissingLocally,
   mergeBookConfig,
   mergeBookMetadata,
@@ -253,11 +254,10 @@ export class FileSyncEngine {
    * instance's sync session. The engine passes the FULL ancestor chain
    * (`/Readest`, `/Readest/books`, `/Readest/books/<hash>`) to `ensureDir` for
    * every book, so without this cache the shared parents get re-created on each
-   * book — a redundant round-trip, and a 409 "name already exists" flood on
-   * providers that create folders explicitly (OneDrive) or re-MKCOL (WebDAV).
-   * S3's `ensureDir` no-ops and Drive caches path->id internally, so both are
-   * unaffected. The engine is built per sync session, so the cache lifetime is
-   * one run.
+   * book — a redundant round-trip, and a 405 flood on WebDAV's re-MKCOL.
+   * S3's and OneDrive's `ensureDir` no-op and Drive caches path->id
+   * internally, so those are unaffected. The engine is built per sync session,
+   * so the cache lifetime is one run.
    */
   private readonly ensuredDirs = new Set<string>();
   /**
@@ -378,7 +378,13 @@ export class FileSyncEngine {
           return { uploaded: false, reason: 'remote-matches' };
         }
         await this.ensureDirs(dirs);
-        let ok = await this.provider.uploadStream(path, src.path);
+        let ok = false;
+        try {
+          ok = await this.provider.uploadStream(path, src.path);
+        } catch (e) {
+          // Authentication will not heal by retrying the same credentials.
+          if (e instanceof FileSyncError && e.code === 'AUTH_FAILED') throw e;
+        }
         if (!ok) {
           // Mirror the buffered path's one-shot retry: a parent may have been
           // recreated mid-PUT (409). Re-ensure directories and try once more.
@@ -554,6 +560,7 @@ export class FileSyncEngine {
     // overlap (a Full-Sync re-check both reconciles and re-pushes the same
     // book, and one book can push a config + cover + file).
     const syncedHashes = new Set<string>();
+    const failedConfigHashes = new Set<string>();
 
     const strategy = options.strategy || 'silent';
     const canPull = strategy !== 'send';
@@ -657,7 +664,9 @@ export class FileSyncEngine {
     const isLocalNewer = (book: Book): boolean => {
       const remote = remoteByHash.get(book.hash);
       if (!remote) return true;
-      return (book.updatedAt ?? 0) > (remote.updatedAt ?? 0);
+      // Arguments swapped on purpose: "local newer on any clock". A metadata /
+      // cover edit leaves updatedAt alone (#6414), and its cover still has to go.
+      return isRemoteBookClockNewer(remote, book);
     };
 
     // File-upload cursor (#4856): the index records which book FILES already
@@ -1221,6 +1230,7 @@ export class FileSyncEngine {
             }
           } catch (e) {
             noteAbort(e);
+            if (phase === 'upload-config') failedConfigHashes.add(book.hash);
             result.failures += 1;
             result.failedBooks.push({
               hash: book.hash,
@@ -1247,6 +1257,7 @@ export class FileSyncEngine {
     // never had, silently reviving it for every other device (#4860).
     if (canPush) {
       const indexByHash = new Map(allBooksMap);
+      const remoteAllByHash = new Map((remoteIndex?.books ?? []).map((b) => [b.hash, b] as const));
       if (remoteIndex?.books) {
         for (const rb of remoteIndex.books) {
           const local = indexByHash.get(rb.hash);
@@ -1291,6 +1302,18 @@ export class FileSyncEngine {
         }
       }
 
+      // A library row is also the config-upload cursor. Publishing the local
+      // timestamp after a failed config PUT/MKCOL would suppress every later
+      // incremental retry (#6184). Keep the last confirmed row, or omit a new
+      // book until its config has actually reached the server. Do this after
+      // GC so restoring an old tombstone cannot authorize deletion of a book
+      // whose newer local row kept it alive during reconciliation.
+      for (const hash of failedConfigHashes) {
+        const remote = remoteAllByHash.get(hash);
+        if (remote) indexByHash.set(hash, remote);
+        else indexByHash.delete(hash);
+      }
+
       // Carry the uploaded-file record forward so the next incremental sync
       // stays O(changed). Keep only hashes that still map to a live indexed
       // book so the set can't grow unbounded with tombstoned / evicted books.
@@ -1308,7 +1331,6 @@ export class FileSyncEngine {
       // invalidates every other device's etag-based change detection. The
       // check is deliberately conservative — any per-book activity, failure,
       // record change, or local row the remote lacks (or trails) pushes.
-      const remoteAllByHash = new Map((remoteIndex?.books ?? []).map((b) => [b.hash, b] as const));
       const indexDirty =
         remoteIndex === null ||
         syncedHashes.size > 0 ||
@@ -1321,7 +1343,9 @@ export class FileSyncEngine {
           if (!!r.deletedAt !== !!b.deletedAt) return true;
           if ((r.fileSyncDeletionRequestedAt ?? 0) !== (b.fileSyncDeletionRequestedAt ?? 0))
             return true;
-          return (b.updatedAt ?? 0) > (r.updatedAt ?? 0);
+          // Local row newer on any clock — a group-only edit leaves updatedAt
+          // alone (#6414) but still has to reach library.json.
+          return isRemoteBookRowNewer(r, b);
         });
 
       if (indexDirty) {

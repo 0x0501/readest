@@ -37,6 +37,7 @@ resolution is to delete it again, not to wire it up.
 | `DOWNLOAD_READEST_URL` and every caller (library menu, reader book menu, `/s`, `/o`) | Sent visitors of this deployment to install an app that cannot reach it |
 | `src/app/auth/components/**` (`AuthPanel`, `EmailPasswordAuth`) and their tests | Upstream's #5505 rewrite of the Supabase Auth UI. This fork's sign-in screen is its own, so nothing imports these — they arrive as orphans and hold dead translation keys alive |
 | `src/app/auth/utils/reservedAuthKeys.ts` | Nothing but `stubTranslation` anchors, keeping OTP and phone strings this fork's screens never render |
+| `.github/workflows/nightly.yml`, `.github/workflows/android-e2e.yml` | This fork ships the web build only. Upstream keeps editing both; `git rm` them again |
 
 ## What the fork does not maintain
 
@@ -100,6 +101,7 @@ of whatever upstream changed rather than discarding either side.
 | `.gitignore` | Adds `.dev.vars` | Union of both |
 | `src/pages/api/user/library.ts` | Upstream's Delete All Books route, rewritten in Drizzle | Port upstream's query changes; the UI is kept, so the route cannot be dropped |
 | `src/app/api/azure-translate/route.ts` | Takes `validateRequestUser` from `libs/auth/verify`, not `validateUserAndToken` from `utils/access` | Keep the swap. Any new route touching no other table wants the same one — it releases the connection after the JWKS lookup |
+| `src/app/api/crosspoint/**`, `src/libs/crosspoint.ts` | Upstream's device, catalog, and KOSync routes call Supabase. This fork queries through `src/libs/crosspointQueries.ts` and `validateUserAndToken` in `libs/auth/verify.ts`. Progress is stored as `[number, number]`, matching `books.progress` | Keep the Drizzle port. `024` foreign keys are re-pointed by `local_008_repoint_new_user_fks.sql`; do not leave `createSupabaseAdminClient` in these routes |
 
 ## Workflows: a mirror that upstream cannot conflict with
 
@@ -184,8 +186,13 @@ journal entries                = symlinks − skipped + local_*.sql + 000_base_s
 rows in drizzle.__drizzle_migrations = journal entries
 ```
 
-At the last sync: 18 upstream files, 18 symlinks, 21 journal entries (18 − 1 skipped
-016 + 4 local), 21 rows on a fresh database.
+At the last sync (upstream `b83fb4448`, 2026-10-03): 24 upstream files (`001`–`024`),
+24 symlinks, 33 journal entries (24 − 1 skipped `016` + `000_base_schema` + 9
+`local_*.sql`), 33 rows on a fresh database. `023_replica_bookshelf` adds
+`bookshelf` to the replica kind allowlist. `024_crosspoint_devices` creates
+`crosspoint_devices` and `crosspoint_device_codes` with foreign keys to
+`auth.users`; `local_008_repoint_new_user_fks.sql` re-points the public-schema
+ones onto `public."user"`.
 
 The one that matters most is not a count: **zero foreign keys may reference
 `auth.users`** once `local_002_repoint_user_fks.sql` has run.

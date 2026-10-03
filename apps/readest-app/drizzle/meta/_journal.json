@@ -211,6 +211,27 @@
       "when": 31,
       "tag": "local_007_better_auth_jwks",
       "breakpoints": false
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 32,
+      "tag": "023_replica_bookshelf",
+      "breakpoints": false
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 33,
+      "tag": "024_crosspoint_devices",
+      "breakpoints": false
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 34,
+      "tag": "local_008_repoint_new_user_fks",
+      "breakpoints": false
     }
   ]
 }

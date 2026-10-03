@@ -1,3 +1,4 @@
+import type { BookshelfState } from './bookshelf';
 import { CustomTheme } from '@/styles/themes';
 import { CustomFont } from '@/styles/fonts';
 import { CustomTexture } from '@/styles/textures';
@@ -148,6 +149,18 @@ export interface HardcoverSettings {
   // When true, progress + notes are pushed to Hardcover automatically as the
   // user reads (debounced) instead of only via the reader menu. Default OFF;
   // existing connected users (undefined) stay manual until they opt in.
+  autoSync?: boolean;
+}
+
+export interface PageboundSettings {
+  enabled: boolean;
+  /** Display only: the account the session belongs to. */
+  email: string;
+  /** Firebase refresh token; Pagebound has no API tokens or OAuth. */
+  refreshToken: string;
+  /** Pagebound's own API token, exchanged from a Firebase id token. */
+  apiToken: string;
+  lastSyncedAt: number;
   autoSync?: boolean;
 }
 
@@ -447,6 +460,10 @@ export interface SystemSettings {
    * otherwise land twice (issue #5979).
    */
   gamepadEnabled: boolean;
+  /** Mouse wheel down turns to the previous page in paginated mode (#6439). */
+  reverseWheelPaging: boolean;
+  /** Hide the e-ink library's Previous/Next buttons; keys still page. */
+  hideBookshelfPageButtons: boolean;
   alwaysShowStatusBar: boolean;
   openLastBooks: boolean;
   lastOpenBooks: string[];
@@ -454,6 +471,7 @@ export interface SystemSettings {
   savedBookCoverForLockScreen: string;
   savedBookCoverForLockScreenPath: string;
   discordRichPresenceEnabled: boolean;
+  bookshelves?: BookshelfState;
   libraryViewMode: LibraryViewModeType;
   librarySortBy: LibrarySortByType;
   librarySortAscending: boolean;
@@ -531,6 +549,7 @@ export interface SystemSettings {
   bookorbit: BookOrbitSettings;
   readwise: ReadwiseSettings;
   hardcover: HardcoverSettings;
+  pagebound: PageboundSettings;
   notion: NotionSettings;
   /** Optional by design — see {@link ReadestCloudSettings}. Never defaulted. */
   readestCloud?: ReadestCloudSettings;

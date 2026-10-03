@@ -51,7 +51,7 @@ interface BookmarkPullDownProps {
  */
 const BookmarkPullDown: React.FC<BookmarkPullDownProps> = ({ bookKey, ribbonHidden, slideRef }) => {
   const _ = useTranslation();
-  const { safeAreaInsets } = useThemeStore();
+  const { safeAreaInsets, isIPhoneDuo } = useThemeStore();
   const ribbonVisible = useReaderStore((s) => !!s.viewStates[bookKey]?.ribbonVisible);
 
   const [pulling, setPulling] = useState(false);
@@ -216,7 +216,7 @@ const BookmarkPullDown: React.FC<BookmarkPullDownProps> = ({ bookKey, ribbonHidd
         if (selection && !selection.isCollapsed) return; // don't hijack selection
         const store = useReaderStore.getState();
         const viewSettings = store.getViewSettings(bookKey);
-        if (!viewSettings) return;
+        if (!viewSettings || viewSettings.disablePullDownToBookmark) return;
         if (
           !canPullBookmark({
             scrolled: !!viewSettings.scrolled,
@@ -361,6 +361,9 @@ const BookmarkPullDown: React.FC<BookmarkPullDownProps> = ({ bookKey, ribbonHidd
           <div
             ref={ribbonBoxRef}
             className='bookmark-pull-ribbon absolute right-0 top-0 flex w-8 justify-center sm:w-6'
+            // Mirrors the resting Ribbon: keep clear of the Duo cover
+            // display's top-trailing camera cutout (#6307).
+            style={isIPhoneDuo ? { right: `${safeAreaInsets?.right || 0}px` } : undefined}
           >
             <svg
               ref={svgRef}

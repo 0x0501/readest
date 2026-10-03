@@ -456,6 +456,53 @@ export const jwks = pgTable('jwks', {
   crv: text(),
 });
 
+export const crosspointDevices = pgTable(
+  'crosspoint_devices',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    userId: uuid('user_id').notNull(),
+    keyHash: text('key_hash').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_crosspoint_devices_user').using(
+      'btree',
+      table.userId.asc().nullsLast().op('uuid_ops'),
+    ),
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [user.id],
+      name: 'crosspoint_devices_user_id_fkey',
+    }).onDelete('cascade'),
+    unique('crosspoint_devices_key_hash_key').on(table.keyHash),
+  ],
+);
+
+export const crosspointDeviceCodes = pgTable(
+  'crosspoint_device_codes',
+  {
+    deviceCodeHash: text('device_code_hash').primaryKey().notNull(),
+    userCode: text('user_code').notNull(),
+    userId: uuid('user_id'),
+    username: text(),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'string' }).notNull(),
+  },
+  (table) => [
+    index('idx_crosspoint_device_codes_expires').using(
+      'btree',
+      table.expiresAt.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [user.id],
+      name: 'crosspoint_device_codes_user_id_fkey',
+    }).onDelete('cascade'),
+    unique('crosspoint_device_codes_user_code_key').on(table.userCode),
+  ],
+);
+
 export const replicaKeys = pgTable(
   'replica_keys',
   {
@@ -683,7 +730,7 @@ export const replicas = pgTable(
     check('replicas_schema_version', sql`(schema_version >= 1) AND (schema_version <= 1000)`),
     check(
       'replicas_kind_allowlist',
-      sql`kind = ANY (ARRAY['dictionary'::text, 'font'::text, 'texture'::text, 'opds_catalog'::text, 'settings'::text])`,
+      sql`kind = ANY (ARRAY['dictionary'::text, 'font'::text, 'texture'::text, 'opds_catalog'::text, 'abs_server'::text, 'settings'::text, 'bookshelf'::text])`,
     ),
   ],
 );

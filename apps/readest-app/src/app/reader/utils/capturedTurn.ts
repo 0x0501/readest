@@ -1,4 +1,5 @@
 import { CurlGrab, PageCurlRenderer } from '@/utils/pageCurl';
+import { PagePushRenderer } from '@/utils/pagePush';
 import { PageSlideRenderer, type PageSlideSettleOptions } from '@/utils/pageSlide';
 
 /**
@@ -36,8 +37,13 @@ export interface CapturedTurnHost {
    * like a physical sheet, matching Apple Books.
    */
   getContentRect: () => DOMRect | null;
-  /** Native webview snapshot of `rect`, as compressed image bytes. */
-  capture: (rect: { x: number; y: number; width: number; height: number }) => Promise<ArrayBuffer>;
+  /** Native webview snapshot of `rect`, as compressed image bytes or a decoded bitmap. */
+  capture: (rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => Promise<ArrayBuffer | ImageBitmap>;
   /**
    * Temporarily remove non-interactive chrome from a native pixel capture.
    * Returns a cleanup that restores it after the platform snapshot resolves.
@@ -80,9 +86,16 @@ export interface CapturedTurnHost {
    * Resolves to the function that removes the layer again.
    */
   coverRegion?: (rect: CaptureRect) => Promise<() => Promise<void>>;
+  /**
+   * The live element a push turn translates in beside the outgoing capture
+   * (readest#6239): the reader view, already showing the incoming page
+   * underneath the overlay. Resolved per frame, so a replaced view is never
+   * left shifted.
+   */
+  getPushTarget?: () => HTMLElement | null;
 }
 
-export type CapturedTurnStyle = 'curl' | 'slide';
+export type CapturedTurnStyle = 'curl' | 'slide' | 'push';
 
 /** What the overlay draws each frame; PageCurlRenderer and PageSlideRenderer. */
 interface TurnRenderer {
@@ -177,6 +190,7 @@ const RELEASE_SETTLE_CONFIG = {
   // Keep a visible momentum lift without compressing a half-page tail into
   // the ~90ms range, which looks choppy even when every display frame lands.
   slide: { minSpeed: 0.2, maxSpeed: 1, maxPlaybackRate: 2 },
+  push: { minSpeed: 0.2, maxSpeed: 1, maxPlaybackRate: 2 },
   curl: { minSpeed: 0.3, maxSpeed: 1.5, maxPlaybackRate: 1.5 },
 } as const satisfies Record<
   CapturedTurnStyle,
@@ -201,6 +215,13 @@ const sameCaptureRect = (a: CaptureRect, b: CaptureRect) =>
   Math.abs(a.width - b.width) < 0.5 &&
   Math.abs(a.height - b.height) < 0.5;
 
+// No mime: the platforms return different formats (PNG on macOS, JPEG
+// elsewhere) and the decoder sniffs the bytes.
+const decodeCapture = (image: ArrayBuffer | ImageBitmap) =>
+  image instanceof ArrayBuffer ? createImageBitmap(new Blob([image])) : Promise.resolve(image);
+const discardCapture = (image: ArrayBuffer | ImageBitmap | null) => {
+  if (image && !(image instanceof ArrayBuffer)) image.close();
+};
 const currentDpr = () => globalThis.devicePixelRatio || 1;
 
 // A strictly zero-opacity layer can be skipped by mobile compositors. Keep the
@@ -818,7 +839,7 @@ export class CapturedPageTurn {
       height: rect.height,
     };
     const uncover = await this.#host.coverRegion!(inner);
-    let image: ArrayBuffer | null = null;
+    let image: ArrayBuffer | ImageBitmap | null = null;
     try {
       if (this.#active !== active || this.#host.isCaptureAllowed?.() === false) return;
       active.overlay.style.clipPath = active.rendererRtl ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)';
@@ -840,8 +861,11 @@ export class CapturedPageTurn {
       await waitForPaint();
       await uncover();
     }
-    if (!image || this.#active !== active || this.#host.isCaptureAllowed?.() === false) return;
-    const bitmap = await createImageBitmap(new Blob([image]));
+    if (!image || this.#active !== active || this.#host.isCaptureAllowed?.() === false) {
+      discardCapture(image);
+      return;
+    }
+    const bitmap = await decodeCapture(image);
     try {
       if (this.#active !== active || this.#host.isCaptureAllowed?.() === false) return;
       active.renderer.setIncoming?.(bitmap);
@@ -975,7 +999,7 @@ export class CapturedPageTurn {
       await restorePixels?.();
       return null;
     }
-    let image: ArrayBuffer;
+    let image: ArrayBuffer | ImageBitmap;
     try {
       image = await this.#host.capture(rect);
     } finally {
@@ -987,11 +1011,10 @@ export class CapturedPageTurn {
       !isStillValid() ||
       (discardWhenStale && epoch !== this.#captureEpoch)
     ) {
+      discardCapture(image);
       return null;
     }
-    // No mime: the platforms return different formats (PNG on macOS,
-    // JPEG on iOS/Android) and the decoder sniffs the bytes.
-    const bitmap = await createImageBitmap(new Blob([image]));
+    const bitmap = await decodeCapture(image);
     const backdrop = await backdropPromise;
     if (
       this.#disposed ||
@@ -1010,7 +1033,9 @@ export class CapturedPageTurn {
     const renderer: TurnRenderer =
       style === 'slide'
         ? new PageSlideRenderer()
-        : new PageCurlRenderer({ preserveDrawingBuffer: false });
+        : style === 'push'
+          ? new PagePushRenderer(() => this.#host.getPushTarget?.() ?? null)
+          : new PageCurlRenderer({ preserveDrawingBuffer: false });
     overlay.setAttribute('aria-hidden', 'true');
     overlay.dataset['capturedTurnPrepared'] = String(preMount);
     Object.assign(overlay.style, {

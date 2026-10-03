@@ -15,6 +15,7 @@ import {
   getGroupDisplayName,
   expandBookshelfSelection,
   selectDownloadableBooks,
+  selectAbsOfflineBooks,
   buildGroupNameUpdatedAt,
   resolveCurrentShelfBooks,
   withTimeRemainingLast,
@@ -1493,6 +1494,36 @@ describe('selectDownloadableBooks', () => {
   });
 });
 
+describe('selectAbsOfflineBooks', () => {
+  // Bulk Download in select mode keeps Audiobookshelf audiobooks on the
+  // device (#6256), the same action as the per-book "Download for Offline".
+  it('picks ABS audiobooks not yet downloaded for offline', () => {
+    const abs = createMockBook({ hash: 'abs', format: 'ABS' });
+    const offline = createMockBook({ hash: 'offline', format: 'ABS', absDownloadedAt: 100 });
+    const podcast = createMockBook({ hash: 'podcast', format: 'ABS', absMediaType: 'podcast' });
+    const epub = createMockBook({ hash: 'epub', format: 'EPUB', uploadedAt: 100 });
+    const gone = createMockBook({ hash: 'gone', format: 'ABS', deletedAt: 300 });
+    const books = [abs, offline, podcast, epub, gone];
+
+    expect(
+      selectAbsOfflineBooks(
+        books.map((b) => b.hash),
+        books,
+        books,
+      ),
+    ).toEqual([abs]);
+  });
+
+  it('expands a selected group into its ABS audiobooks', () => {
+    const abs = createMockBook({ hash: 'abs', format: 'ABS', groupName: 'Audio' });
+    const items: (Book | BooksGroup)[] = [
+      { id: 'group-audio', name: 'Audio', displayName: 'Audio', books: [abs], updatedAt: 0 },
+    ];
+
+    expect(selectAbsOfflineBooks(['group-audio'], items, [abs])).toEqual([abs]);
+  });
+});
+
 describe('buildGroupNameUpdatedAt', () => {
   it('takes the max updatedAt across books in each direct group', () => {
     const books = [
@@ -1824,5 +1855,49 @@ describe('withTimeRemainingLast', () => {
   it('leaves other sorts untouched', () => {
     const sorter = withTimeRemainingLast<Book>(LibrarySortByType.Title, () => -1);
     expect(sorter(finished, reading)).toBe(-1);
+  });
+});
+
+describe('time remaining uses each book’s measured pace (#6318)', () => {
+  const slow = createMockBook({ hash: 'slow', title: 'Same', progress: [10, 20] });
+  const fast = createMockBook({ hash: 'fast', title: 'Same', progress: [10, 30] });
+  const paces = { slow: 120, fast: 15 };
+
+  it.each([true, false])('matches the displayed minutes, ascending=%s', (ascending) => {
+    const sorter = createBookSorter(
+      LibrarySortByType.TimeRemaining,
+      'en',
+      'none',
+      ascending,
+      true,
+      paces,
+    );
+    expect([slow, fast].sort(sorter).map((b) => b.hash)).toEqual(
+      ascending ? ['fast', 'slow'] : ['slow', 'fast'],
+    );
+  });
+
+  it('uses measured pace for secondary and within-group sorting too', () => {
+    expect(
+      createBookSorter(
+        LibrarySortByType.Title,
+        'en',
+        LibrarySortByType.TimeRemaining,
+        true,
+        true,
+        paces,
+      )(slow, fast),
+    ).toBeGreaterThan(0);
+    expect(
+      createWithinGroupSorter(
+        LibraryGroupByType.Author,
+        LibrarySortByType.Title,
+        'en',
+        true,
+        LibrarySortByType.TimeRemaining,
+        true,
+        paces,
+      )(slow, fast),
+    ).toBeGreaterThan(0);
   });
 });

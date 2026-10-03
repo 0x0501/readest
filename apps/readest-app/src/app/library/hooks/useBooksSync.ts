@@ -16,6 +16,7 @@ import {
 } from '@/services/sync/cloudSyncProvider';
 import { isFeedBook } from '@/services/rss/feedBookUrl';
 import { ensureFeedBookCover } from '@/services/rss/feedBook';
+import { fetchAbsBookCover } from '@/services/audiobookshelf/librarySync';
 import { runFileLibrarySyncPass } from '@/services/sync/file/runLibrarySync';
 import {
   pickFresherReadingStatus,
@@ -23,7 +24,7 @@ import {
   pickFresherCover,
   pickFresherMetadata,
 } from '@/app/library/utils/libraryUtils';
-import { getPrimaryLanguage, pickFresherGroup } from '@/utils/book';
+import { getBookChangedAt, getPrimaryLanguage, pickFresherGroup } from '@/utils/book';
 import { isAudiobook, parseAbsFilePath } from '@/utils/audiobook';
 
 export const useBooksSync = () => {
@@ -53,7 +54,7 @@ export const useBooksSync = () => {
       .filter(
         (book) =>
           !book.syncedAt ||
-          lastSyncedAtBooks < book.updatedAt ||
+          lastSyncedAtBooks < getBookChangedAt(book) ||
           lastSyncedAtBooks < (book.deletedAt ?? 0),
       )
       // book.filePath is a device-local absolute path used by the in-place
@@ -115,7 +116,7 @@ export const useBooksSync = () => {
           // many books it uploaded: peers read membership, tombstones and the
           // uploaded-file record from that one file. Reporting it as "N books
           // synced" is what let #5900 go unnoticed for so long.
-          fileSucceeded = result !== null && !result.indexPushFailed;
+          fileSucceeded = result !== null && !result.indexPushFailed && !result.failures;
           fileSynced = result?.booksSynced ?? 0;
         }
 
@@ -319,6 +320,15 @@ export const useBooksSync = () => {
     );
 
     const processNewBook = async (newBook: Book) => {
+      // An ABS book's cover is not in cloud storage either; fetch it from its
+      // Audiobookshelf server so the book is shelved with its cover, not a
+      // placeholder waiting for the next ABS cover backfill. Best effort: a
+      // throw here would reject the batch and drop every new book in it.
+      if (appService) {
+        await fetchAbsBookCover(appService, newBook).catch((error) => {
+          console.warn('ABS cover fetch failed; shelving without it:', error);
+        });
+      }
       // A feed book has no cover in cloud storage; its cover is derived from the
       // feed descriptor, so this device regenerates the same image locally.
       newBook.coverImageUrl =

@@ -68,12 +68,12 @@ const Reader: React.FC<{ ids?: string }> = ({ ids }) => {
   const { getIsNotebookVisible, setNotebookVisible } = useNotebookStore();
   const { isDarkMode, systemUIAlwaysHidden, isRoundedWindow } = useThemeStore();
 
-  useTheme({
+  const { onUpdateInsets } = useTheme({
     systemUIVisible: settings.alwaysShowStatusBar,
     appThemeColor: 'base-100',
     themeScope: 'reader',
   });
-  useScreenWakeLock(settings.screenWakeLock, appService?.hasWindow);
+  useScreenWakeLock(settings.screenWakeLock, appService?.hasWindow, appService?.isIOSApp);
   useScreenBrightness();
   useTransferQueue(libraryLoaded, 5000);
   // Reader needs dictionaries for word-lookup, fonts for rendering, and
@@ -142,7 +142,12 @@ const Reader: React.FC<{ ids?: string }> = ({ ids }) => {
     if (!appService?.isMobileApp) return;
     const systemUIVisible = !!hoveredBookKey || settings.alwaysShowStatusBar;
     const visible = !!(systemUIVisible && !systemUIAlwaysHidden);
-    setSystemUIVisibility({ visible, darkMode: isDarkMode });
+    setSystemUIVisibility({ visible, darkMode: isDarkMode }).then(() => {
+      // iPhone Duo's status bar carries a side inset of its own (its strip):
+      // re-read it so the toolbar chrome clears the strip. Other devices never
+      // re-read here.
+      if (useThemeStore.getState().isIPhoneDuo) onUpdateInsets();
+    });
     if (visible) {
       showSystemUI();
     } else {

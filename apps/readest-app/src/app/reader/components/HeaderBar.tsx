@@ -19,7 +19,7 @@ import { getHighlightColorHex } from '../utils/annotatorUtil';
 import { annotationToolQuickActions } from './annotator/AnnotationTools';
 import { AnnotationToolType } from '@/types/annotator';
 import { saveViewSettings } from '@/helpers/settings';
-import { getHeaderTriggerHeight } from '@/utils/insets';
+import { getHeaderTriggerHeight, getHorizontalInsetStyle } from '@/utils/insets';
 import { getBookDataAttributes } from '@/utils/book';
 import { isForcedMobileLayout } from '../utils/mobileLayout';
 import { HighlighterIcon } from '@/components/HighlighterIcon';
@@ -64,7 +64,7 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
   const { isTrafficLightVisible } = useTrafficLight(headerRef);
   const { trafficLightInFullscreen, setTrafficLightVisibility } = useTrafficLightStore();
   const { bookKeys, hoveredBookKey } = useReaderStore();
-  const { isDarkMode, systemUIVisible, statusBarHeight } = useThemeStore();
+  const { isDarkMode, systemUIVisible, statusBarHeight, isIPhoneDuo } = useThemeStore();
   const { isSideBarVisible, getIsSideBarVisible } = useSidebarStore();
   const { getView, getViewSettings, setHoveredBookKey } = useReaderStore();
   const { getBookData, getConfig } = useBookDataStore();
@@ -119,13 +119,21 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
 
     if (hoveredBookKey === bookKey && isTopLeft) {
       setTrafficLightVisibility(true);
-    } else if (!hoveredBookKey) {
-      setTimeout(() => {
-        if (!getIsSideBarVisible()) {
-          setTrafficLightVisibility(false);
-        }
-      }, 100);
+      return;
     }
+    if (hoveredBookKey) return;
+    // The hide is deferred so a pointer crossing from one hover target to the
+    // next doesn't flash the buttons off. Cancel it on unmount: closing the
+    // last book writes `hoveredBookKey = null` and then routes to the library,
+    // so an uncancelled timer comes due after the library header has already
+    // asked for the buttons and hides them there (#6222). `getIsSideBarVisible`
+    // is why an open sidebar masked this — it short-circuits the same hide.
+    const timeout = setTimeout(() => {
+      if (!getIsSideBarVisible()) {
+        setTrafficLightVisibility(false);
+      }
+    }, 100);
+    return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appService, hoveredBookKey]);
 
@@ -153,7 +161,7 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
   const insets = window.innerWidth < 640 ? screenInsets : gridInsets;
   const isHeaderVisible = hoveredBookKey === bookKey || isDropdownOpen;
   const isMobile = appService?.isMobile || window.innerWidth < 640;
-  const forceMobileLayout = isForcedMobileLayout(appService?.isMobile);
+  const forceMobileLayout = isForcedMobileLayout(appService?.isMobile, isIPhoneDuo);
   const triggerHeight = viewSettings ? getHeaderTriggerHeight(gridInsets.top, viewSettings) : 0;
 
   useSpatialNavigation(headerRef, isHeaderVisible);
@@ -227,6 +235,9 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
           marginTop: systemUIVisible
             ? `${Math.max(insets.top, statusBarHeight)}px`
             : `${insets.top}px`,
+          // iPhone Duo's status-bar strip reports as a large left/right inset
+          // (#6307); clear it without losing the header's own ps-4/pr-4 padding.
+          ...getHorizontalInsetStyle(insets, isIPhoneDuo, 16),
         }}
         onFocus={() => !appService?.isMobile && setHoveredBookKey(bookKey)}
         onMouseLeave={(e) => {
@@ -341,6 +352,7 @@ const HeaderBar: React.FC<HeaderBarProps> = ({
             <ModalPortal showOverlay={false}>
               <SyncInfoDialog
                 isOpen={isMetaHashDialogOpen}
+                bookKey={bookKey}
                 metadata={bookData?.bookDoc?.metadata ?? bookData?.book?.metadata}
                 storedMetaHash={bookData?.book?.metaHash}
                 nativeLastSyncedAt={nativeLastSyncedAt}

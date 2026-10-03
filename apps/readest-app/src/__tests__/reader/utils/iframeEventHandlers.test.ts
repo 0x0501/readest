@@ -104,13 +104,37 @@ describe('iframeEventHandlers click gestures', () => {
     vi.advanceTimersByTime(100);
     handleMousedown('book-1', mouseEvent());
     handleMouseup('book-1', mouseEvent());
-    handleClick('book-1', doubleClickDisabled, false, false, mouseEvent());
+    handleClick('book-1', doubleClickDisabled, false, false, mouseEvent({ target: document.body }));
 
     vi.advanceTimersByTime(260);
 
     const types = postedTypes(postSpy);
     expect(types).toContain('iframe-double-click');
     expect(types).not.toContain('iframe-single-click');
+  });
+
+  test('a double-click reports where it landed in the window, not just in its section (#6583)', async () => {
+    const { handleClick, handleMousedown, handleMouseup } = await importHandlers();
+    const doubleClickDisabled = { current: false };
+    // In scroll mode the next chapter's section iframe sits below the current one.
+    const frame = document.createElement('iframe');
+    document.body.appendChild(frame);
+    frame.getBoundingClientRect = () =>
+      ({ left: 20, top: 300, width: 800, height: 600 }) as DOMRect;
+    const target = frame.contentDocument!.body;
+
+    for (let i = 0; i < 2; i++) {
+      handleMousedown('book-1', mouseEvent({ target }));
+      handleMouseup('book-1', mouseEvent({ target }));
+      handleClick('book-1', doubleClickDisabled, false, false, mouseEvent({ target }));
+      vi.advanceTimersByTime(100);
+    }
+
+    const message = postSpy.mock.calls
+      .map((call: unknown[]) => call[0] as Record<string, unknown>)
+      .find((m: Record<string, unknown>) => m['type'] === 'iframe-double-click');
+    expect(message).toMatchObject({ clientX: 100, clientY: 100, windowX: 120, windowY: 400 });
+    frame.remove();
   });
 
   test('iframe shortcuts are consumed synchronously or fall back to reader events', async () => {
@@ -237,15 +261,48 @@ describe('single-tap opens image gallery / table zoom in reflowable books (#4584
     expect(media['html']).toBe(table.outerHTML);
   });
 
-  test('fixed-layout: tap on an image still posts iframe-single-click (tap turns page)', async () => {
+  test('fixed-layout: tap on an image keeps tap-to-turn, carrying the image for the center tap', async () => {
     const handlers = await importHandlers();
     const img = document.createElement('img');
     img.src = 'blob:http://localhost/abc';
 
     tap(handlers, true, img);
 
+    const messages = postedMessages();
+    expect(messages.map((m) => m['type'])).not.toContain('iframe-open-media');
+    const click = messages.find((m) => m['type'] === 'iframe-single-click')!;
+    expect(click['media']).toEqual({ elementType: 'image', src: img.src });
+  });
+
+  test('fixed-layout: a manga page drawn as an SVG <image> rides along too (#6563)', async () => {
+    const handlers = await importHandlers();
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const image = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    image.setAttributeNS(
+      'http://www.w3.org/1999/xlink',
+      'xlink:href',
+      'blob:http://localhost/page',
+    );
+    svg.appendChild(image);
+
+    tap(handlers, true, image);
+
+    const click = postedMessages().find((m) => m['type'] === 'iframe-single-click')!;
+    expect(click['media']).toEqual({ elementType: 'image', src: 'blob:http://localhost/page' });
+  });
+
+  test('fixed-layout: a linked image stays a link', async () => {
+    const handlers = await importHandlers();
+    const anchor = document.createElement('a');
+    anchor.href = '#page-12';
+    const img = document.createElement('img');
+    img.src = 'blob:http://localhost/abc';
+    anchor.appendChild(img);
+
+    tap(handlers, true, img);
+
     const types = postedMessages().map((m) => m['type']);
-    expect(types).toContain('iframe-single-click');
+    expect(types).not.toContain('iframe-single-click');
     expect(types).not.toContain('iframe-open-media');
   });
 
@@ -281,6 +338,49 @@ describe('single-tap opens image gallery / table zoom in reflowable books (#4584
 
     const types = postedMessages().map((m) => m['type']);
     expect(types).not.toContain('iframe-open-media');
+  });
+
+  describe('page-filling media leaves the tap to the page-turn zones (#6424)', () => {
+    // foliate publishes the page's content box on the root element.
+    beforeEach(() => {
+      document.documentElement.style.setProperty('--available-width', '1000');
+      document.documentElement.style.setProperty('--available-height', '2000');
+    });
+
+    afterEach(() => {
+      document.documentElement.style.removeProperty('--available-width');
+      document.documentElement.style.removeProperty('--available-height');
+    });
+
+    const sizedImage = (width: number, height: number) => {
+      const img = document.createElement('img');
+      img.src = 'blob:http://localhost/cover';
+      img.getBoundingClientRect = () => ({ width, height }) as DOMRect;
+      return img;
+    };
+
+    test('a full-bleed cover posts iframe-single-click carrying the media', async () => {
+      const handlers = await importHandlers();
+      const img = sizedImage(1000, 1700);
+
+      tap(handlers, false, img);
+
+      const messages = postedMessages();
+      expect(messages.map((m) => m['type'])).not.toContain('iframe-open-media');
+      const click = messages.find((m) => m['type'] === 'iframe-single-click')!;
+      expect(click['media']).toEqual({ elementType: 'image', src: img.src });
+    });
+
+    test('an inline illustration still opens the viewer', async () => {
+      const handlers = await importHandlers();
+      const img = sizedImage(600, 400);
+
+      tap(handlers, false, img);
+
+      const types = postedMessages().map((m) => m['type']);
+      expect(types).toContain('iframe-open-media');
+      expect(types).not.toContain('iframe-single-click');
+    });
   });
 });
 
@@ -584,5 +684,73 @@ describe('iframeEventHandlers touch forwarding', () => {
       .map((call: unknown[]) => call[0] as { type: string; screenX?: number })
       .filter((message: { type: string }) => message.type === 'iframe-single-click');
     expect(singleClicks).toEqual([expect.objectContaining({ screenX: 210 })]);
+  });
+});
+
+describe('handleWheel on a fit-width PDF page (#6552)', () => {
+  // The fixed-layout host that scrolls a tall page, as seen from the page iframe.
+  const host = { localName: 'foliate-fxl', scrollTop: 0, scrollHeight: 1200, clientHeight: 500 };
+  const wheelEvent = (deltaY: number) =>
+    ({
+      deltaY,
+      deltaX: 0,
+      deltaMode: 0,
+      currentTarget: { defaultView: { frameElement: { getRootNode: () => ({ host }) } } },
+    }) as unknown as WheelEvent;
+
+  const nativeScrollY = async (deltaY: number) => {
+    const { handleWheel } = await importHandlers();
+    const spy = vi.spyOn(window, 'postMessage').mockImplementation(() => {});
+    handleWheel('book-1', wheelEvent(deltaY));
+    const data = spy.mock.calls.at(-1)![0] as { nativeScrollY: boolean };
+    spy.mockRestore();
+    return data.nativeScrollY;
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    host.scrollTop = 0;
+    host.scrollHeight = 1200;
+  });
+
+  test('a tick the page can still scroll is native scrolling', async () => {
+    expect(await nativeScrollY(100)).toBe(true);
+  });
+
+  test('a tick at the edge the page already sat at is not', async () => {
+    const { handleWheel } = await importHandlers();
+    const spy = vi.spyOn(window, 'postMessage').mockImplementation(() => {});
+    handleWheel('book-1', wheelEvent(-100));
+    handleWheel('book-1', wheelEvent(-100));
+    expect((spy.mock.calls.at(-1)![0] as { nativeScrollY: boolean }).nativeScrollY).toBe(false);
+    spy.mockRestore();
+  });
+
+  test('the first tick on a tall page is native scrolling even if it already hit the edge', async () => {
+    // No previous tick to compare with: Chromium may have scrolled this one
+    // to the bottom before dispatching it.
+    host.scrollTop = 700;
+    expect(await nativeScrollY(100)).toBe(true);
+  });
+
+  test('the first tick on a page that fits can turn it', async () => {
+    host.scrollHeight = 500;
+    expect(await nativeScrollY(100)).toBe(false);
+  });
+
+  test('a tick that already scrolled the page to its edge is still native scrolling', async () => {
+    // Chromium scrolls a passive wheel before dispatching it, so the listener
+    // can see the page at its bottom edge after the tick that moved it there.
+    const { handleWheel } = await importHandlers();
+    const spy = vi.spyOn(window, 'postMessage').mockImplementation(() => {});
+    host.scrollTop = 600;
+    handleWheel('book-1', wheelEvent(100));
+    host.scrollTop = 700;
+    handleWheel('book-1', wheelEvent(100));
+    expect((spy.mock.calls.at(-1)![0] as { nativeScrollY: boolean }).nativeScrollY).toBe(true);
+    // The next tick finds it unmoved at the edge, so it may turn the page.
+    handleWheel('book-1', wheelEvent(100));
+    expect((spy.mock.calls.at(-1)![0] as { nativeScrollY: boolean }).nativeScrollY).toBe(false);
+    spy.mockRestore();
   });
 });

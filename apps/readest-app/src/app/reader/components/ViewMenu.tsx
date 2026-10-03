@@ -39,6 +39,7 @@ import { getMaxInlineSize } from '@/utils/config';
 import { nextThemeMode } from '@/utils/ambientLight';
 import { saveViewSettings } from '@/helpers/settings';
 import { tauriHandleToggleFullScreen } from '@/utils/window';
+import { setCoverSpread } from '@/utils/spread';
 import MenuItem from '@/components/MenuItem';
 import Menu from '@/components/Menu';
 
@@ -131,7 +132,7 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
     config?.lastPushedAtNotes || 0,
   );
   // Every provider the user actually selected, not just Readest Cloud (#5910).
-  const syncStatus = useCloudSyncStatus(nativeLastSyncTime);
+  const syncStatus = useCloudSyncStatus(nativeLastSyncTime, bookKey);
 
   const handleSync = () => {
     // Only Readest Cloud needs an account. With a third-party backend
@@ -151,6 +152,11 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
     eventDispatcher.dispatch('push-file-sync', { bookKey });
     eventDispatcher.dispatch('pull-file-sync', { bookKey });
     eventDispatcher.dispatch('flush-kosync', { bookKey });
+    // A tap is a manual sync, so Hardcover pushes even with its Auto Sync off.
+    if (syncStatus.providers.some((p) => p.kind === 'hardcover')) {
+      eventDispatcher.dispatch('hardcover-push-progress', { bookKey, silent: true });
+      eventDispatcher.dispatch('hardcover-push-notes', { bookKey, silent: true });
+    }
     // BookOrbit may be in manual mode (#6029), where nothing is ever pending
     // and the flush above does nothing, so ask it for a real push.
     eventDispatcher.dispatch('push-kosync', { bookKey, provider: 'bookorbit' });
@@ -282,8 +288,7 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
     if (keepCoverSpread === viewSettings.keepCoverSpread) return;
     if (!bookData?.bookDoc?.sections?.length) return;
     viewSettings.keepCoverSpread = keepCoverSpread;
-    const coverSide = bookData.bookDoc.dir === 'rtl' ? 'right' : 'left';
-    bookData.bookDoc.sections[0]!.pageSpread = keepCoverSpread ? '' : coverSide;
+    setCoverSpread(bookData.bookDoc, keepCoverSpread);
     getView(bookKey)?.renderer.setAttribute('spread', spreadMode);
     setViewSettings(bookKey, viewSettings);
     saveViewSettings(envConfig, bookKey, 'keepCoverSpread', keepCoverSpread, true, false);
@@ -312,6 +317,7 @@ const ViewMenu: React.FC<ViewMenuProps> = ({
         'view-menu dropdown-content dropdown-right no-triangle z-20 mt-1.5 border',
         'bgcolor-base-200 shadow-2xl',
       )}
+      style={{ marginRight: appService?.isMobile || window.innerWidth < 640 ? '-36px' : 0 }}
       onCancel={() => setIsDropdownOpen?.(false)}
     >
       {bookData.bookDoc?.rendition?.layout === 'pre-paginated' && (

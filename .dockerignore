@@ -50,3 +50,22 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# The web image does not compile the desktop shell, the vendored Tauri
+# checkout, or the Cloudflare workers. Leaving them in the context sends
+# gigabytes to the daemon before the first instruction runs.
+packages/tauri
+packages/qcms
+packages/swift-rs
+packages/simplecc-wasm/OpenCC
+packages/simplecc-wasm/demo
+apps/readest-app/.claude
+apps/readest.koplugin
+apps/readest-calibre-plugin
+fastlane
+data/screenshots
+
+# Env files are runtime configuration. Next inlines NEXT_PUBLIC_* at build
+# time, so a developer .env copied into the context would bake into the image.
+**/.env
+**/.env.*

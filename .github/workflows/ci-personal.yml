@@ -5,13 +5,13 @@
 # gate, kept in its own file so upstream's workflows stay untouched and never
 # conflict on rebase.
 #
-# It is `workflow_call` rather than `push`: `deploy-personal.yml` invokes it and
-# depends on it, so the checks run exactly once per push and a red result stops
-# the deploy instead of merely reporting next to it.
+# The Worker deploy that used to call this is gone. The checks still run on a
+# push to `personal`. Publishing the container is a separate tag workflow.
 name: Personal CI
 
 on:
-  workflow_call:
+  push:
+    branches: [personal]
   workflow_dispatch:
 
 jobs:

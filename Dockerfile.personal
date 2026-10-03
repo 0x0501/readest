@@ -1,0 +1,134 @@
+# syntax=docker/dockerfile:1
+
+# Personal-fork image. Upstream's Dockerfile stays the Node self-host build so
+# a rebase does not have to re-decide this one.
+#
+# Next 16's production build runs on Node. The image that ships is Bun on
+# distroless: no shell, no package manager, no Node binary, no Postgres.
+# The database is whatever DATABASE_URL points at when the container starts.
+
+FROM node:24-slim@sha256:24dc26ef1e3c3690f27ebc4136c9c186c3133b25563ae4d7f0692e4d1fe5db0e AS build
+
+ENV PNPM_HOME="/pnpm" \
+    PATH="/pnpm:$PATH" \
+    NEXT_TELEMETRY_DISABLED=1 \
+    CI=true \
+    HUSKY=0 \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
+RUN corepack enable && corepack prepare pnpm@11.1.1 --activate
+
+WORKDIR /app
+
+# pnpm refuses to install unless every workspace package.json named by
+# pnpm-workspace.yaml is present. The workers and the browser extension are
+# not installed: --filter skips them, which keeps wrangler and workerd out
+# of the build.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
+COPY apps/readest-app/package.json ./apps/readest-app/package.json
+COPY apps/readest-app/workers/send-email/package.json ./apps/readest-app/workers/send-email/package.json
+COPY apps/readest-app/workers/share-og/package.json ./apps/readest-app/workers/share-og/package.json
+COPY apps/readest-app/extensions/send-to-readest/package.json ./apps/readest-app/extensions/send-to-readest/package.json
+COPY packages/foliate-js/package.json ./packages/foliate-js/package.json
+
+# The registry connection from a laptop is often slow enough that pnpm's
+# default timeout aborts the large tarballs (next, swc, pdfjs). Five retries
+# and a ten-minute timeout ride that out. Concurrency stays low so a burst
+# of parallel downloads does not reset the connection.
+RUN --mount=type=cache,id=pnpm-personal,sharing=locked,target=/pnpm/store \
+    pnpm install --frozen-lockfile --filter @readest/readest-app... --filter foliate-js \
+      --fetch-timeout 600000 \
+      --fetch-retries 5 \
+      --network-concurrency 4
+
+COPY apps/readest-app ./apps/readest-app
+COPY packages/foliate-js ./packages/foliate-js
+COPY packages/js-mdict ./packages/js-mdict
+COPY packages/simplecc-wasm/dist ./packages/simplecc-wasm/dist
+
+RUN test -f packages/foliate-js/vendor/pdfjs/annotation_layer_builder.css \
+    && test -d packages/simplecc-wasm/dist/web \
+    || { printf '\nERROR: foliate-js or simplecc-wasm is missing.\nRun: git submodule update --init packages/foliate-js packages/simplecc-wasm packages/js-mdict\n\n'; exit 1; }
+
+WORKDIR /app/apps/readest-app
+RUN pnpm setup-vendors
+
+# A missing build-arg arrives as an empty string. `??` does not treat that as
+# missing, so an empty NEXT_PUBLIC_* would replace the code's own fallback.
+# Unset the empty ones. NEXT_PUBLIC_APP_PLATFORM has to be web or next.config
+# emits a static export instead of the standalone server.
+# 5 GB fits an 8 GB Docker VM: webpack plus the typecheck stay under the
+# cgroup, and a higher cap gets the build SIGKILL'd. CI passes 8192.
+ARG NODE_BUILD_MEMORY=5120
+ARG NEXT_PUBLIC_WEB_BASE_URL
+ARG NEXT_PUBLIC_API_BASE_URL
+ARG NEXT_PUBLIC_OBJECT_STORAGE_TYPE
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
+ARG NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL
+ARG NEXT_PUBLIC_PUBLIC_STORAGE_BASE_URL
+ARG NEXT_PUBLIC_SEND_EMAIL_DOMAIN
+
+RUN --mount=type=cache,target=/app/apps/readest-app/.next/cache <<'EOF'
+set -eu
+for name in \
+  NEXT_PUBLIC_WEB_BASE_URL \
+  NEXT_PUBLIC_API_BASE_URL \
+  NEXT_PUBLIC_OBJECT_STORAGE_TYPE \
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY \
+  NEXT_PUBLIC_PUBLIC_ASSETS_BASE_URL \
+  NEXT_PUBLIC_PUBLIC_STORAGE_BASE_URL \
+  NEXT_PUBLIC_SEND_EMAIL_DOMAIN
+do
+  eval "value=\${$name-}"
+  if [ -z "$value" ]; then
+    unset "$name"
+  fi
+done
+export NEXT_PUBLIC_APP_PLATFORM=web
+export BUILD_STANDALONE=true
+export NODE_OPTIONS="--max-old-space-size=${NODE_BUILD_MEMORY}"
+# Turbopack does not run @serwist/next, so the build finishes without
+# public/sw.js and the installed app has no offline worker. Webpack is the
+# build the Cloudflare deploy already uses for that reason.
+pnpm exec next build --webpack
+
+find .next -name '*.map' -delete
+# Package directories only. A bare -name match also hits Next's own
+# dist/lib/typescript, and the server refuses to boot without that file.
+find .next/standalone -type d \( \
+    -path '*/node_modules/typescript' -o \
+    -path '*/node_modules/playwright' -o \
+    -path '*/node_modules/playwright-core' -o \
+    -path '*/node_modules/caniuse-lite' -o \
+    -path '*/node_modules/webpack' -o \
+    -path '*/node_modules/esbuild' -o \
+    -path '*/node_modules/@esbuild' -o \
+    -path '*/node_modules/@sentry' \
+  \) -prune > /tmp/standalone-prune
+while IFS= read -r dir; do
+  rm -rf "$dir"
+done < /tmp/standalone-prune
+test -f .next/standalone/apps/readest-app/server.js
+du -sh .next/standalone .next/static public
+EOF
+
+FROM oven/bun:1.4.2-distroless AS production
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    HOME=/tmp \
+    NEXT_RUNTIME=nodejs
+
+WORKDIR /app
+
+COPY --from=build --chown=65532:65532 /app/apps/readest-app/.next/standalone ./
+COPY --from=build --chown=65532:65532 /app/apps/readest-app/.next/static ./apps/readest-app/.next/static
+COPY --from=build --chown=65532:65532 /app/apps/readest-app/public ./apps/readest-app/public
+
+USER 65532:65532
+EXPOSE 3000
+
+# The base image's entrypoint is already `bun`.
+CMD ["apps/readest-app/server.js"]

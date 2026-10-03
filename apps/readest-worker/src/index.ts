@@ -1,5 +1,7 @@
 const ORIGIN_HOST = 'read.sumku.cc';
 
+const STATIC_PREFIXES = ['/_next/', '/vendor/', '/assets/', '/fonts/', '/images/', '/locales/'];
+
 const HOP_BY_HOP = [
   'keep-alive',
   'proxy-authenticate',
@@ -11,24 +13,31 @@ const HOP_BY_HOP = [
 
 export default {
   async fetch(request, env): Promise<Response> {
-    const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
-    let allowed = false;
-    try {
-      allowed = (await env.RATE_LIMITER.limit({ key: ip })).success;
-    } catch {
-      return new Response('Rate limiter unavailable', {
-        status: 503,
-        headers: { 'cache-control': 'no-store' },
-      });
-    }
-    if (!allowed) {
-      return new Response('Too Many Requests', {
-        status: 429,
-        headers: { 'retry-after': '60', 'cache-control': 'no-store' },
-      });
+    const incoming = new URL(request.url);
+    // Browser beacons such as /cdn-cgi/rum have no route on the private origin.
+    if (incoming.pathname.startsWith('/cdn-cgi/')) {
+      return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
     }
 
-    const incoming = new URL(request.url);
+    if (countsTowardRateLimit(incoming.pathname)) {
+      const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+      let allowed = false;
+      try {
+        allowed = (await env.RATE_LIMITER.limit({ key: ip })).success;
+      } catch {
+        return new Response('Rate limiter unavailable', {
+          status: 503,
+          headers: { 'cache-control': 'no-store' },
+        });
+      }
+      if (!allowed) {
+        return new Response('Too Many Requests', {
+          status: 429,
+          headers: { 'retry-after': '60', 'cache-control': 'no-store' },
+        });
+      }
+    }
+
     const target = new URL(`${incoming.pathname}${incoming.search}`, `http://${ORIGIN_HOST}`);
     const headers = new Headers(request.headers);
     headers.delete('host');
@@ -60,6 +69,14 @@ export default {
     }
   },
 } satisfies ExportedHandler<Env>;
+
+// One page, plus the service worker precache, is hundreds of files. Counting
+// those against 120/minute used up the budget before /auth or get-session ran.
+function countsTowardRateLimit(pathname: string): boolean {
+  if (STATIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return false;
+  const file = pathname.slice(pathname.lastIndexOf('/') + 1);
+  return !file.includes('.');
+}
 
 function withPublicLocation(response: Response): Response {
   const location = response.headers.get('location');

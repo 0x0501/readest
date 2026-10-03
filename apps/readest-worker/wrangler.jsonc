@@ -38,7 +38,8 @@
     }
   ],
   // namespace_id must be unique in this Cloudflare account.
-  // The counter lives in the targeted region, so each client IP gets 120 requests per minute.
+  // The counter lives in the targeted region. Each client IP gets 120 page and API
+  // requests per minute. Static files are not counted.
   "ratelimits": [
     {
       "name": "RATE_LIMITER",

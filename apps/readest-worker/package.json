@@ -1,0 +1,17 @@
+{
+  "name": "readest-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker that proxies read.sumku.cc to the private Readest instance",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "types": "wrangler types --include-runtime false",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^4.85.0"
+  }
+}

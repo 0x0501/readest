@@ -1,0 +1,39 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "readest-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-03",
+  "workers_dev": false,
+  "observability": {
+    "enabled": true
+  },
+  "placement": {
+    "mode": "targeted",
+    "region": "gcp:asia-east1"
+  },
+  "routes": [
+    {
+      "pattern": "read.sumku.cc/*",
+      "zone_name": "sumku.cc"
+    }
+  ],
+  "vpc_services": [
+    {
+      "binding": "VPC_SERVICE",
+      "service_id": "01a10066-b8cb-7763-88f2-8cdbe07a2e37",
+      "remote": true
+    }
+  ],
+  // namespace_id must be unique in this Cloudflare account.
+  // The counter lives in the targeted region, so each client IP gets 120 requests per minute.
+  "ratelimits": [
+    {
+      "name": "RATE_LIMITER",
+      "namespace_id": "48120",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    }
+  ]
+}

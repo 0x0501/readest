@@ -1,7 +1,7 @@
 # Personal fork only — not part of upstream CI.
 #
 # A push to `personal` does not build an image. Pushing one of these tags does,
-# and the image tag is the git tag unchanged:
+# and the image is always published as `latest`:
 #   web-2026.10.03
 #   web-2026.10.03.01
 #   web-2026-10.03.01
@@ -75,8 +75,8 @@ jobs:
               exit 1
               ;;
           esac
-          echo "name=${tag}" >> "$GITHUB_OUTPUT"
-          echo "Publishing ${{ steps.image.outputs.name }}:${tag}"
+          echo "name=latest" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${{ steps.image.outputs.name }}:latest from ${tag}"
 
       - name: Docker meta
         id: meta

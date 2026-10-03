@@ -1,0 +1,17 @@
+# Personal fork. The database stays outside this file.
+#
+# Put this directory on the VPS, fill in .env, then from this directory:
+#   docker compose pull
+#   docker compose up -d
+name: readest-personal
+
+services:
+  web:
+    image: ghcr.io/0x0501/readest:latest
+    platform: linux/amd64
+    container_name: readest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - .env

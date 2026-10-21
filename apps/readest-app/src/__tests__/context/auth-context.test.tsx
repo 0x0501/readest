@@ -90,6 +90,59 @@ describe('AuthContext', () => {
     expect(captured.at(-1)!.token).toBe('jwt-from-last-time');
   });
 
+  test.each([
+    0, 429, 503,
+  ])('keeps the saved login when the initial session check fails (%s)', (status) => {
+    window.localStorage.setItem('token', 'jwt-abc');
+    window.localStorage.setItem('user', JSON.stringify(SESSION.user));
+    useSessionMock.mockReturnValue({ data: null, isPending: true, error: null });
+    const { rerender } = render(<Wrapper tick={0} />);
+
+    useSessionMock.mockReturnValue({
+      data: null,
+      isPending: false,
+      error: { status, message: 'Session request failed' },
+    });
+    rerender(<Wrapper tick={1} />);
+
+    expect(captured.at(-1)!.user?.id).toBe('user-1');
+    expect(captured.at(-1)!.token).toBe('jwt-abc');
+    expect(window.localStorage.getItem('token')).toBe('jwt-abc');
+    expect(JSON.parse(window.localStorage.getItem('user')!).id).toBe('user-1');
+  });
+
+  test('clears a saved login when the server rejects the session with 401', () => {
+    window.localStorage.setItem('token', 'jwt-abc');
+    window.localStorage.setItem('user', JSON.stringify(SESSION.user));
+    useSessionMock.mockReturnValue({
+      data: null,
+      isPending: false,
+      error: { status: 401, message: 'Unauthorized' },
+    });
+
+    render(<Wrapper tick={0} />);
+
+    expect(captured.at(-1)!.user).toBeNull();
+    expect(captured.at(-1)!.token).toBeNull();
+    expect(window.localStorage.getItem('token')).toBeNull();
+    expect(window.localStorage.getItem('user')).toBeNull();
+  });
+
+  test('clears a saved login after a failed check recovers with no session', () => {
+    window.localStorage.setItem('token', 'jwt-abc');
+    window.localStorage.setItem('user', JSON.stringify(SESSION.user));
+    useSessionMock.mockReturnValue({ data: null, isPending: false, error: { status: 503 } });
+    const { rerender } = render(<Wrapper tick={0} />);
+    expect(captured.at(-1)!.user?.id).toBe('user-1');
+
+    useSessionMock.mockReturnValue({ data: null, isPending: false, error: null });
+    rerender(<Wrapper tick={1} />);
+
+    expect(captured.at(-1)!.user).toBeNull();
+    expect(window.localStorage.getItem('token')).toBeNull();
+    expect(window.localStorage.getItem('user')).toBeNull();
+  });
+
   test('refresh re-mints the token without touching the user', async () => {
     useSessionMock.mockReturnValue({ data: SESSION, isPending: false });
     render(<Wrapper tick={0} />);

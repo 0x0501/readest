@@ -27,7 +27,7 @@ const storedUser = (): AuthUser | null => {
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending, error } = authClient.useSession();
   const [token, setToken] = useState<string | null>(() =>
     typeof window === 'undefined' ? null : localStorage.getItem('token'),
   );
@@ -52,10 +52,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // The cookie is the session. The JWT is a derivative of it that API routes
   // verify against the JWKS, so it is minted whenever the session changes and
-  // dropped the moment it does not. `useSession` returns a stable object from
-  // its nanostore, so this does not re-run on unrelated renders.
+  // dropped when the server confirms there is no session. `useSession` returns
+  // a stable object from its nanostore, so unrelated renders do not re-run this.
   useEffect(() => {
-    if (isPending) return;
+    // A failed initial check also has `data: null`, including when reloading
+    // offline or hitting the auth rate limit. It does not invalidate the saved
+    // login. Only a successful empty response or an explicit 401 does that.
+    if (isPending || (error && error.status !== 401)) return;
     if (!session) {
       store(null, null);
       return;
@@ -67,7 +70,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       active = false;
     };
-  }, [isPending, session, store]);
+  }, [isPending, error, session, store]);
 
   const logout = useCallback(async () => {
     // Clear locally first: signOut is a round trip, and every gated screen reads

@@ -21,10 +21,17 @@ const PAGE_LOOKUP_DEBOUNCE_MS = 150;
 type TTSLyricsViewProps = {
   lines: string[];
   activeIndex: number;
+  // Lines inside the A-B repeat span.
+  loopRange: { start: number; end: number } | null;
   buffering: boolean;
   isEink: boolean;
   onGetLyricPage: (index: number) => Promise<PageInfo | null>;
   onPlayFrom: (index: number) => Promise<void>;
+  // Take whatever height the sheet gives instead of the fixed desktop height:
+  // set once the reader has sized the player with its corner grip.
+  fill?: boolean;
+  // Line text size in px, chosen with the player's A−/A+ buttons.
+  fontSize?: number;
 };
 
 // Lyric-style transcript of the chapter being read aloud (#5755): the spoken
@@ -33,8 +40,11 @@ type TTSLyricsViewProps = {
 // side, play button on the other — so a line can be picked the way a music
 // player picks a lyric, with playback moving only once the button is pressed.
 const TTSLyricsView = ({
+  fill = false,
+  fontSize = 14,
   lines,
   activeIndex,
+  loopRange,
   buffering,
   isEink,
   onGetLyricPage,
@@ -50,6 +60,8 @@ const TTSLyricsView = ({
   const centersRef = useRef<number[]>([]);
   const heightsRef = useRef<number[]>([]);
   const seekingRef = useRef(false);
+  // Whether the view has parked on the spoken line since it opened.
+  const followedRef = useRef(false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [seekIndex, setSeekIndex] = useState<number | null>(null);
@@ -88,7 +100,7 @@ const TTSLyricsView = ({
 
   useLayoutEffect(() => {
     measure();
-  }, [lines, halfHeight, measure]);
+  }, [lines, halfHeight, fontSize, measure]);
 
   // Watch the content box, not just the viewport: a narrower window re-wraps
   // every sentence and moves every centre, while the scroller's own height —
@@ -108,7 +120,8 @@ const TTSLyricsView = ({
   useEffect(() => {
     if (seekIndex !== null || pending !== null) return;
     const el = scrollerRef.current;
-    if (!el || activeIndex < 0) return;
+    // The spoken index can arrive before the chapter's lines load.
+    if (!el || activeIndex < 0 || activeIndex >= lines.length) return;
     // Nothing to aim at until the lines have been measured: scrolling on the
     // pre-measure pass would just land at zero.
     if (centersRef.current.length !== lines.length) return;
@@ -119,15 +132,18 @@ const TTSLyricsView = ({
       el.clientHeight,
     );
     // Glide between neighbouring sentences the way a music player does, but
-    // land a long move outright: opening onto the middle of a chapter, or
-    // jumping chapters, is thousands of pixels, and animating that is a blur
-    // past text nobody is reading. E-ink cannot animate at all — a smooth
+    // land the first move and any long one outright: opening the player, or
+    // jumping chapters, should show the spoken line at once, not a scroll
+    // through text nobody is reading. E-ink cannot animate at all — a smooth
     // scroll there is a stutter of full refreshes.
+    const opening = !followedRef.current;
+    followedRef.current = true;
     const distance = Math.abs(top - el.scrollTop);
     // Already parked there — re-issuing the scroll would only re-arm an
     // animation over nothing.
     if (distance < 1) return;
-    el.scrollTo?.({ top, behavior: distance > el.clientHeight * 2 || isEink ? 'auto' : 'smooth' });
+    const instant = opening || distance > el.clientHeight * 2 || isEink;
+    el.scrollTo?.({ top, behavior: instant ? 'auto' : 'smooth' });
   }, [activeIndex, seekIndex, pending, isEink, geometry, halfHeight, lines]);
 
   const clearIdleTimer = () => {
@@ -221,7 +237,7 @@ const TTSLyricsView = ({
   const fadeMask = 'linear-gradient(to bottom, transparent, #000 16%, #000 84%, transparent)';
 
   return (
-    <div className='relative min-h-24 w-full flex-1 sm:h-56 sm:flex-none'>
+    <div className={clsx('relative min-h-24 w-full flex-1', !fill && 'sm:h-56 sm:flex-none')}>
       <div
         ref={scrollerRef}
         className='no-scrollbar relative h-full overflow-y-auto overscroll-contain'
@@ -230,7 +246,11 @@ const TTSLyricsView = ({
         onTouchMove={handleGestureStart}
         onWheel={handleGestureStart}
       >
-        <div ref={contentRef} style={{ paddingTop: halfHeight, paddingBottom: halfHeight }}>
+        <div
+          ref={contentRef}
+          data-lyric-sheet
+          style={{ paddingTop: halfHeight, paddingBottom: halfHeight, fontSize }}
+        >
           {lines.map((line, index) => (
             <div
               // Positional within the section; there is no stabler id.
@@ -238,12 +258,13 @@ const TTSLyricsView = ({
               data-lyric-line
               aria-current={index === activeIndex ? 'true' : undefined}
               className={clsx(
+                'relative',
                 // The gutters are permanent so the seek row's page label and
                 // play button never land on the text, and so raising the row
                 // reflows nothing (which would invalidate the measured centres).
                 // The transparent border keeps every line the same height on
                 // e-ink, where only the current one draws a visible one.
-                'mx-auto rounded-xl border border-transparent px-14 py-2 text-center text-sm leading-snug',
+                'mx-auto rounded-xl border border-transparent px-14 py-2 text-center leading-snug',
                 // The line under the seek row is marked by weight alone — the
                 // page number and play button already flank it, and a box drawn
                 // round a five-row sentence reads as clutter.
@@ -255,6 +276,17 @@ const TTSLyricsView = ({
               )}
             >
               {line || ' '}
+              {loopRange && index >= loopRange.start && index <= loopRange.end && (
+                // A rule down the start gutter, lettered where the span begins
+                // and ends.
+                <span
+                  aria-hidden
+                  className='border-base-content/40 text-base-content/60 absolute inset-y-1 start-6 flex w-4 flex-col items-center justify-between border-s-2 ps-1 text-[10px] font-semibold leading-none'
+                >
+                  <span>{index === loopRange.start ? 'A' : ''}</span>
+                  <span>{index === loopRange.end ? 'B' : ''}</span>
+                </span>
+              )}
             </div>
           ))}
         </div>

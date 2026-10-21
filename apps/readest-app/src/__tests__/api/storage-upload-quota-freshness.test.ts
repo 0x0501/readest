@@ -33,7 +33,7 @@ vi.mock('@/libs/db', async (original) => {
 import handler from '@/pages/api/storage/upload';
 
 const QUOTA = 500 * 1024 * 1024;
-const upload = async (fileSize: number) => {
+const upload = async (fileSize: unknown) => {
   const req = {
     method: 'POST',
     headers: { authorization: 'Bearer token' },
@@ -56,8 +56,21 @@ beforeEach(() => {
 });
 
 describe('POST /api/storage/upload — live quota', () => {
+  it.each([-1, 1.5, '1', NaN, Infinity])('rejects an invalid size: %s', async (size) => {
+    const res = await upload(size);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(signedUrl).not.toHaveBeenCalled();
+  });
+
+  it('allows an existing file to be uploaded again without charging its size twice', async () => {
+    state.rows = [[{ fileSize: 100 }], [{ used: String(QUOTA) }]];
+    const res = await upload(100);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ usage: QUOTA }));
+  });
+
   it('rejects an upload that exceeds live usage despite a stale zero JWT claim', async () => {
-    state.rows = [[{ used: String(QUOTA) }]];
+    state.rows = [[], [{ id: 'reserved' }], [{ used: String(QUOTA + 10 * 1024 * 1024) }], []];
     const res = await upload(10 * 1024 * 1024);
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({ error: 'Insufficient storage quota', usage: QUOTA });
@@ -65,7 +78,7 @@ describe('POST /api/storage/upload — live quota', () => {
   });
 
   it('reports live usage and accepts a genuinely fitting upload', async () => {
-    state.rows = [[{ used: String(400 * 1024 * 1024) }], []];
+    state.rows = [[], [{ id: 'reserved' }], [{ used: String(410 * 1024 * 1024) }]];
     const res = await upload(10 * 1024 * 1024);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(

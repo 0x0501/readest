@@ -84,6 +84,7 @@ dependencies = [
  "tokio-util",
  "uuid 1.24.0",
  "walkdir",
+ "windows 0.61.3",
  "winreg 0.52.0",
  "zbus 5.17.0",
  "zip 2.4.2",
@@ -7177,9 +7178,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.43"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "log",
  "once_cell",
@@ -7241,9 +7242,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.13"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -8591,7 +8592,7 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 [[package]]
 name = "tauri"
 version = "2.11.5"
-source = "git+https://github.com/readest/tauri?branch=feat/cef#f238ea5b8e0c533423f2df9d81ac275fa3037446"
+source = "git+https://github.com/readest/tauri?branch=feat/cef#d6ef6e4c755228713e7358a27794a89cfd30969f"
 dependencies = [
  "anyhow",
  "bytes",
@@ -8639,7 +8640,7 @@ dependencies = [
 [[package]]
 name = "tauri-build"
 version = "2.6.3"
-source = "git+https://github.com/readest/tauri?branch=feat/cef#f238ea5b8e0c533423f2df9d81ac275fa3037446"
+source = "git+https://github.com/readest/tauri?branch=feat/cef#d6ef6e4c755228713e7358a27794a89cfd30969f"
 dependencies = [
  "anyhow",
  "cargo_toml",
@@ -8659,7 +8660,7 @@ dependencies = [
 [[package]]
 name = "tauri-codegen"
 version = "2.6.3"
-source = "git+https://github.com/readest/tauri?branch=feat/cef#f238ea5b8e0c533423f2df9d81ac275fa3037446"
+source = "git+https://github.com/readest/tauri?branch=feat/cef#d6ef6e4c755228713e7358a27794a89cfd30969f"
 dependencies = [
  "base64 0.22.1",
  "brotli",
@@ -8685,7 +8686,7 @@ dependencies = [
 [[package]]
 name = "tauri-macros"
 version = "2.6.3"
-source = "git+https://github.com/readest/tauri?branch=feat/cef#f238ea5b8e0c533423f2df9d81ac275fa3037446"
+source = "git+https://github.com/readest/tauri?branch=feat/cef#d6ef6e4c755228713e7358a27794a89cfd30969f"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -8698,7 +8699,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin"
 version = "2.6.3"
-source = "git+https://github.com/readest/tauri?branch=feat/cef#f238ea5b8e0c533423f2df9d81ac275fa3037446"
+source = "git+https://github.com/readest/tauri?branch=feat/cef#d6ef6e4c755228713e7358a27794a89cfd30969f"
 dependencies = [
  "anyhow",
  "glob",
@@ -9215,7 +9216,7 @@ dependencies = [
 [[package]]
 name = "tauri-runtime"
 version = "2.11.3"
-source = "git+https://github.com/readest/tauri?branch=feat/cef#f238ea5b8e0c533423f2df9d81ac275fa3037446"
+source = "git+https://github.com/readest/tauri?branch=feat/cef#d6ef6e4c755228713e7358a27794a89cfd30969f"
 dependencies = [
  "cookie",
  "dpi",
@@ -9236,7 +9237,7 @@ dependencies = [
 [[package]]
 name = "tauri-runtime-cef"
 version = "0.1.0"
-source = "git+https://github.com/readest/tauri?branch=feat/cef#f238ea5b8e0c533423f2df9d81ac275fa3037446"
+source = "git+https://github.com/readest/tauri?branch=feat/cef#d6ef6e4c755228713e7358a27794a89cfd30969f"
 dependencies = [
  "base64 0.22.1",
  "cef",
@@ -9273,7 +9274,7 @@ dependencies = [
 [[package]]
 name = "tauri-utils"
 version = "2.9.3"
-source = "git+https://github.com/readest/tauri?branch=feat/cef#f238ea5b8e0c533423f2df9d81ac275fa3037446"
+source = "git+https://github.com/readest/tauri?branch=feat/cef#d6ef6e4c755228713e7358a27794a89cfd30969f"
 dependencies = [
  "anyhow",
  "brotli",
@@ -9327,7 +9328,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand 2.4.1",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",

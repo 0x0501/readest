@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { withDb } from '@/libs/db';
-import { authenticateDevice, parseConfigProgress } from '@/libs/crosspoint';
+import { authenticateDevice, linkedBook, parseConfigProgress } from '@/libs/crosspoint';
 import { readBookConfig, userIdForDeviceKeyHash } from '@/libs/crosspointQueries';
 
 // GET /api/crosspoint/syncs/progress/:document — the XPointer Readest last
@@ -13,7 +13,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ docu
 
   const { document } = await params;
   try {
-    const data = await withDb((db) => readBookConfig(db, userId, document, true));
+    const data = await withDb(async (db) => {
+      const link = await linkedBook(db, userId, document);
+      if (link.error) throw link.error;
+      return readBookConfig(db, userId, link.bookHash ?? document, true);
+    });
     // CrossPoint treats 404 as "no remote progress yet".
     if (!data?.xpointer || !data.updatedAt) {
       return NextResponse.json({ message: 'Not found' }, { status: 404 });

@@ -689,8 +689,11 @@
     position: relative;
   }
 
+  /* An inset outline, not a border: a border narrows the bookshelf, and its
+     width-based column count then drops (8 to 6 at 1280px) mid-drag. */
   .drag-over {
-    border: 2px dashed #4a90e2 !important;
+    outline: 2px dashed #4a90e2 !important;
+    outline-offset: -2px;
     background-color: rgba(74, 144, 226, 0.1) !important;
     transition: all 0.2s ease-in-out;
   }
@@ -1069,6 +1072,11 @@
     display: none;
   }
 
+  /* an unfocused title-bar search field drags the window (WindowButtons) */
+  [data-window-drag] input.window-drag-input:not(:focus) {
+    cursor: default;
+  }
+
   [data-eink='true'] input.search-input,
   [data-eink='true'] input.search-input:focus {
     border-width: 1px !important;
@@ -1084,6 +1092,16 @@
   }
 
   [data-eink='true'] .dialog-overlay {
+    background-color: transparent !important;
+  }
+
+  /* Master scrim switch: a capture-blocking overlay must not paint a dark
+     veil on e-ink — the panel would refresh that large dark area and ghost
+     for seconds. Keyed on the shared capture-blocking attribute plus the
+     bg-black/<alpha> scrim classes (substring match covers every opacity and
+     the responsive variants), so themed fullscreen surfaces that paint their
+     own background (RSVP's inline style, the popup panel) survive. */
+  [data-eink='true'] [data-capture-blocking-overlay='true'][class*='bg-black/'] {
     background-color: transparent !important;
   }
 

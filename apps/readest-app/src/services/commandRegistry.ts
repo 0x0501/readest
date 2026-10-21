@@ -413,6 +413,12 @@ const colorPanelItems = [
     section: 'TTS',
   },
   {
+    id: 'settings.tts.customServices',
+    labelKey: _('Custom TTS Services'),
+    keywords: ['tts', 'custom', 'voice', 'api key', 'openai', 'kokoro', 'speech', 'byok'],
+    section: 'TTS',
+  },
+  {
     id: 'settings.tts.playerStyle',
     labelKey: _('TTS Player Style'),
     keywords: ['tts', 'player', 'mini', 'style', 'cover', 'full', 'minimal'],
@@ -592,6 +598,18 @@ const languagePanelItems = [
     id: 'settings.language.translationProvider',
     labelKey: _('Translation Service'),
     keywords: ['translation', 'provider', 'google', 'deepl', 'service'],
+    section: 'Translation',
+  },
+  {
+    id: 'settings.language.translationPrompt',
+    labelKey: _('Translation Prompt'),
+    keywords: ['translation', 'prompt', 'ai', 'llm', 'style'],
+    section: 'Translation',
+  },
+  {
+    id: 'settings.language.customTranslators',
+    labelKey: _('Custom Translators'),
+    keywords: ['translation', 'custom', 'api key', 'openai', 'deepseek', 'ollama', 'deepl', 'llm'],
     section: 'Translation',
   },
   {

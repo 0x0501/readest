@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql, sum } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { validateUserAndToken } from '@/libs/auth/verify';
 import { type Db, schema, withDb } from '@/libs/db';
@@ -43,6 +43,29 @@ export async function POST(request: Request, { params }: RouteParams) {
       return NextResponse.json(body, { status });
     }
     const { share } = result;
+    const { quota } = getStoragePlanData(jwt);
+    const quotaExceeded = async () => {
+      try {
+        const [row] = await db
+          .select({ used: sum(schema.files.fileSize) })
+          .from(schema.files)
+          .where(and(eq(schema.files.userId, user.id), isNull(schema.files.deletedAt)));
+        const usage = Number(row?.used ?? 0);
+        return usage > quota + STORAGE_QUOTA_GRACE_BYTES
+          ? NextResponse.json(
+              {
+                error: 'Insufficient storage quota',
+                code: 'quota_exceeded',
+                usage: usage - share.bookSize,
+                quota,
+              },
+              { status: 402 },
+            )
+          : null;
+      } catch {
+        return NextResponse.json({ error: 'Could not read storage usage' }, { status: 500 });
+      }
+    };
 
     // Idempotency: look up existing rows for the same (user_id, book_hash),
     // INCLUDING soft-deleted ones. file_key is unique globally, so an active
@@ -88,22 +111,20 @@ export async function POST(request: Request, { params }: RouteParams) {
         console.error('Share import restore-deleted-row failed:', error);
         return NextResponse.json({ error: 'Could not restore book' }, { status: 500 });
       }
+      const refused = await quotaExceeded();
+      if (refused) {
+        await db
+          .update(schema.files)
+          .set({ deletedAt: deletedRow.deletedAt })
+          .where(eq(schema.files.id, deletedRow.id));
+        return refused;
+      }
       return NextResponse.json({
         fileId: deletedRow.id,
         alreadyOwned: true,
         bookHash: share.bookHash,
         cfi: share.cfi,
       });
-    }
-
-    // Quota check before doing any byte-copy work. JWT-based but consistent
-    // with how the existing upload endpoint enforces it.
-    const { usage, quota } = getStoragePlanData(jwt);
-    if (usage + share.bookSize > quota + STORAGE_QUOTA_GRACE_BYTES) {
-      return NextResponse.json(
-        { error: 'Insufficient storage quota', code: 'quota_exceeded', usage, quota },
-        { status: 402 },
-      );
     }
 
     // Translate the sharer's file_keys into the recipient's namespace by
@@ -154,6 +175,12 @@ export async function POST(request: Request, { params }: RouteParams) {
     } catch (error) {
       console.error('Share import insert book row failed:', error);
       return NextResponse.json({ error: 'Could not import book' }, { status: 500 });
+    }
+
+    const refused = await quotaExceeded();
+    if (refused) {
+      await db.delete(schema.files).where(eq(schema.files.id, insertedBookId));
+      return refused;
     }
 
     try {

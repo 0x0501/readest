@@ -96,6 +96,21 @@ export function resolveCoverMerge(
     : { cover_hash: server.cover_hash, cover_updated_at: server.cover_updated_at };
 }
 
+/**
+ * A books row's page count, counted from the file at import (#6662): the row
+ * winner's value, else the other side's. Old clients, the KOReader and Calibre
+ * plugins, and devices that never counted the book push no page_count, so a
+ * row without one must never erase it.
+ */
+export function resolvePageCountMerge(
+  client: Pick<DBBook, 'page_count'>,
+  server: Pick<DBBook, 'page_count'>,
+  clientIsNewer: boolean,
+): number | null {
+  const [winner, loser] = clientIsNewer ? [client, server] : [server, client];
+  return winner.page_count ?? loser.page_count ?? null;
+}
+
 type BookMetadataFields = Pick<
   DBBook,
   'title' | 'author' | 'tags' | 'metadata' | 'metadata_updated_at'
@@ -720,6 +735,10 @@ export async function POST(req: NextRequest) {
                   | 'cover_updated_at'
                   | 'metadata'
                   | 'metadata_updated_at'
+                  | 'group_id'
+                  | 'group_name'
+                  | 'group_updated_at'
+                  | 'page_count'
                 >
               > &
               Pick<DBBook, 'title' | 'author' | 'tags'>;
@@ -729,6 +748,8 @@ export async function POST(req: NextRequest) {
             const cover = resolveCoverMerge(clientBook, serverBook);
             // The metadata group likewise merges on its own clock (issue #5438).
             const meta = resolveMetadataMerge(clientBook, serverBook, clientIsNewer);
+            const group = resolveGroupMerge(clientBook, serverBook, clientIsNewer);
+            const pageCount = resolvePageCountMerge(clientBook, serverBook, clientIsNewer);
             if (clientIsNewer) {
               // Client wins the row; graft the fresher status + cover +
               // metadata onto it (server's may be the newer one even though
@@ -742,6 +763,10 @@ export async function POST(req: NextRequest) {
               clientBook.tags = meta.tags;
               clientBook.metadata = meta.metadata;
               clientBook.metadata_updated_at = meta.metadata_updated_at;
+              clientBook.group_id = group.group_id;
+              clientBook.group_name = group.group_name;
+              clientBook.group_updated_at = group.group_updated_at;
+              clientBook.page_count = pageCount;
               return { update: clientBook };
             }
             // Only rewrite when a resolved field VALUE differs from the
@@ -753,7 +778,15 @@ export async function POST(req: NextRequest) {
             );
             const coverChanged = (cover.cover_hash ?? null) !== (serverBook.cover_hash ?? null);
             const metadataChanged = bookMetadataChanged(meta, serverBook);
-            if (statusChanged || coverChanged || metadataChanged) {
+            const groupChanged = bookGroupChanged(group, serverBook);
+            const pageCountChanged = pageCount !== (serverBook.page_count ?? null);
+            if (
+              statusChanged ||
+              coverChanged ||
+              metadataChanged ||
+              groupChanged ||
+              pageCountChanged
+            ) {
               // Server wins the row, but the client's status, cover and/or
               // metadata is the fresher one. Graft the fresher fields onto
               // the server row and leave updated_at untouched; the
@@ -771,6 +804,10 @@ export async function POST(req: NextRequest) {
               propagated.tags = meta.tags;
               propagated.metadata = meta.metadata;
               propagated.metadata_updated_at = meta.metadata_updated_at;
+              propagated.group_id = group.group_id;
+              propagated.group_name = group.group_name;
+              propagated.group_updated_at = group.group_updated_at;
+              propagated.page_count = pageCount;
               return { update: propagated };
             }
             return { keep: serverData };

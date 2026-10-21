@@ -2,7 +2,8 @@
 
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useAppRouter } from '@/hooks/useAppRouter';
 import { useEnv } from '@/context/EnvContext';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -10,7 +11,7 @@ import { useThemeStore } from '@/store/themeStore';
 import { useQuotaStats } from '@/hooks/useQuotaStats';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useUserActions } from '@/hooks/useUserActions';
-import { navigateToLibrary } from '@/utils/nav';
+import { navigateBackFromProfile } from '@/utils/nav';
 import { getPlanDetails } from './utils/plan';
 import { Toast } from '@/components/Toast';
 import Spinner from '@/components/Spinner';
@@ -27,7 +28,7 @@ import { SyncCategoriesSection } from './components/SyncCategoriesSection';
 
 const ProfilePage = () => {
   const _ = useTranslation();
-  const router = useRouter();
+  const router = useAppRouter();
   const { appService } = useEnv();
   const { token, user, refresh } = useAuth();
   const { safeAreaInsets, isRoundedWindow } = useThemeStore();
@@ -50,11 +51,12 @@ const ProfilePage = () => {
     if (isAuthenticated) return;
 
     const timer = setTimeout(() => {
-      router.push('/auth?redirect=/library');
+      const redirect = searchParams?.get('redirect') || '/library';
+      router.push(`/auth?redirect=${encodeURIComponent(redirect)}`);
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [mounted, user, token, appService, router]);
+  }, [mounted, user, token, appService, router, searchParams]);
 
   useTheme({ systemUIVisible: false });
 
@@ -73,7 +75,7 @@ const ProfilePage = () => {
     } else if (showPasskeyManager) {
       setShowPasskeyManager(false);
     } else {
-      navigateToLibrary(router);
+      navigateBackFromProfile(router, searchParams?.get('redirect'));
     }
   };
 

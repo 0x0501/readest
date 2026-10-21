@@ -19,7 +19,12 @@ import { isDialogueHighlightActive } from './dialogueHighlight';
 import { readStoredAmbientIsDarkMode } from './ambientLight';
 import { INLINE_FORMATTING_SELECTOR } from './inlineTags';
 import { getOSPlatform } from './misc';
-import { SCROLL_WRAPPER_CLASS, SCROLL_WRAPPER_FIT_CLASS } from './scrollable';
+import {
+  LINK_HIT_AREA_CLASS,
+  LINK_HIT_AREA_PX,
+  SCROLL_WRAPPER_CLASS,
+  SCROLL_WRAPPER_FIT_CLASS,
+} from './scrollable';
 
 /**
  * Build the resolved CSS font-family lists (serif / sans-serif / monospace)
@@ -78,6 +83,20 @@ export const getBaseFontFamily = (viewSettings: ViewSettings): string => {
     viewSettings.defaultCJKFont!,
   );
   return viewSettings.defaultFont!.toLowerCase() === 'serif' ? families.serif : families.sansSerif;
+};
+
+/**
+ * Both body font chains from the user's font settings, for top-level UI that
+ * offers a serif / sans-serif choice (the quote card).
+ */
+export const getFontFamilies = (viewSettings: ViewSettings) => {
+  const families = buildFontFamilyLists(
+    viewSettings.serifFont!,
+    viewSettings.sansSerifFont!,
+    viewSettings.monospaceFont!,
+    viewSettings.defaultCJKFont!,
+  );
+  return { serif: families.serif, sans: families.sansSerif };
 };
 
 /**
@@ -321,6 +340,9 @@ const getColorStyles = (
 ) => {
   const { bg, fg, primary, isDarkMode } = themeCode;
   const hasBackgroundTexture = !!backgroundTextureId && backgroundTextureId !== 'none';
+  // Over a background texture, Override Book Color still forces the text
+  // colors but fills backgrounds with transparent so the texture shows (#6712).
+  const overrideBg = hasBackgroundTexture ? 'transparent' : bg;
   const colorStyles = `
     html {
       --bg-texture-id: ${backgroundTextureId};
@@ -346,15 +368,18 @@ const getColorStyles = (
     }
     section, aside, blockquote, article, nav, header, footer, main, figure,
     div, p, font, h1, h2, h3, h4, h5, h6, li, span {
-      ${overrideColor && !hasBackgroundTexture ? `background-color: ${bg} !important;` : ''}
-      ${overrideColor && !hasBackgroundTexture ? `color: ${fg} !important;` : ''}
-      ${overrideColor && !hasBackgroundTexture ? `border-color: ${fg} !important;` : ''}
+      ${overrideColor ? `background-color: ${overrideBg} !important;` : ''}
+      ${overrideColor ? `color: ${fg} !important;` : ''}
+      ${overrideColor ? `border-color: ${fg} !important;` : ''}
     }
     pre, span { /* inline code blocks */
-      ${overrideColor ? `background-color: ${bg} !important;` : ''}
+      ${overrideColor ? `background-color: ${overrideBg} !important;` : ''}
     }
     a:any-link {
       ${overrideColor ? `color: ${primary} !important;` : isDarkMode ? `color: lightblue;` : ''}
+    }
+    /* left off hovered links, so a book's own a:hover style applies (#6859) */
+    a:any-link:where(:not(:hover)) {
       text-decoration: ${isEink ? 'underline' : 'none'};
     }
     body.pbg {
@@ -453,6 +478,8 @@ const getColorStyles = (
 
 export const LINK_TOUCH_HOLD_CLASS = 'link-touch-hold';
 export const TEXT_SELECTED_CLASS = 'text-selected';
+export { LINK_HIT_AREA_CLASS };
+export const MAX_ENLARGED_LINKS = 1000;
 
 const getPageLayoutStyles = (
   marginTop: number,
@@ -502,14 +529,14 @@ const getPageLayoutStyles = (
   figure > div:has(img) {
     height: auto !important;
   }
-  /* enlarge the clickable area of links */
-  a {
+  /* enlarge the clickable area of links, in documents opted in by applyLinkHitArea */
+  html.${LINK_HIT_AREA_CLASS} a {
     position: relative !important;
   }
-  a::before {
+  html.${LINK_HIT_AREA_CLASS} a::before {
     content: '';
     position: absolute;
-    inset: -10px;
+    inset: -${LINK_HIT_AREA_PX}px;
   }
   /* the enlarged area swallows the text around a link, so a selection dragged
      next to a footnote marker snaps away (#6566); set while text is selected */
@@ -651,6 +678,8 @@ const getPageLayoutStyles = (
 // Paragraph-scoped CSS controlled by the Paragraph section of the Layout
 // panel. Gated by BookStyle.useBookLayout: when true, this chunk is skipped
 // and the book's own paragraph formatting takes over.
+const CJK_LANGS = ['zh', 'ja', 'ko'];
+const CJK_LANG_SELECTOR = CJK_LANGS.map((lang) => `:lang(${lang})`).join(', ');
 const getParagraphLayoutStyles = (
   overrideLayout: boolean,
   paragraphMargin: number,
@@ -732,14 +761,11 @@ const getParagraphLayoutStyles = (
   dd.aligned-justify, div.aligned-justify {
     ${!justify && overrideLayout ? 'text-align: initial !important;' : ''};
   }
-  /* An image that is the paragraph's whole content must not take the indent:
-     sized to the column, it would overhang by the indent and paint a strip on
-     the next page (#6198). Linked images (<a><img>, <span><a><img>) included. */
-  p:has(> img:only-child), p:has(> span:only-child > img:only-child),
-  p:has(> a:only-child > img:only-child),
-  p:has(> span:only-child > a:only-child > img:only-child),
-  p:has(> img:not(.has-text-siblings)),
-  p:has(> a:first-child + img:last-child) {
+  /* An image that starts a paragraph must not take the indent: sized to the
+     column, it would overhang by the indent and paint a strip on the next page
+     (#6198). applyImageStyle marks such paragraphs; selectors can't see text,
+     so :only-child also matched a footnote icon inside text. */
+  p.leading-image {
     text-indent: initial !important;
   }
   blockquote[align="center"], div[align="center"],
@@ -749,7 +775,10 @@ const getParagraphLayoutStyles = (
   li p, ol p, ul p, td p {
     text-indent: initial !important;
   }
-  p {
+  /* Some converted books use an inline-only <blockquote> for every paragraph
+     (#6656); under override it is spaced like a <p>, while a quote wrapping
+     block content keeps its indent. */
+  p${overrideLayout ? `, blockquote:not(:has(*:not(${INLINE_FORMATTING_SELECTOR})))` : ''} {
     ${vertical ? `margin-left: ${paragraphMargin}em ${overrideLayout ? '!important' : ''};` : ''}
     ${vertical ? `margin-right: ${paragraphMargin}em ${overrideLayout ? '!important' : ''};` : ''}
     ${vertical ? `margin-top: unset ${overrideLayout ? '!important' : ''};` : ''}
@@ -769,7 +798,7 @@ const getParagraphLayoutStyles = (
     display: flow-root; 
   }
 
-  :lang(zh), :lang(ja), :lang(ko) {
+  ${CJK_LANG_SELECTOR} {
     widows: 1;
     orphans: 1;
   }
@@ -790,6 +819,23 @@ const getParagraphLayoutStyles = (
 
   .nonindent, .noindent {
     text-indent: unset !important;
+  }
+`;
+
+// Zero-specificity fallback for the paragraph chunk's CJK widow/orphan lift
+// above. Use Book Layout skips that chunk wholesale, taking the lift with it,
+// so a CJK book wearing the placeholder `en` its conversion tool stamped
+// (#6672) falls back to the UA default of 2 and the page-bottom gap the lift
+// closes comes back. It is scoped to the section root on purpose: a direct
+// declaration beats an inherited value at any specificity, so an element-wide
+// fallback would stomp widows/orphans the book declares on html or body and
+// expects its paragraphs to inherit. From the root the 1s flow to every
+// paragraph the book says nothing about, while a declaration at any ancestor
+// — or on the paragraph itself — still wins.
+const getCJKLineFlowStyles = () => `
+  :where(${CJK_LANGS.map((lang) => `html:lang(${lang})`).join(', ')}) {
+    widows: 1;
+    orphans: 1;
   }
 `;
 
@@ -868,7 +914,77 @@ export const getDictStyles = (bg: string, fg: string, isDarkMode: boolean) => {
   `;
 };
 
-const getTranslationStyles = (showSource: boolean) => `
+const parseComputedRgb = (value: string) => {
+  const m = value.match(/^rgba?\(([\d.]+), ([\d.]+), ([\d.]+)(?:, ([\d.]+))?\)$/);
+  if (!m) return null;
+  const [r, g, b] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  return {
+    r,
+    g,
+    b,
+    a: m[4] === undefined ? 1 : Number(m[4]),
+    brightness: 0.299 * r + 0.587 * g + 0.114 * b,
+  };
+};
+
+/**
+ * Lift dictionary text colors that would vanish on the dark popup (#6618).
+ *
+ * Dictionaries are authored for a light page and set dark text colors in bundled CSS, embedded
+ * `<style>`, inline styles or `<font color>`; reading computed colors covers all of them. A dark
+ * color gets its perceived brightness mirrored (Y -> 255 - Y) by an equal shift on every channel,
+ * which keeps its hue and the order of the dictionary's text shades. Text on a light box the
+ * dictionary paints itself is left as authored.
+ */
+export const liftDarkTextColors = (root: Element) => {
+  // The surface behind `root` is the popup's, found past a shadow root's host.
+  const parentOf = (el: Element) => {
+    const rootNode = el.getRootNode();
+    return el.parentElement ?? (rootNode instanceof ShadowRoot ? rootNode.host : null);
+  };
+  let outerOnLight = false;
+  for (let el = parentOf(root); el; el = parentOf(el)) {
+    const bg = parseComputedRgb(getComputedStyle(el).backgroundColor);
+    if (bg && bg.a > 0.5) {
+      outerOnLight = bg.brightness >= 128;
+      break;
+    }
+  }
+  const onLightBox = new Map<Element, boolean>();
+  const lifts: [HTMLElement, string][] = [];
+  for (const el of [root, ...root.querySelectorAll('*')]) {
+    const style = getComputedStyle(el);
+    const bg = parseComputedRgb(style.backgroundColor);
+    const parentOnLight = el === root ? outerOnLight : !!onLightBox.get(el.parentElement!);
+    const onLight = bg && bg.a > 0.5 ? bg.brightness >= 128 : parentOnLight;
+    onLightBox.set(el, onLight);
+    const fg = parseComputedRgb(style.color);
+    if (!fg || onLight || fg.brightness >= 128) continue;
+    const shift = Math.round(255 - 2 * fg.brightness);
+    const [r, g, b] = [fg.r, fg.g, fg.b].map((c) => Math.min(255, c + shift));
+    lifts.push([el as HTMLElement, `rgba(${r}, ${g}, ${b}, ${fg.a})`]);
+  }
+  // Write after reading so the loop doesn't force a style recalc per element.
+  for (const [el, color] of lifts) el.style.setProperty('color', color, 'important');
+};
+
+const getTranslatedTextStyles = (viewSettings: ViewSettings) => {
+  const { translationFont, translationFontStyle, translationFontSize, translationColor } =
+    viewSettings;
+  return [
+    translationFont && `font-family: var(--${translationFont}) !important;`,
+    translationFontStyle?.includes('italic') && 'font-style: italic !important;',
+    translationFontStyle?.includes('bold') && 'font-weight: bold !important;',
+    translationFontSize &&
+      translationFontSize !== 1 &&
+      `font-size: ${translationFontSize}em !important;`,
+    translationColor && `color: ${translationColor} !important;`,
+  ]
+    .filter(Boolean)
+    .join('\n    ');
+};
+
+const getTranslationStyles = (viewSettings: ViewSettings) => `
   .translation-source {
   }
   .translation-target {
@@ -883,7 +999,8 @@ const getTranslationStyles = (showSource: boolean) => `
   }
   .translation-target-block {
     display: block !important;
-    ${showSource ? 'margin: 0.5em 0 !important;' : ''}
+    ${viewSettings.showTranslateSource ? 'margin: 0.5em 0 !important;' : ''}
+    ${getTranslatedTextStyles(viewSettings)}
   }
   .translation-target-toc {
     display: block !important;
@@ -1056,9 +1173,10 @@ export const getStyles = (
     viewSettings.backgroundTextureId,
     viewSettings.isEink,
   );
-  const translationStyles = getTranslationStyles(viewSettings.showTranslateSource!);
+  const translationStyles = getTranslationStyles(viewSettings);
   const warichuStyles = getWarichuStyles();
   const rubyStyles = getRubyStyles(viewSettings);
+  const cjkLineFlowStyles = getCJKLineFlowStyles();
   const dialogueStyles = isDialogueHighlightActive(viewSettings)
     ? getDialogueHighlightStyles(viewSettings, themeCode)
     : '';
@@ -1069,7 +1187,7 @@ export const getStyles = (
   // the footnote aside's border show as a stray horizontal line (#4438). Keep it
   // ahead of the inlined custom `@font-face` rules.
   const epubNamespace = `@namespace epub "http://www.idpf.org/2007/ops";`;
-  return `${epubNamespace}\n${customFontFaces}\n${pageLayoutStyles}\n${paragraphLayoutStyles}\n${fontStyles}\n${colorStyles}\n${dialogueStyles}\n${translationStyles}\n${warichuStyles}\n${rubyStyles}\n${userStylesheet}`;
+  return `${epubNamespace}\n${customFontFaces}\n${pageLayoutStyles}\n${paragraphLayoutStyles}\n${cjkLineFlowStyles}\n${fontStyles}\n${colorStyles}\n${dialogueStyles}\n${translationStyles}\n${warichuStyles}\n${rubyStyles}\n${userStylesheet}`;
 };
 
 // Build a CSS chunk of `@font-face` rules for the given user custom
@@ -1100,7 +1218,7 @@ export const applyTranslationStyle = (viewSettings: ViewSettings) => {
 
   const styleElement = document.createElement('style');
   styleElement.id = styleId;
-  styleElement.textContent = getTranslationStyles(viewSettings.showTranslateSource);
+  styleElement.textContent = getTranslationStyles(viewSettings);
 
   document.head.appendChild(styleElement);
 };
@@ -1125,8 +1243,11 @@ export const transformStylesheet = (
     const hasTextAlignCenter = /text-align\s*:\s*center\s*[;$]/.test(block);
     const hasTextIndentZero = /text-indent\s*:\s*0(?:\.0+)?(?:px|em|rem|%)?\s*[;$]/.test(block);
 
+    // Only the zero indent is pinned, so centered text isn't pushed off center
+    // by the Paragraph Indent override. The centering itself is kept by
+    // keepTextAlignment; making it !important here would beat a more specific
+    // author rule that left-aligns the element (#6723).
     if (hasTextAlignCenter && hasTextIndentZero) {
-      block = block.replace(/(text-align\s*:\s*center)(\s*;|\s*$)/g, '$1 !important$2');
       block = block.replace(
         /(text-indent\s*:\s*0(?:\.0+)?(?:px|em|rem|%)?)(\s*;|\s*$)/g,
         '$1 !important$2',
@@ -1136,12 +1257,18 @@ export const transformStylesheet = (
     return match;
   });
 
-  // clip nowrapped elements
+  // Clip nowrapped elements along the line, so a long line can't spill past
+  // the column. The other axis stays visible: clipping it cut off whatever
+  // rises above the line box, like a top-aligned footnote icon (#6797). A rule
+  // that sizes its own box keeps the clip on both axes.
+  const lineClip = vertical ? 'overflow-y: clip !important;' : 'overflow-x: clip !important;';
   css = css.replace(ruleRegex, (match, selector, block) => {
     const hasWhiteSpaceNowrap = /white-space\s*:\s*nowrap\s*[;$]/.test(block);
     if (hasWhiteSpaceNowrap) {
       if (!/overflow\s*:/.test(block)) {
-        block = block.replace(/}$/, ' overflow: clip !important; }');
+        const sizesBox = /(?:^|[;{\s])(?:max-)?height\s*:|line-clamp\s*:/.test(block);
+        const clip = sizesBox ? 'overflow: clip !important;' : lineClip;
+        block = block.replace(/}$/, ` ${clip} }`);
       }
       return selector + block;
     }
@@ -1430,8 +1557,11 @@ export const transformStylesheet = (
     })
     .replace(/([\s;])font-weight\s*:\s*normal/gi, '$1font-weight: var(--font-weight)')
     .replace(/([\s;])color\s*:\s*black/gi, '$1color: var(--theme-fg-color)')
-    .replace(/([\s;])color\s*:\s*#000000/gi, '$1color: var(--theme-fg-color)')
-    .replace(/([\s;])color\s*:\s*#000/gi, '$1color: var(--theme-fg-color)')
+    // the whole hex value, or `#000` would also match the start of `#0000FF` (#6858)
+    .replace(
+      /([\s;])color\s*:\s*#(?:000f?|000000(?:ff)?)(?![0-9a-f])/gi,
+      '$1color: var(--theme-fg-color)',
+    )
     .replace(/([\s;])color\s*:\s*rgb\(0,\s*0,\s*0\)/gi, '$1color: var(--theme-fg-color)');
 
   const { isDarkMode, bg } = getThemeCode();
@@ -1567,6 +1697,14 @@ export const applyImageStyle = (document: Document) => {
         ? parseFloat(heightAttr)
         : NaN;
     const noEnlarge = img.getAttribute('zy-enlarge-src') === 'none';
+    const paragraph = img.closest('p');
+    let leadingImageParagraph: HTMLParagraphElement | null = null;
+    if (paragraph) {
+      const before = document.createRange();
+      before.setStart(paragraph, 0);
+      before.setEndBefore(img);
+      if (!before.toString().trim()) leadingImageParagraph = paragraph;
+    }
 
     let inlineWithText = false;
     let keepBaseline = false;
@@ -1596,6 +1734,7 @@ export const applyImageStyle = (document: Document) => {
       inlineWithText,
       keepBaseline,
       noEnlarge,
+      leadingImageParagraph,
     };
   });
 
@@ -1606,7 +1745,9 @@ export const applyImageStyle = (document: Document) => {
     inlineWithText,
     keepBaseline,
     noEnlarge,
+    leadingImageParagraph,
   } of plans) {
+    leadingImageParagraph?.classList.add('leading-image');
     if (!isNaN(percentWidth)) {
       img.style.width = `${(percentWidth / 100) * window.innerWidth}px`;
       img.removeAttribute('width');
@@ -1631,6 +1772,16 @@ export const applyImageStyle = (document: Document) => {
   });
 };
 
+// The enlarged link hit area positions every link and its ::before box, and
+// paginated layout slows down with each positioned box: a Strong's dictionary
+// section went from 1.3s to 10s to lay out, and a 20 MB concordance with 273k
+// links never finished. Opt a document in only when it has few enough links.
+export const applyLinkHitArea = (document: Document) => {
+  if (document.links.length <= MAX_ENLARGED_LINKS) {
+    document.documentElement.classList.add(LINK_HIT_AREA_CLASS);
+  }
+};
+
 export const keepTextAlignment = (document: Document) => {
   // Why two-phase: the previous version read getComputedStyle and wrote
   // classList.add inside the same forEach pass. classList.add invalidates
@@ -1646,7 +1797,9 @@ export const keepTextAlignment = (document: Document) => {
   // Two-phase read-then-write keeps the loop O(N) elements + 1 recalc
   // instead of O(N) recalcs.
   const win = document.defaultView ?? window;
-  const els = document.querySelectorAll('div, p, blockquote, dd');
+  // A chunk of a huge section (foliate-js section-chunks.js) holds a hidden
+  // placeholder for every element outside it; never read those.
+  const els = document.querySelectorAll(':is(div, p, blockquote, dd):not([data-foliate-chunk])');
   const alignClasses = new Array<string | null>(els.length);
   // Read pass: collect computed text-align for every element. The browser
   // computes style once for the whole document on the first call, then

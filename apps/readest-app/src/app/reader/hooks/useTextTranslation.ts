@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FoliateView } from '@/types/view';
 import { UseTranslatorOptions } from '@/services/translators';
 import { useReaderStore } from '@/store/readerStore';
+import { useBookDataStore } from '@/store/bookDataStore';
 import { useBookProgress } from '@/store/readerProgressStore';
 import { useTranslator } from '@/hooks/useTranslator';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -210,11 +211,16 @@ export function useTextTranslation(
   const enabled = useRef(viewSettings?.translationEnabled);
   const [provider, setProvider] = useState(viewSettings?.translationProvider);
   const [targetLang, setTargetLang] = useState(viewSettings?.translateTargetLang);
+  const [promptId, setPromptId] = useState(viewSettings?.translationPromptId);
+  const book = useBookDataStore((s) => s.getBookData(bookKey)?.book);
   const showTranslateSourceRef = useRef(viewSettings?.showTranslateSource);
 
-  const { translate } = useTranslator({
+  const { translate, translator } = useTranslator({
     provider,
     targetLang: targetLang || getLocale(),
+    promptId,
+    bookTitle: book?.title,
+    bookAuthor: book?.author,
   } as UseTranslatorOptions);
 
   const translateRef = useRef(translate);
@@ -228,7 +234,10 @@ export function useTextTranslation(
   const allTextNodes = useRef<HTMLElement[]>([]);
   const translationQueue = useRef<HTMLElement[]>([]);
   const activeTranslations = useRef(0);
-  const MAX_CONCURRENT_TRANSLATIONS = 5;
+  // Read through a ref: the queue drains from observer callbacks created on
+  // earlier renders. Batching providers ask for more in-flight paragraphs.
+  const maxConcurrentRef = useRef(5);
+  maxConcurrentRef.current = translator?.concurrency ?? 5;
   const pendingDOMUpdates = useRef<Array<() => void>>([]);
   const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -330,7 +339,7 @@ export function useTextTranslation(
 
   const drainTranslationQueue = () => {
     while (
-      activeTranslations.current < MAX_CONCURRENT_TRANSLATIONS &&
+      activeTranslations.current < maxConcurrentRef.current &&
       translationQueue.current.length > 0
     ) {
       const el = translationQueue.current.shift()!;
@@ -369,7 +378,9 @@ export function useTextTranslation(
 
   const translateElement = async (el: HTMLElement) => {
     if (!enabled.current) return;
-    const text = el.textContent?.replaceAll('\n', '').trim();
+    // The payload's text leaves out ruby readings and injected nodes.
+    const payload = extractSourcePayload(el);
+    const text = payload.text.replaceAll('\n', '').trim();
     if (!text) return;
 
     if (el.classList.contains('translation-target')) {
@@ -386,7 +397,6 @@ export function useTextTranslation(
       // tags for us; otherwise send bare text. Markup is split at run
       // boundaries so a long formatted paragraph still keeps its formatting
       // instead of falling back — each chunk is well-formed on its own.
-      const payload = extractSourcePayload(el);
       const markupChunks =
         translatorPreservesMarkup && payload.hasMarkup
           ? splitMarkupIntoChunks(payload.html, MAX_MARKUP_PAYLOAD_CHARS, splitTextIntoChunks)
@@ -500,6 +510,7 @@ export function useTextTranslation(
     const enabledChanged = enabled.current !== viewSettings.translationEnabled;
     const providerChanged = provider !== viewSettings.translationProvider;
     const targetLangChanged = targetLang !== viewSettings.translateTargetLang;
+    const promptChanged = promptId !== viewSettings.translationPromptId;
     const showTranslateSourceChanged =
       showTranslateSourceRef.current !== viewSettings.showTranslateSource;
 
@@ -515,6 +526,10 @@ export function useTextTranslation(
       setTargetLang(viewSettings.translateTargetLang);
     }
 
+    if (promptChanged) {
+      setPromptId(viewSettings.translationPromptId);
+    }
+
     if (showTranslateSourceChanged) {
       showTranslateSourceRef.current = viewSettings.showTranslateSource;
     }
@@ -524,11 +539,16 @@ export function useTextTranslation(
       if (enabled.current) {
         observeTextNodes();
       }
-    } else if (providerChanged || targetLangChanged || showTranslateSourceChanged) {
+    } else if (
+      providerChanged ||
+      targetLangChanged ||
+      promptChanged ||
+      showTranslateSourceChanged
+    ) {
       updateTranslation();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookKey, viewSettings, provider, targetLang]);
+  }, [bookKey, viewSettings, provider, targetLang, promptId]);
 
   useEffect(() => {
     if (!view || !enabled.current) return;

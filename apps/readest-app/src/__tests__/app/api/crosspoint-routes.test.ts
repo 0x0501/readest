@@ -19,6 +19,9 @@ vi.mock('@/libs/db', () => ({
 }));
 
 const queries = vi.hoisted(() => ({
+  linkedBookHash: vi.fn().mockResolvedValue(null),
+  findLinkCandidates: vi.fn().mockResolvedValue([]),
+  insertDocumentLink: vi.fn(),
   purgeExpiredDeviceCodes: vi.fn(),
   insertDeviceCode: vi.fn(),
   approveDeviceCode: vi.fn(),

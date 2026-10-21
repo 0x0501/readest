@@ -31,7 +31,8 @@ vi.mock('@/utils/object', async (orig) => {
 });
 vi.mock('@/libs/db', async (orig) => ({
   ...(await orig<typeof import('@/libs/db')>()),
-  withDb: <T>(fn: (db: unknown) => Promise<T>) => fn(stubDb().db),
+  withDb: <T>(fn: (db: unknown) => Promise<T>) =>
+    fn(stubDb([[], [{ id: 'reserved-file' }], [{ used: '12345' }]]).db),
 }));
 
 import handler from '@/pages/api/storage/upload';

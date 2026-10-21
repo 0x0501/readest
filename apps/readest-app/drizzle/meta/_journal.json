@@ -232,6 +232,55 @@
       "when": 34,
       "tag": "local_008_repoint_new_user_fks",
       "breakpoints": false
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 35,
+      "tag": "025_crosspoint_documents",
+      "breakpoints": false
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 36,
+      "tag": "025_replica_custom_translators",
+      "breakpoints": false
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 37,
+      "tag": "026_add_book_notes_ink",
+      "breakpoints": false
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 38,
+      "tag": "027_replica_custom_tts",
+      "breakpoints": false
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 39,
+      "tag": "028_add_book_page_count",
+      "breakpoints": false
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 40,
+      "tag": "029_files_server_writes_only",
+      "breakpoints": false
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 41,
+      "tag": "local_009_repoint_crosspoint_documents",
+      "breakpoints": false
     }
   ]
 }

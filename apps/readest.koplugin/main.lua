@@ -13,6 +13,7 @@ local SyncAuth = require("readest_syncauth")
 local SyncConfig = require("readest_syncconfig")
 local SyncAnnotations = require("readest_syncannotations")
 local SyncStats = require("readest_syncstats")
+local SyncError = require("readest_syncerror")
 local SelfUpdate = require("readest_selfupdate")
 
 local ReadestSync = WidgetContainer:new{
@@ -38,7 +39,7 @@ end
 local SUPABAE_ANON_KEY_BASE64 = "ZXlKaGJHY2lPaUpJVXpJMU5pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SnBjM01pT2lKemRYQmhZbUZ6WlNJc0luSmxaaUk2SW5aaWMzbDRablZ6YW1weFpIaHJhbkZzZVhOaklpd2ljbTlzWlNJNkltRnViMjRpTENKcFlYUWlPakUzTXpReE1qTTJOekVzSW1WNGNDSTZNakEwT1RZNU9UWTNNWDAuM1U1VXFhb3VfMVNnclZlMWVvOXJBcGMwdUtqcWhwUWRVWGh2d1VIbVVmZw=="
 
 ReadestSync.default_settings = {
-    supabase_url = "https://readest.supabase.co",
+    supabase_url = "https://vbsyxfusjjqdxkjqlysc.supabase.co",
     supabase_anon_key = sha2.base64_to_bin(SUPABAE_ANON_KEY_BASE64),
     auto_sync = false,
     user_email = nil,
@@ -60,6 +61,11 @@ function ReadestSync:init()
     self.settings = G_reader_settings:readSetting("readest_sync", self.default_settings)
     if self.settings.localsend_enabled == nil then
         self.settings.localsend_enabled = true
+    end
+    -- The URL is saved with the rest of the settings, so move installs off
+    -- the former vanity host before it is retired.
+    if self.settings.supabase_url == "https://readest.supabase.co" then
+        self.settings.supabase_url = self.default_settings.supabase_url
     end
 
     local meta = dofile(self.path .. "/_meta.lua")
@@ -519,8 +525,7 @@ function ReadestSync:_uploadBookRow(store, file, hash, format)
             if status == 403 and msg and msg:find("quota", 1, true) then
                 text = _("Storage quota exceeded.")
             else
-                text = _("Upload failed.")
-                    .. " (" .. tostring(msg or status) .. ")"
+                text = SyncError.withDetail(_("Upload failed."), msg, status)
             end
             UIManager:show(InfoMessage:new{ text = text, timeout = 4 })
             return
@@ -552,6 +557,13 @@ function ReadestSync:addToMainMenu(menu_items)
         text = _("Readest"),
         sub_item_table = {
             {
+                text = _("Auto sync"),
+                checked_func = function() return self.settings.auto_sync end,
+                callback = function()
+                    self:onReadestSyncToggleAutoSync()
+                end,
+            },
+            {
                 text_func = function()
                     return SyncAuth:needsLogin(self.settings) and _("Log in Readest Account")
                         or T(_("Log out as %1"), self.settings.user_name or "")
@@ -566,13 +578,6 @@ function ReadestSync:addToMainMenu(menu_items)
                             SyncAuth:logout(self.settings, self.path, menu)
                         end
                     end
-                end,
-            },
-            {
-                text = _("Auto sync"),
-                checked_func = function() return self.settings.auto_sync end,
-                callback = function()
-                    self:onReadestSyncToggleAutoSync()
                 end,
                 separator = true,
             },
@@ -706,6 +711,10 @@ end
 -- ── Sync helpers (thin wrappers around modules) ────────────────────
 
 function ReadestSync:ensureClient(interactive)
+    if self.settings.auth_required then
+        if interactive then SyncAuth:showLoginPrompt(self.settings, self.path) end
+        return nil
+    end
     if not self.settings.access_token or not self.settings.user_id then
         if interactive then
             UIManager:show(InfoMessage:new{
@@ -716,19 +725,7 @@ function ReadestSync:ensureClient(interactive)
         return nil
     end
 
-    SyncAuth:tryRefreshToken(self.settings, self.path)
-
-    local client = SyncAuth:getReadestSyncClient(self.settings, self.path)
-    if not client then
-        if interactive then
-            UIManager:show(InfoMessage:new{
-                text = _("Please configure Readest settings first"),
-                timeout = 3,
-            })
-        end
-        return nil
-    end
-    return client
+    return SyncAuth:getAuthenticatedClient(self.settings, self.path)
 end
 
 function ReadestSync:getBookIdentifiers()
@@ -813,9 +810,17 @@ end
 
 -- ── Config sync ────────────────────────────────────────────────────
 
-function ReadestSync:pushBookConfig(interactive)
+function ReadestSync:pushBookConfig(interactive, closing, retrying)
     local now = os.time()
-    if not interactive and now - self.last_sync_timestamp <= API_CALL_DEBOUNCE_DELAY then
+    if now < self.last_sync_timestamp then self.last_sync_timestamp = 0 end
+    if not interactive and not closing and not retrying and now - self.last_sync_timestamp <= API_CALL_DEBOUNCE_DELAY then
+        if self.delayed_push_task then UIManager:unschedule(self.delayed_push_task) end
+        self.delayed_push_task = function()
+            self.delayed_push_task = nil
+            self:pushBookConfig(false)
+        end
+        UIManager:scheduleIn(API_CALL_DEBOUNCE_DELAY - (now - self.last_sync_timestamp) + 1,
+            self.delayed_push_task)
         return
     end
 
@@ -826,8 +831,22 @@ function ReadestSync:pushBookConfig(interactive)
     local client = self:ensureClient(interactive)
     if not client then return end
 
+    local document = self.ui.document
     self.last_sync_timestamp = SyncConfig:push(
-        self.ui, self.settings, client, interactive, self.last_sync_timestamp
+        self.ui, self.settings, client, interactive, self.last_sync_timestamp,
+        function(success)
+            if self.ui.document ~= document then return end
+            self.progress_pending = not success or nil
+            if not success and not interactive and not closing and not retrying
+                    and self.settings.auto_sync and self.settings.access_token and not self.delayed_push_task then
+                self.delayed_push_task = function()
+                    self.delayed_push_task = nil
+                    self:pushBookConfig(false, false, true)
+                end
+                UIManager:scheduleIn(15, self.delayed_push_task)
+            end
+        end,
+        self:getLibraryStore()
     )
 end
 
@@ -842,10 +861,7 @@ function ReadestSync:pullBookConfig(interactive)
     local client = self:ensureClient(interactive)
     if not client then return end
 
-    SyncConfig:pull(
-        self.ui, self.settings, client, book_hash, meta_hash, interactive,
-        function() SyncAuth:logout(self.settings, self.path) end
-    )
+    SyncConfig:pull(self.ui, self.settings, client, book_hash, meta_hash, interactive)
 end
 
 -- ── Reading statistics sync ────────────────────────────────────────
@@ -873,8 +889,7 @@ function ReadestSync:pullBookStats(interactive)
         logger.dbg("ReadestStats pullBookStats: no client (not signed in / offline); skipping")
         return
     end
-    SyncStats:pull(self.settings, client, interactive,
-        function() SyncAuth:logout(self.settings, self.path) end, self.ui)
+    SyncStats:pull(self.settings, client, interactive, self.ui)
 end
 
 -- ── Annotation sync ────────────────────────────────────────────────
@@ -955,6 +970,7 @@ function ReadestSync:openLibrary()
         settings  = self.settings,
         sync_path = self.path,
         sync_auth = SyncAuth,
+        ui        = self.ui,
     })
 end
 
@@ -1049,8 +1065,8 @@ function ReadestSync:syncBooksLibrary(mode, interactive)
             UIManager:show(InfoMessage:new{
                 text = success
                     and _("Books synced")
-                    or _("Books sync failed"),
-                timeout = 2,
+                    or SyncError.withDetail(_("Books sync failed"), msg, status),
+                timeout = success and 2 or 5,
             })
         end
         -- If the Library widget is open, refresh it so newly-pulled rows show
@@ -1083,13 +1099,14 @@ function ReadestSync:pushOpenBook(interactive)
         sync_auth = SyncAuth,
         sync_path = self.path,
         settings  = self.settings,
-    }, function(success, _msg, status)
+    }, function(success, msg, status)
         logger.info("ReadestSync pushOpenBook done: success=" .. tostring(success)
-            .. " status=" .. tostring(status))
+            .. " status=" .. tostring(status) .. " msg=" .. tostring(msg))
         if interactive then
             UIManager:show(InfoMessage:new{
-                text = success and _("Books synced") or _("Books sync failed"),
-                timeout = 2,
+                text = success and _("Books synced")
+                    or SyncError.withDetail(_("Books sync failed"), msg, status),
+                timeout = success and 2 or 5,
             })
         end
     end)
@@ -1100,7 +1117,7 @@ function ReadestSync:onCloseDocument()
         return
     end
     local function push()
-        self:pushBookConfig(false)
+        self:pushBookConfig(false, true)
         self:pushBookNotes(false)
         self:pushBookStats(false)
         self:pushOpenBook(false)
@@ -1134,6 +1151,7 @@ function ReadestSync:onPageUpdate(page)
             UIManager:unschedule(self.delayed_push_task)
         end
         self.delayed_push_task = function()
+            self.delayed_push_task = nil
             self:pushBookConfig(false)
         end
         UIManager:scheduleIn(5, self.delayed_push_task)
@@ -1155,13 +1173,14 @@ function ReadestSync:onResume()
     -- unconditionally so a real suspend/resume cycle always ends up in sync
     -- with the localsend_enabled setting.
     if self.localsend and self.settings.localsend_enabled and NetworkMgr:isConnected() then
-        self.localsend:startService()
+        self.localsend:startService(true)
     end
     if not (self.settings.auto_sync and self.settings.access_token and self.ui.document) then
         return
     end
     local now = os.time()
-    if now - (self.last_resume_sync_timestamp or 0) <= API_CALL_DEBOUNCE_DELAY then
+    if now >= (self.last_resume_sync_timestamp or 0)
+            and now - (self.last_resume_sync_timestamp or 0) <= API_CALL_DEBOUNCE_DELAY then
         return
     end
     self.last_resume_sync_timestamp = now
@@ -1186,7 +1205,10 @@ end
 
 function ReadestSync:onNetworkConnected()
     if self.settings.localsend_enabled then
-        self.localsend:startService()
+        self.localsend:startService(true)
+    end
+    if self.progress_pending and self.settings.auto_sync and self.settings.access_token and self.ui.document then
+        self:pushBookConfig(false)
     end
     -- A background pull (open / wake) was skipped while offline, see
     -- willRerunPullWhenOnline. Now that the device is online, run it.
@@ -1220,6 +1242,7 @@ function ReadestSync:onCloseWidget()
     -- A skipped pull belongs to the document that was open at the time; the
     -- next open pulls on its own, so don't carry the flag across books.
     self.pull_pending_offline = nil
+    self.progress_pending = nil
     -- The LocalSend poll belongs to the singleton service, not to this
     -- plugin instance, and its closure captures the singleton (which
     -- survives context switches). Tearing it down here raced the next

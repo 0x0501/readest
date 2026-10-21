@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/025_crosspoint_documents.sql

@@ -105,6 +105,9 @@ export const useOpenMediaEvent = (
   handleTablePress: (html: string) => void,
 ) => {
   const handleOpenMedia = (msg: MessageEvent) => {
+    // The producers post from the app window itself; the table viewer renders
+    // the markup it is handed, so a message from any other window is ignored.
+    if (msg.source !== window) return;
     if (msg.data && msg.data.bookKey === bookKey && msg.data.type === 'iframe-open-media') {
       if (msg.data.elementType === 'image') {
         handleImagePress(msg.data.src);
@@ -354,7 +357,14 @@ export const useTouchEvent = (bookKey: string) => {
       }
       const currentDist = getTouchDistance(t0, t1);
       if (initialPinchDistRef.current > 0) {
-        const ratio = currentDist / initialPinchDistRef.current;
+        const rawRatio = currentDist / initialPinchDistRef.current;
+        // Clamp the live preview to the same bounds the release commits, so the
+        // page never previews past the zoom limit.
+        const committed = Math.max(
+          MIN_ZOOM_LEVEL,
+          Math.min(MAX_ZOOM_LEVEL, Math.round(initialZoomRef.current * rawRatio)),
+        );
+        const ratio = committed / initialZoomRef.current;
         lastPinchRatioRef.current = ratio;
         const renderer = getView(bookKey)?.renderer;
         renderer?.pinchZoom?.(ratio);

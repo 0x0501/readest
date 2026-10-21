@@ -100,6 +100,7 @@ function seedViewState(key: string, overrides: Record<string, unknown> = {}) {
         ribbonVisible: false,
         ttsEnabled: false,
         autoScrollEnabled: false,
+        drawingEnabled: false,
         syncing: false,
         gridInsets: null,
         previewMode: false,
@@ -329,6 +330,32 @@ describe('readerStore', () => {
       expect(retrieved).toEqual(settings);
     });
 
+    test('keeps the sidebar tab chosen in the book config when a primary view saves settings', () => {
+      const key = 'bookid-0';
+      const live = { sideBarTab: 'toc', ttsLocation: 'cfi-1' } as unknown as ViewSettings;
+      seedViewState(key, { viewSettings: live });
+      const bookData = (sideBarTab: string) => ({
+        bookid: {
+          id: 'bookid',
+          book: null,
+          file: null,
+          config: { updatedAt: Date.now(), viewSettings: { ...live, sideBarTab } },
+          bookDoc: null,
+          isFixedLayout: false,
+        } as BookData,
+      });
+      useBookDataStore.setState({ booksData: bookData('toc') });
+
+      // The sidebar writes its tab to the book config only (#6836)...
+      useBookDataStore.setState({ booksData: bookData('annotations') });
+      // ...then Read Aloud saves the next sentence through the live settings.
+      useReaderStore.getState().setViewSettings(key, { ...live, ttsLocation: 'cfi-2' });
+
+      const saved = useBookDataStore.getState().booksData['bookid']!.config!.viewSettings!;
+      expect(saved.sideBarTab).toBe('annotations');
+      expect(saved.ttsLocation).toBe('cfi-2');
+    });
+
     test('setViewSettings does nothing for empty key', () => {
       useReaderStore.getState().setViewSettings('', { fontSize: 16 } as unknown as ViewSettings);
       // Should not throw or create new state
@@ -531,5 +558,44 @@ describe('clearViewState and the streamed ABS ebook cache', () => {
     useReaderStore.getState().clearViewState('abc-view1');
 
     expect(useBookDataStore.getState().booksData['abc']).toBeDefined();
+  });
+});
+
+describe('areBooksOpen', () => {
+  beforeEach(() => {
+    useReaderStore.setState({ viewStates: {}, bookKeys: [], hoveredBookKey: null });
+  });
+
+  test('is true when the requested books are still open (back from the account page)', () => {
+    seedViewState('abc-view1');
+    seedViewState('def-view2');
+    useReaderStore.setState({ bookKeys: ['abc-view1', 'def-view2'] });
+
+    expect(useReaderStore.getState().areBooksOpen(['abc', 'def'])).toBe(true);
+  });
+
+  test('is false for other books', () => {
+    seedViewState('abc-view1');
+    useReaderStore.setState({ bookKeys: ['abc-view1'] });
+
+    expect(useReaderStore.getState().areBooksOpen(['def'])).toBe(false);
+    expect(useReaderStore.getState().areBooksOpen(['abc', 'def'])).toBe(false);
+  });
+
+  test('is false once the books were closed, though their keys remain', () => {
+    useReaderStore.setState({ bookKeys: ['abc-view1'] });
+
+    expect(useReaderStore.getState().areBooksOpen(['abc'])).toBe(false);
+  });
+
+  test('is false for a book that failed to load, so it is retried', () => {
+    seedViewState('abc-view1', { error: 'Failed to load book.' });
+    useReaderStore.setState({ bookKeys: ['abc-view1'] });
+
+    expect(useReaderStore.getState().areBooksOpen(['abc'])).toBe(false);
+  });
+
+  test('is false with nothing open', () => {
+    expect(useReaderStore.getState().areBooksOpen([])).toBe(false);
   });
 });

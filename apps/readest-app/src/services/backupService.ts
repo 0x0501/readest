@@ -93,8 +93,9 @@ export const BACKUP_SETTINGS_BLACKLIST = [
 
 /**
  * Credential dot-paths stripped from backups unless `includeCredentials`
- * is set. OPDS catalog and Audiobookshelf server credentials live inside
- * the `opdsCatalogs` / `absServers` arrays and are handled separately in
+ * is set. OPDS catalog, Audiobookshelf server, custom translator and custom
+ * TTS credentials live inside the `opdsCatalogs` / `absServers` /
+ * `customTranslators` / `customTTSServices` arrays and are handled separately in
  * `sanitizeSettingsForBackup`.
  */
 export const BACKUP_SETTINGS_CREDENTIAL_FIELDS = [
@@ -106,6 +107,7 @@ export const BACKUP_SETTINGS_CREDENTIAL_FIELDS = [
   'bookorbit.password',
   'readwise.accessToken',
   'hardcover.accessToken',
+  'hardcover.oauth',
   'pagebound.refreshToken',
   'pagebound.apiToken',
   'notion.accessToken',
@@ -172,6 +174,20 @@ export function sanitizeSettingsForBackup(
           refreshToken: _refreshToken,
           ...rest
         } = server;
+        return rest;
+      });
+    }
+    if (Array.isArray(clone.customTranslators)) {
+      clone.customTranslators = clone.customTranslators.map((translator) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { apiKey: _apiKey, ...rest } = translator;
+        return rest;
+      });
+    }
+    if (Array.isArray(clone.customTTSServices)) {
+      clone.customTTSServices = clone.customTTSServices.map((service) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { apiKey: _apiKey, ...rest } = service;
         return rest;
       });
     }

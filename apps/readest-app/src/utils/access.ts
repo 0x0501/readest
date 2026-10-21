@@ -1,6 +1,10 @@
 import { jwtDecode } from 'jwt-decode';
 import { UserPlan } from '@/types/quota';
-import { DEFAULT_DAILY_TRANSLATION_QUOTA, DEFAULT_STORAGE_QUOTA } from '@/services/constants';
+import {
+  DEFAULT_DAILY_TRANSLATION_QUOTA,
+  DEFAULT_DAILY_TTS_QUOTA,
+  DEFAULT_STORAGE_QUOTA,
+} from '@/services/constants';
 import { getDailyUsage } from '@/services/translators/utils';
 import { getRuntimeConfig } from '@/services/runtimeConfig';
 
@@ -181,6 +185,24 @@ export const isSelfHosted = (): boolean =>
 export const isCustomizationAllowed = (plan: UserPlan, customizationPurchased: boolean): boolean =>
   isSelfHosted() || customizationPurchased || PREMIUM_PLANS.includes(plan);
 
+/**
+ * Custom translators (the user's own OpenAI-compatible LLM or DeepL key) are a
+ * premium feature. Requests go straight from the device, so this is a
+ * client-side gate, like the TTS cache. It reads the session token directly so
+ * a reader window never sees a premium user as free while the plan loads.
+ */
+export const isCustomTranslatorAllowed = (token: string | null | undefined): boolean =>
+  token
+    ? isCustomizationAllowed(getUserProfilePlan(token), getCustomizationPurchased(token))
+    : isSelfHosted();
+
+/**
+ * Custom TTS services (the user's own OpenAI-compatible speech endpoint) are
+ * premium on the same terms as custom translators: requests go straight from
+ * the device, so this is a client-side gate.
+ */
+export const isCustomTTSAllowed = isCustomTranslatorAllowed;
+
 export const STORAGE_QUOTA_GRACE_BYTES = 10 * 1024 * 1024; // 10 MB grace
 
 export const getStoragePlanData = (token: string) => {
@@ -208,6 +230,25 @@ export const getTranslationQuota = (plan: UserPlan): number => {
   return (
     fixedQuota || DEFAULT_DAILY_TRANSLATION_QUOTA[plan] || DEFAULT_DAILY_TRANSLATION_QUOTA['free']
   );
+};
+
+/**
+ * Plans that include the self-hosted premium TTS engine ("Readest Voice"):
+ * Plus and Pro subscriptions only. Unlike EMAIL_IN_PLANS / CLOUD_SYNC_PLANS
+ * this deliberately excludes `purchase` (lifetime): synthesis has a recurring
+ * per-character GPU cost that a one-time purchase does not fund.
+ */
+export const TTS_PLANS: readonly UserPlan[] = ['plus', 'pro'];
+
+export const isTTSInPlan = (plan: UserPlan): boolean => TTS_PLANS.includes(plan);
+
+/** A Readest Voice tier: Plus unlocks its voices, Pro unlocks both tiers. */
+export const isVoiceTierInPlan = (tier: 'plus' | 'pro', plan: UserPlan): boolean =>
+  tier === 'plus' ? isTTSInPlan(plan) : plan === 'pro';
+
+export const getTTSQuota = (plan: UserPlan): number => {
+  const fixedQuota = parseInt(process.env['TTS_FIXED_QUOTA'] ?? '0');
+  return fixedQuota || DEFAULT_DAILY_TTS_QUOTA[plan] || 0;
 };
 
 export const getTranslationPlanData = (token: string) => {

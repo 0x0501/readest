@@ -3,6 +3,7 @@ import { type Db, schema } from '@/libs/db';
 
 export const USAGE_TYPES = {
   TRANSLATION_CHARS: 'translation_chars',
+  TTS_CHARS: 'tts_chars',
 } as const;
 
 export const QUOTA_TYPES = {

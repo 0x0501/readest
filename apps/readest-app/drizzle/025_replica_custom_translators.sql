@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/025_replica_custom_translators.sql

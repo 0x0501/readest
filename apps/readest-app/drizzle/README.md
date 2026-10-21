@@ -25,6 +25,11 @@ listed there, in that order, and nothing else in this directory is applied.
 Symlinking rather than copying means upstream's SQL stays the single source of
 truth for the schema, and no DDL is ever translated by hand (ADR-003).
 
+Upstream 025–029 add CrossPoint copy mappings, custom translator/TTS replicas,
+handwritten notes, import-time page counts, and server-only file writes. Both
+025 files have their own journal entry. `local_009_repoint_crosspoint_documents`
+re-points the new document mapping's user key to Better Auth after these run.
+
 `src/libs/db/schema.ts` is generated from the database, not written. It exists for
 types and query building only.
 

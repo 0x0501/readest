@@ -4,6 +4,7 @@ import { DEFAULT_STATS_TRACKING_CONFIG } from '@/types/statistics';
 import {
   authenticateDevice,
   BOOK_HASH,
+  linkedBook,
   parseConfigProgress,
   PERCENT_PAGES,
 } from '@/libs/crosspoint';
@@ -47,7 +48,10 @@ export async function POST(request: Request) {
   try {
     const pages = await withDb(async (db) => {
       // Readest's page count once a Readest app has paginated the book, else whole percents.
-      const config = await readBookConfig(db, userId, document, false);
+      const link = await linkedBook(db, userId, document);
+      if (link.error) throw link.error;
+      const bookHash = link.bookHash ?? document;
+      const config = await readBookConfig(db, userId, bookHash, false);
       const total = parseConfigProgress(config?.progress)?.[1] ?? PERCENT_PAGES;
 
       const pageAt = (bp: number) =>
@@ -65,7 +69,7 @@ export async function POST(request: Request) {
         const to = Math.floor(((i + 1) * duration) / count);
         return {
           userId,
-          bookHash: document,
+          bookHash,
           page: last - count + 1 + i,
           startTime: start_time + from,
           duration: to - from,

@@ -1,3 +1,4 @@
+import type { InkStroke } from '@/services/handwriting/model';
 import { BookMetadata } from '@/libs/document';
 import { TTSHighlightOptions } from '@/services/tts/types';
 import { TTSHighlightGranularity } from '@/services/tts/types';
@@ -24,7 +25,7 @@ export type BookFormat =
   | 'OPDSAUDIO'
   // Streaming audiobook from BookOrbit's audiobook API; filePath is bookorbit://<bookId> (#6224)
   | 'BOOKORBIT';
-export type BookNoteType = 'bookmark' | 'annotation' | 'excerpt' | 'notebook';
+export type BookNoteType = 'bookmark' | 'annotation' | 'excerpt' | 'notebook' | 'ink';
 export type ReadingStatus = 'unread' | 'reading' | 'finished' | 'abandoned';
 export type HighlightStyle = 'highlight' | 'underline' | 'squiggly';
 // Predefined highlight colors, can be extended with custom hex colors
@@ -159,6 +160,10 @@ export interface Book {
   // library can badge it without opening the file. Derived from the file on
   // every import, like `format` — not user data, so it needs no LWW timestamp.
   hasNarration?: boolean;
+  // The page total the reader will lay out, counted from the file at import so
+  // an unopened book can show and sort by it (#6662). Like `hasNarration`, it is
+  // re-derived on every import; once opened, `progress[1]` holds the same total.
+  pageCount?: number;
   duration?: number; // total audio length in seconds (ABS audiobooks)
   // Marks this ABS stub as a podcast show or ebook rather than an audiobook.
   // Audio books remain unmarked (absMediaType undefined).
@@ -217,6 +222,12 @@ export interface BookNote {
    * bookmarks and excerpts, and for fixed-layout formats (e.g. PDF).
    */
   global?: boolean;
+  /**
+   * Handwriting of an `ink` note: strokes pinned to the content at `cfi` (a
+   * reflowable book) or drawn on the page at `cfi` (fixed layout). See
+   * services/handwriting.
+   */
+  ink?: InkStroke[];
 
   createdAt: number;
   updatedAt: number;
@@ -351,6 +362,7 @@ export interface ViewConfig {
   sideBarTab: string;
   uiLanguage: string;
   sortedTOC: boolean;
+  showTOCThumbnails: boolean;
 
   doubleBorder: boolean;
   borderColor: string;
@@ -423,16 +435,30 @@ export interface TTSConfig {
   ttsMediaMetadata: TTSMediaMetadataMode;
   ttsPlayerStyle: TTSPlayerStyle;
   ttsSkipInlineAnnotations: boolean;
+  // Sentence-by-sentence Read Aloud: pause after every sentence (#5233).
+  ttsPauseAfterSentence: boolean;
 }
 
 export interface TranslatorConfig {
   translateSourceLang?: string;
   translationEnabled: boolean;
   translationProvider: string;
+  /** Prompt library entry for LLM translators; `'default'` or a prompt id. */
+  translationPromptId?: string;
   translateTargetLang: string;
   showTranslateSource: boolean;
   ttsReadAloudText: string;
+  /** Translated text font: '' follows the book, else the reader's serif/sans/mono font. */
+  translationFont: TranslationFont;
+  translationFontStyle: TranslationFontStyle;
+  /** Translated text size relative to the paragraph, in em. */
+  translationFontSize: number;
+  /** Translated text color as a hex string; '' follows the book. */
+  translationColor: string;
 }
+
+export type TranslationFont = '' | 'serif' | 'sans-serif' | 'monospace';
+export type TranslationFontStyle = 'normal' | 'italic' | 'bold' | 'bold-italic';
 
 // Markdown and plain text render the note template; JSON emits the
 // machine-readable file that Readest itself can import back (#5400).
@@ -676,6 +702,12 @@ export interface BookConfig {
    * carries it; both copy an explicit list of fields.
    */
   widePages?: string[];
+  /**
+   * Where a zoomed fixed-layout page was panned under the horizontal pan lock,
+   * as a fraction of its horizontal overflow, restored on reopen. Device-local
+   * like widePages: it depends on this screen's zoom and size.
+   */
+  panX?: number;
 
   lastSyncedAtConfig?: number;
   lastSyncedAtNotes?: number;

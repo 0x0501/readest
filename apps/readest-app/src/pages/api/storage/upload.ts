@@ -14,6 +14,7 @@ import {
 // content-addressed by the caller (media/<kind>/<user-seg>/<hash>.<ext>), so
 // unlike `temp/` objects they are durable and their URLs never rotate.
 const PUBLIC_MEDIA_KINDS = ['book_covers'];
+const MAX_PUBLIC_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   await runMiddleware(req, res, corsAllMethods);
@@ -36,6 +37,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // namespace (GHSA-mfmj-2frf-vhgw).
     if (!isSafeObjectKeyName(fileName)) {
       return res.status(400).json({ error: 'Invalid fileName' });
+    }
+
+    if (!Number.isSafeInteger(fileSize) || fileSize <= 0) {
+      return res.status(400).json({ error: 'Invalid fileSize' });
+    }
+    if ((media || temp) && fileSize > MAX_PUBLIC_IMAGE_BYTES) {
+      return res.status(413).json({ error: 'File too large' });
     }
 
     if (media) {
@@ -84,23 +92,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
+    let insertedId: string | null = null;
+    const dropReservation = async () => {
+      if (insertedId) await db.delete(schema.files).where(eq(schema.files.id, insertedId));
+    };
     try {
-      if (!fileName || !fileSize) {
-        return res.status(400).json({ error: 'Missing file info' });
-      }
-
-      // The JWT's usage claim is frozen at mint time; authorise against the
-      // same live files rows used to mint it, including pending uploads.
       const { quota } = getStoragePlanData(token);
-      const [usageRow] = await db
-        .select({ used: sum(schema.files.fileSize) })
-        .from(schema.files)
-        .where(and(eq(schema.files.userId, user.id), isNull(schema.files.deletedAt)));
-      const usage = Number(usageRow?.used ?? 0);
-      if (usage + fileSize > quota + STORAGE_QUOTA_GRACE_BYTES) {
-        return res.status(403).json({ error: 'Insufficient storage quota', usage });
-      }
-
       const fileKey = `${user.id}/${fileName}`;
       // Re-uploading the same key keeps the recorded size: the row is written
       // before the bytes land, so the first insert's size is the one the presign
@@ -115,14 +112,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (existingRecord) {
         objSize = existingRecord.fileSize;
       } else {
-        await db.insert(schema.files).values({
-          userId: user.id,
-          bookHash: bookHash ?? null,
-          replicaKind: replicaKind ?? null,
-          replicaId: replicaId ?? null,
-          fileKey,
-          fileSize,
-        });
+        const [inserted] = await db
+          .insert(schema.files)
+          .values({
+            userId: user.id,
+            bookHash: bookHash ?? null,
+            replicaKind: replicaKind ?? null,
+            replicaId: replicaId ?? null,
+            fileKey,
+            fileSize,
+          })
+          .returning({ id: schema.files.id });
+        insertedId = inserted!.id;
+      }
+
+      // The committed files row reserves this upload before the live sum is
+      // read. Concurrent uploads therefore see each other's reservations.
+      const [usageRow] = await db
+        .select({ used: sum(schema.files.fileSize) })
+        .from(schema.files)
+        .where(and(eq(schema.files.userId, user.id), isNull(schema.files.deletedAt)));
+      const usage = Number(usageRow?.used ?? 0);
+      if (insertedId && usage > quota + STORAGE_QUOTA_GRACE_BYTES) {
+        await dropReservation();
+        return res
+          .status(403)
+          .json({ error: 'Insufficient storage quota', usage: usage - fileSize });
       }
 
       try {
@@ -131,14 +146,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         res.status(200).json({
           uploadUrl,
           fileKey,
-          usage: usage + fileSize,
+          usage,
           quota,
         });
       } catch (error) {
+        await dropReservation();
         console.error('Error creating presigned post:', error);
         res.status(500).json({ error: 'Could not create presigned post' });
       }
     } catch (error) {
+      await dropReservation();
       console.error(error);
       return res.status(500).json({ error: 'Something went wrong' });
     }

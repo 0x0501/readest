@@ -13,6 +13,7 @@ const mockView = {
 
 const mockBookData = {
   isFixedLayout: true,
+  book: { format: 'PDF' },
   bookDoc: {
     dir: undefined as string | undefined,
     rendition: { layout: 'pre-paginated' },
@@ -38,12 +39,21 @@ const currentViewSettings = {
 
 const mockRecreateViewer = vi.fn();
 const mockSaveViewSettings = vi.fn().mockResolvedValue(undefined);
+const mockAppService = {
+  appPlatform: 'web',
+  hasWindow: false,
+  hasAmbientLightSensor: false,
+  supportsCanvasContext2DFilter: true,
+};
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 vi.mock('@/context/EnvContext', () => ({
-  useEnv: () => ({ envConfig: {}, appService: { hasAmbientLightSensor: false } }),
+  useEnv: () => ({
+    envConfig: {},
+    appService: mockAppService,
+  }),
 }));
 vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({ user: null }),
@@ -96,7 +106,58 @@ vi.mock('@/utils/webtoon', () => ({ getScrollGapAttr: vi.fn() }));
 vi.mock('@/app/reader/hooks/useCapturedTurn', () => ({ applyPageTurnAttributes: vi.fn() }));
 vi.mock('@/utils/config', () => ({ getMaxInlineSize: () => 720 }));
 vi.mock('@/utils/ambientLight', () => ({ nextThemeMode: (mode: string) => mode }));
-vi.mock('@/utils/window', () => ({ tauriHandleToggleFullScreen: vi.fn() }));
+vi.mock('@/utils/window', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/window')>()),
+  tauriHandleToggleFullScreen: vi.fn(),
+}));
+
+describe('ViewMenu fullscreen', () => {
+  const requestFullscreen = vi.fn();
+
+  const stubFullscreenApi = (enabled: boolean) => {
+    Object.defineProperty(document, 'fullscreenEnabled', { configurable: true, value: enabled });
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: null });
+    Object.defineProperty(document.documentElement, 'requestFullscreen', {
+      configurable: true,
+      value: requestFullscreen,
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requestFullscreen.mockResolvedValue(undefined);
+    stubFullscreenApi(true);
+  });
+
+  afterEach(() => {
+    cleanup();
+    mockAppService.appPlatform = 'web';
+  });
+
+  it('offers Fullscreen in a web browser and enters it on tap (#6892)', async () => {
+    const closeMenu = vi.fn();
+    render(<ViewMenu bookKey='book-1' setIsDropdownOpen={closeMenu} />);
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Fullscreen' }));
+
+    await waitFor(() => expect(requestFullscreen).toHaveBeenCalledOnce());
+    expect(closeMenu).toHaveBeenCalledWith(false);
+  });
+
+  it('hides Fullscreen in browsers without the Fullscreen API', () => {
+    stubFullscreenApi(false);
+    render(<ViewMenu bookKey='book-1' />);
+
+    expect(screen.queryByRole('menuitem', { name: 'Fullscreen' })).toBeNull();
+  });
+
+  it('hides Fullscreen in native mobile webviews', () => {
+    mockAppService.appPlatform = 'tauri';
+    render(<ViewMenu bookKey='book-1' />);
+
+    expect(screen.queryByRole('menuitem', { name: 'Fullscreen' })).toBeNull();
+  });
+});
 
 describe('ViewMenu right-to-left pages toggle', () => {
   beforeEach(() => {
@@ -164,5 +225,52 @@ describe('ViewMenu right-to-left pages toggle', () => {
       expect(mockView.book.dir).toBe('ltr');
       expect(mockRecreateViewer).toHaveBeenCalledWith(expect.anything(), 'book-1');
     });
+  });
+});
+
+// Menu rows and separators in document order: 'hr' for a separator, else the
+// row's label (shortcut hints stripped).
+const menuSequence = () =>
+  Array.from(document.querySelectorAll('hr, [role="menuitem"], [role="none"]')).map((el) =>
+    el.tagName === 'HR' ? 'hr' : (el.textContent ?? '').replace(/Shift\+\w$/, '').trim(),
+  );
+
+describe('ViewMenu layout', () => {
+  beforeEach(() => {
+    mockBookData.isFixedLayout = true;
+    mockBookData.bookDoc.rendition = { layout: 'pre-paginated' };
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('drops Paragraph and Speed Reading modes for fixed-layout books', () => {
+    render(<ViewMenu bookKey='book-1' />);
+    expect(screen.queryByText('Paragraph Mode')).toBeNull();
+    expect(screen.queryByText('Speed Reading Mode')).toBeNull();
+  });
+
+  it('keeps Paragraph and Speed Reading modes for reflowable books', () => {
+    mockBookData.isFixedLayout = false;
+    mockBookData.bookDoc.rendition = { layout: 'reflowable' };
+    render(<ViewMenu bookKey='book-1' />);
+    expect(screen.getByText('Paragraph Mode')).toBeTruthy();
+    expect(screen.getByText('Speed Reading Mode')).toBeTruthy();
+  });
+
+  it('groups the image colour toggles after Auto Scroll and Webtoon Mode on its own above sync', () => {
+    render(<ViewMenu bookKey='book-1' />);
+    const seq = menuSequence();
+    const autoScroll = seq.indexOf('Auto Scroll');
+    expect(seq.slice(autoScroll, autoScroll + 6)).toEqual([
+      'Auto Scroll',
+      'Apply Theme Colors',
+      'Invert Image In Dark Mode',
+      'hr',
+      'Webtoon Mode',
+      'hr',
+    ]);
+    expect(seq[autoScroll + 6]).toBe('Sign in to Sync');
   });
 });

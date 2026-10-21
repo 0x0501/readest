@@ -58,6 +58,7 @@ export const BOOKSHELF_SORT_LABELS: Record<LibrarySortByType, string> = {
   series: _('Series'),
   size: _('Size'),
   format: _('Format'),
+  pages: _('Pages'),
   published: _('Date Published'),
   progress: _('Progress Read'),
   timeRemaining: _('Time Remaining'),
@@ -200,6 +201,9 @@ export const defaultBookshelves = (settings: Partial<SystemSettings>): Bookshelf
     coverFit: settings.libraryCoverFit || 'crop',
     hideCovers: settings.libraryHideCovers ?? false,
     enabled: settings.libraryRecentShelfEnabled ?? true,
+    // A quick-resume strip of the books themselves, never folder/series tiles.
+    useGlobalGrouping: false,
+    groupBy: 'none',
     filters: {
       type: 'group',
       match: 'all',

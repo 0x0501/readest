@@ -465,7 +465,10 @@ const detectMediaTarget = (target: HTMLElement | null): MediaTarget | null => {
     if (href) return { elementType: 'image', src: new URL(href, svgImage.baseURI).href };
   }
   const table = target.localName === 'table' ? target : target.closest('table');
-  if (table) return { elementType: 'table', html: (table as HTMLElement).outerHTML };
+  // A link inside a table is followed; the table zooms from anywhere else (#6856)
+  if (table && !table.contains(target.closest('a'))) {
+    return { elementType: 'table', html: (table as HTMLElement).outerHTML };
+  }
   return null;
 };
 
@@ -474,10 +477,12 @@ type PDFPageDocument = Document & {
   getImageAt?: (x: number, y: number) => (() => Promise<Blob>) | null;
 };
 
-// The image a right-click lands on, as a loader for its file. A PDF page is a
-// canvas under its text layer, so foliate-js finds its images by position and
-// renders the one asked for on demand.
-export const getContextMenuImage = (event: MouseEvent): (() => Promise<Blob>) | null => {
+// The image a right-click or long press lands on, as a loader for its file. A
+// PDF page is a canvas under its text layer, so foliate-js finds its images by
+// position and renders the one asked for on demand.
+export const getContextMenuImage = (
+  event: Pick<MouseEvent, 'target' | 'clientX' | 'clientY'>,
+): (() => Promise<Blob>) | null => {
   const target = event.target as HTMLElement;
   const media = detectMediaTarget(target);
   if (media?.elementType === 'image') return () => fetch(media.src).then((res) => res.blob());
@@ -639,6 +644,7 @@ export const handleClick = (
         clientY: event.clientY,
         offsetX: event.offsetX,
         offsetY: event.offsetY,
+        ...getWindowPoint(event),
         ...getKeyStatus(event),
         ...(pageMedia && { media: pageMedia }),
       },

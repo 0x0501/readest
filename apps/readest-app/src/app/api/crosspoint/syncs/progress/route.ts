@@ -3,6 +3,8 @@ import { withDb } from '@/libs/db';
 import {
   authenticateDevice,
   BOOK_HASH,
+  linkedBook,
+  linkCopy,
   parseConfigProgress,
   PERCENT_PAGES,
 } from '@/libs/crosspoint';
@@ -24,7 +26,7 @@ export async function PUT(request: Request) {
   if (typeof userId !== 'string') return userId;
 
   const body = await request.json().catch(() => null);
-  const { document, progress, percentage } = (body ?? {}) as Record<string, unknown>;
+  const { document, progress, percentage, metadata } = (body ?? {}) as Record<string, unknown>;
   if (
     typeof document !== 'string' ||
     !BOOK_HASH.test(document) ||
@@ -42,12 +44,22 @@ export async function PUT(request: Request) {
 
   try {
     const saved = await withDb(async (db) => {
-      const existing = await readBookConfig(db, userId, document, false);
+      const linked = await linkedBook(db, userId, document);
+      if (linked.error) throw linked.error;
+      const newLink = linked.bookHash ? null : await linkCopy(db, userId, document, metadata);
+      if (newLink?.error) throw newLink.error;
+      const bookHash = linked.bookHash ?? newLink?.bookHash ?? document;
+      const existing = await readBookConfig(db, userId, bookHash, false);
       const stored = parseConfigProgress(existing?.progress);
       // Without a stored XPointer the reader's sync found nothing to pull, so it
       // uploads its own position, usually the start of a fresh download. That
       // must not pull back a position Readest is already past.
-      if (stored && !existing?.xpointer && percentage < stored[0] / stored[1]) return 'skipped';
+      if (
+        stored &&
+        (newLink?.bookHash || !existing?.xpointer) &&
+        percentage < stored[0] / stored[1]
+      )
+        return 'skipped';
 
       // The percentage in the book's Readest page count, or in whole percents
       // until a Readest app has paginated the book.
@@ -55,7 +67,7 @@ export async function PUT(request: Request) {
       const pages: [number, number] = [Math.max(1, Math.round(percentage * total)), total];
       const fields = {
         userId,
-        bookHash: document,
+        bookHash,
         xpointer: progress,
         progress: pages,
         updatedAt: now,
@@ -63,7 +75,7 @@ export async function PUT(request: Request) {
       // Never overwrite a newer write, from a Readest app or a racing request.
       if (existing) await updateBookConfigProgress(db, fields);
       else await insertBookConfigProgress(db, fields);
-      return pages;
+      return { pages, bookHash };
     });
     if (saved === 'skipped') return response;
 
@@ -71,8 +83,8 @@ export async function PUT(request: Request) {
       await withDb((db) =>
         updateBookLibraryProgress(db, {
           userId,
-          bookHash: document,
-          progress: saved,
+          bookHash: saved.bookHash,
+          progress: saved.pages,
           updatedAt: now,
         }),
       );

@@ -47,7 +47,7 @@ export const bookShares = pgTable(
     index('idx_book_shares_user_id').using('btree', table.userId.asc().nullsLast().op('uuid_ops')),
     index('idx_book_shares_user_id_book_hash').using(
       'btree',
-      table.userId.asc().nullsLast().op('uuid_ops'),
+      table.userId.asc().nullsLast().op('text_ops'),
       table.bookHash.asc().nullsLast().op('text_ops'),
     ),
     foreignKey({
@@ -65,57 +65,6 @@ export const bookShares = pgTable(
     pgPolicy('book_shares_insert', { as: 'permissive', for: 'insert', to: ['authenticated'] }),
     pgPolicy('book_shares_update', { as: 'permissive', for: 'update', to: ['authenticated'] }),
     pgPolicy('book_shares_delete', { as: 'permissive', for: 'delete', to: ['authenticated'] }),
-  ],
-);
-
-export const files = pgTable(
-  'files',
-  {
-    id: uuid().defaultRandom().primaryKey().notNull(),
-    userId: uuid('user_id').notNull(),
-    bookHash: text('book_hash'),
-    fileKey: text('file_key').notNull(),
-    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
-    fileSize: bigint('file_size', { mode: 'number' }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow(),
-    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'string' }),
-    replicaKind: text('replica_kind'),
-    replicaId: text('replica_id'),
-  },
-  (table) => [
-    index('idx_files_file_key').using('btree', table.fileKey.asc().nullsLast().op('text_ops')),
-    index('idx_files_file_key_deleted_at').using(
-      'btree',
-      table.fileKey.asc().nullsLast().op('timestamptz_ops'),
-      table.deletedAt.asc().nullsLast().op('timestamptz_ops'),
-    ),
-    index('idx_files_replica_lookup').using(
-      'btree',
-      table.userId.asc().nullsLast().op('text_ops'),
-      table.replicaKind.asc().nullsLast().op('text_ops'),
-      table.replicaId.asc().nullsLast().op('uuid_ops'),
-    ),
-    index('idx_files_user_id_deleted_at').using(
-      'btree',
-      table.userId.asc().nullsLast().op('uuid_ops'),
-      table.deletedAt.asc().nullsLast().op('uuid_ops'),
-    ),
-    foreignKey({
-      columns: [table.userId],
-      foreignColumns: [user.id],
-      name: 'files_user_id_fkey',
-    }).onDelete('cascade'),
-    unique('files_file_key_key').on(table.fileKey),
-    pgPolicy('files_insert', {
-      as: 'permissive',
-      for: 'insert',
-      to: ['public'],
-      withCheck: sql`(auth.uid() = user_id)`,
-    }),
-    pgPolicy('files_select', { as: 'permissive', for: 'select', to: ['public'] }),
-    pgPolicy('files_update', { as: 'permissive', for: 'update', to: ['public'] }),
-    pgPolicy('files_delete', { as: 'permissive', for: 'delete', to: ['public'] }),
   ],
 );
 
@@ -232,7 +181,7 @@ export const sendInbox = pgTable(
     index('idx_send_inbox_user_status').using(
       'btree',
       table.userId.asc().nullsLast().op('text_ops'),
-      table.status.asc().nullsLast().op('timestamptz_ops'),
+      table.status.asc().nullsLast().op('uuid_ops'),
       table.createdAt.asc().nullsLast().op('uuid_ops'),
     ),
     foreignKey({
@@ -503,6 +452,78 @@ export const crosspointDeviceCodes = pgTable(
   ],
 );
 
+export const files = pgTable(
+  'files',
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    userId: uuid('user_id').notNull(),
+    bookHash: text('book_hash'),
+    fileKey: text('file_key').notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    fileSize: bigint('file_size', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'string' }),
+    replicaKind: text('replica_kind'),
+    replicaId: text('replica_id'),
+  },
+  (table) => [
+    index('idx_files_file_key').using('btree', table.fileKey.asc().nullsLast().op('text_ops')),
+    index('idx_files_file_key_deleted_at').using(
+      'btree',
+      table.fileKey.asc().nullsLast().op('timestamptz_ops'),
+      table.deletedAt.asc().nullsLast().op('text_ops'),
+    ),
+    index('idx_files_replica_lookup').using(
+      'btree',
+      table.userId.asc().nullsLast().op('uuid_ops'),
+      table.replicaKind.asc().nullsLast().op('uuid_ops'),
+      table.replicaId.asc().nullsLast().op('uuid_ops'),
+    ),
+    index('idx_files_user_id_deleted_at').using(
+      'btree',
+      table.userId.asc().nullsLast().op('uuid_ops'),
+      table.deletedAt.asc().nullsLast().op('timestamptz_ops'),
+    ),
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [user.id],
+      name: 'files_user_id_fkey',
+    }).onDelete('cascade'),
+    unique('files_file_key_key').on(table.fileKey),
+    pgPolicy('files_insert', {
+      as: 'permissive',
+      for: 'insert',
+      to: ['public'],
+      withCheck: sql`(auth.uid() = user_id)`,
+    }),
+    pgPolicy('files_select', { as: 'permissive', for: 'select', to: ['public'] }),
+    pgPolicy('files_update', { as: 'permissive', for: 'update', to: ['public'] }),
+    pgPolicy('files_delete', { as: 'permissive', for: 'delete', to: ['public'] }),
+    check('files_file_size_nonnegative', sql`file_size >= 0`),
+  ],
+);
+
+export const crosspointDocuments = pgTable(
+  'crosspoint_documents',
+  {
+    userId: uuid('user_id').notNull(),
+    document: text().notNull(),
+    bookHash: text('book_hash').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [user.id],
+      name: 'crosspoint_documents_user_id_fkey',
+    }).onDelete('cascade'),
+    primaryKey({ columns: [table.userId, table.document], name: 'crosspoint_documents_pkey' }),
+  ],
+);
+
 export const replicaKeys = pgTable(
   'replica_keys',
   {
@@ -623,8 +644,8 @@ export const statArchives = pgTable(
   (table) => [
     index('idx_stat_archives_user_to').using(
       'btree',
-      table.userId.asc().nullsLast().op('uuid_ops'),
-      table.updatedTo.asc().nullsLast().op('timestamptz_ops'),
+      table.userId.asc().nullsLast().op('timestamptz_ops'),
+      table.updatedTo.asc().nullsLast().op('uuid_ops'),
     ),
     foreignKey({
       columns: [table.userId],
@@ -661,7 +682,7 @@ export const statPages = pgTable(
   (table) => [
     index('idx_stat_pages_user_updated').using(
       'btree',
-      table.userId.asc().nullsLast().op('timestamptz_ops'),
+      table.userId.asc().nullsLast().op('uuid_ops'),
       table.updatedAt.asc().nullsLast().op('uuid_ops'),
     ),
     foreignKey({
@@ -707,8 +728,8 @@ export const replicas = pgTable(
   (table) => [
     index('idx_replicas_pull_cursor').using(
       'btree',
-      table.userId.asc().nullsLast().op('uuid_ops'),
-      table.kind.asc().nullsLast().op('text_ops'),
+      table.userId.asc().nullsLast().op('text_ops'),
+      table.kind.asc().nullsLast().op('uuid_ops'),
       table.updatedAtTs.asc().nullsLast().op('uuid_ops'),
     ),
     foreignKey({
@@ -730,7 +751,7 @@ export const replicas = pgTable(
     check('replicas_schema_version', sql`(schema_version >= 1) AND (schema_version <= 1000)`),
     check(
       'replicas_kind_allowlist',
-      sql`kind = ANY (ARRAY['dictionary'::text, 'font'::text, 'texture'::text, 'opds_catalog'::text, 'abs_server'::text, 'settings'::text, 'bookshelf'::text])`,
+      sql`kind = ANY (ARRAY['dictionary'::text, 'font'::text, 'texture'::text, 'opds_catalog'::text, 'abs_server'::text, 'settings'::text, 'bookshelf'::text, 'custom_translator'::text, 'translation_prompt'::text, 'custom_tts'::text])`,
     ),
   ],
 );
@@ -790,6 +811,7 @@ export const bookNotes = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'string' }),
+    ink: jsonb(),
   },
   (table) => [
     foreignKey({
@@ -840,6 +862,7 @@ export const books = pgTable(
     groupName: text('group_name'),
     metadata: json(),
     groupUpdatedAt: timestamp('group_updated_at', { withTimezone: true, mode: 'string' }),
+    pageCount: integer('page_count'),
   },
   (table) => [
     index('idx_books_user_synced').using(

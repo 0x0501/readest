@@ -6,6 +6,7 @@ import { useReaderStore } from '@/store/readerStore';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { getOSPlatform } from '@/utils/misc';
 import { eventDispatcher } from '@/utils/event';
+import { LONG_HOLD_THRESHOLD } from '@/services/constants';
 import { setSelectionSuppressed } from '@/utils/bridge';
 import { LINK_TOUCH_HOLD_CLASS, TEXT_SELECTED_CLASS } from '@/utils/style';
 import {
@@ -18,6 +19,7 @@ import {
   rangeFromAnchorToPoint,
   repairJumpedSelectionRange,
   TextSelection,
+  trimNoteMarkersFromWordRange,
   trimRangeWhitespaceAroundPoint,
 } from '@/utils/sel';
 import { Corner, useAutoPageTurn } from './useAutoPageTurn';
@@ -116,9 +118,10 @@ export const useTextSelector = (
   // element is restored on release (the pointerup target may differ once the
   // finger has moved across nodes).
   const instantAnnotationTarget = useRef<HTMLElement | null>(null);
-  // Unsubscribe for the after-turn re-emit: while instant annotating, a corner
-  // auto-turn rebuilds the preview from the held position onto the new page.
-  const instantReemitUnsub = useRef<(() => void) | null>(null);
+  // Cleanup for the listeners an instant-annotating gesture holds: the
+  // after-turn re-emit (a corner auto-turn rebuilds the preview from the held
+  // position onto the new page) and the release outside every page.
+  const instantGestureCleanup = useRef<(() => void) | null>(null);
   // Pending instant-highlight still-hold (touch/pen). While a hold is in flight
   // these remember the press so the timer can engage at the same spot; the gate
   // is armed in handlePointerDown and dropped by a release or a swipe.
@@ -126,11 +129,27 @@ export const useTextSelector = (
   const instantHoldTarget = useRef<HTMLElement | null>(null);
   const instantHoldStartClient = useRef<Point | null>(null);
   const instantHoldStartWindow = useRef<{ x: number; y: number } | null>(null);
+  // Pending image long press on iOS (#6574): where the touch went down and the
+  // timer that opens the image menu if it stays there.
+  const imageHold = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(
+    null,
+  );
   // Latest pointer position in window coords (from pointermove or, on Android,
   // native touchmove): an auto-turn engagement signal alongside the caret, and
   // the finger position the Android hyphen repair rebuilds from.
   const pointerPos = useRef<{ x: number; y: number } | null>(null);
   const mouseDoubleClickRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  // A touch gesture that starts with nothing selected and whose selection
+  // appears in one step made the browser's word selection (long-press or
+  // double-tap). A handle drag starts from a selection; a long-press that goes
+  // on to drag changes the range again. `range` is the first selection seen.
+  const touchWordGestureRef = useRef<{ range: Range | null; changed: boolean } | null>(null);
+  // The live range a word gesture normalized. Re-applying it fires a
+  // selectionchange that must publish the same normalized selection.
+  const wordGestureRef = useRef<{
+    range: Range;
+    trimPoint?: { node: Node; offset: number } | null;
+  } | null>(null);
 
   // Android hyphen selection-bounds bug (#1553): the selection anchor captured
   // at the first selectionchange of a touch gesture, plus whether that initial
@@ -457,15 +476,42 @@ export const useTextSelector = (
     return sel && sel.toString().trim().length > 0 && sel.rangeCount > 0;
   };
 
+  const isSameRange = (a: Range, b: Range) =>
+    a.startContainer === b.startContainer &&
+    a.startOffset === b.startOffset &&
+    a.endContainer === b.endContainer &&
+    a.endOffset === b.endOffset;
+
+  // Feed the current selection to the touch word-gesture check and report
+  // whether it is still the one-step word selection.
+  const isTouchWordSelection = (sel: Selection) => {
+    const gesture = touchWordGestureRef.current;
+    if (!gesture || !isValidSelection(sel)) return false;
+    const range = sel.getRangeAt(0);
+    if (!gesture.range) gesture.range = range.cloneRange();
+    else if (!isSameRange(range, gesture.range)) gesture.changed = true;
+    return !gesture.changed;
+  };
+
   const makeSelection = async (
     sel: Selection,
     index: number,
     rebuildRange = false,
     handlesSuppressed = false,
     trimPoint?: { node: Node; offset: number } | null,
+    wordGesture = false,
   ) => {
     isTextSelected.current = true;
     const liveRange = sel.getRangeAt(0);
+    const lastGesture = wordGestureRef.current;
+    if (wordGesture) {
+      wordGestureRef.current = { range: liveRange.cloneRange(), trimPoint };
+    } else if (lastGesture && isSameRange(liveRange, lastGesture.range)) {
+      trimPoint = lastGesture.trimPoint;
+      wordGesture = true;
+    } else {
+      wordGestureRef.current = null;
+    }
     if (rebuildRange) {
       sel.removeAllRanges();
       sel.addRange(liveRange);
@@ -485,8 +531,9 @@ export const useTextSelector = (
     // Selection.getRangeAt() returns the live, associated Range by reference.
     // Clone only for double-click normalization so native touch paths retain
     // their established Range behavior and browser handles stay untouched.
-    const range = trimPoint ? liveRange.cloneRange() : liveRange;
+    const range = trimPoint || wordGesture ? liveRange.cloneRange() : liveRange;
     if (trimPoint) trimRangeWhitespaceAroundPoint(range, trimPoint.node, trimPoint.offset);
+    if (wordGesture) trimNoteMarkersFromWordRange(range);
     const progress = getProgress(bookKey);
     setSelection({
       key: bookKey,
@@ -499,15 +546,32 @@ export const useTextSelector = (
     });
   };
 
-  const startInstantAnnotating = (target: HTMLElement, startPoint: Point) => {
+  const startInstantAnnotating = (
+    doc: Document,
+    index: number,
+    pointerId: number,
+    target: HTMLElement,
+    startPoint: Point,
+  ) => {
     isInstantAnnotating.current = true;
     isInstantAnnotated.current = false;
     annotationStartPoint.current = startPoint;
     instantAnnotationTarget.current = target;
     if (view) view.renderer.scrollLocked = true;
     target.style.userSelect = 'none';
-    instantReemitUnsub.current?.();
-    instantReemitUnsub.current = onAfterTurn(() => reapplyInstantAnnotation());
+    instantGestureCleanup.current?.();
+    const unsubscribeTurn = onAfterTurn(() => reapplyInstantAnnotation());
+    // A turn that hides the page the drag started on (a PDF portrait spread
+    // shows one page at a time) sends the release to the reader window rather
+    // than to any page, so finish the highlight from there too.
+    const releaseOutsidePages = (ev: PointerEvent) => {
+      if (ev.pointerId === pointerId) handlePointerUp(doc, index, ev);
+    };
+    window.addEventListener('pointerup', releaseOutsidePages);
+    instantGestureCleanup.current = () => {
+      unsubscribeTurn();
+      window.removeEventListener('pointerup', releaseOutsidePages);
+    };
   };
 
   const stopInstantAnnotating = () => {
@@ -515,8 +579,8 @@ export const useTextSelector = (
     isInstantAnnotated.current = false;
     annotationStartPoint.current = null;
     if (view) view.renderer.scrollLocked = false;
-    instantReemitUnsub.current?.();
-    instantReemitUnsub.current = null;
+    instantGestureCleanup.current?.();
+    instantGestureCleanup.current = null;
     if (instantAnnotationTarget.current) {
       instantAnnotationTarget.current.style.userSelect = '';
       instantAnnotationTarget.current = null;
@@ -565,7 +629,7 @@ export const useTextSelector = (
         handleInstantAnnotationPointerCancel();
         return;
       }
-      startInstantAnnotating(target, startClient);
+      startInstantAnnotating(doc, index, ev.pointerId, target, startClient);
       // Preview the word under the finger right away (the feedback the
       // suppressed system long-press selection used to give); a release
       // without a drag commits it and opens the range editor.
@@ -617,12 +681,52 @@ export const useTextSelector = (
     cancelAutoTurn();
   };
 
+  // Opens Readest's image menu for the image at the event's point, if any.
+  const openImageMenu = (
+    event: Pick<MouseEvent, 'target' | 'clientX' | 'clientY'>,
+    isTouch: boolean,
+  ): boolean => {
+    const { clientX, clientY } = event;
+    const doc = (event.target as Node).ownerDocument!;
+    // A long press on text selects it, PDF text over a scanned page included.
+    if (isTouch && isTextAtPoint(doc, clientX, clientY)) return false;
+    const getImage = getContextMenuImage(event);
+    if (!getImage) return false;
+    const { x, y } = toParentViewportPoint(doc, clientX, clientY);
+    eventDispatcher.dispatch('image-context-menu', { bookKey, getImage, x, y });
+    return true;
+  };
+
+  const cancelImageHold = () => {
+    if (imageHold.current) clearTimeout(imageHold.current.timer);
+    imageHold.current = null;
+  };
+
+  // iOS WebKit fires no contextmenu for a long press, so a touch held still on
+  // an image opens the image menu here. A release, a move past the slop or a
+  // pointercancel (WebKit taking the touch to scroll) drops it.
+  const armImageHold = (ev: PointerEvent) => {
+    cancelImageHold();
+    const { target, clientX, clientY } = ev;
+    const timer = setTimeout(() => {
+      imageHold.current = null;
+      openImageMenu({ target, clientX, clientY }, true);
+    }, LONG_HOLD_THRESHOLD);
+    imageHold.current = { timer, x: clientX, y: clientY };
+  };
+
   const handlePointerDown = (doc: Document, index: number, ev: PointerEvent) => {
     beginSelectionDrag();
     lastPointerType.current = ev.pointerType;
+    const isTouchPress = ev.pointerType === 'touch' || ev.pointerType === 'pen';
+    touchWordGestureRef.current =
+      isTouchPress && !isValidSelection(doc.getSelection() as Selection)
+        ? { range: null, changed: false }
+        : null;
     if (appService?.isAndroidApp && ev.pointerType === 'touch') {
       doc.documentElement.classList.add(LINK_TOUCH_HOLD_CLASS);
     }
+    if (appService?.isIOSApp && ev.pointerType === 'touch') armImageHold(ev);
     isPointerDown.current = true;
     clearCrossDoc();
     dragAnchorRef.current = null;
@@ -637,7 +741,10 @@ export const useTextSelector = (
       } else {
         // Mouse: a press-drag is an unambiguous highlight intent; engage at once.
         ev.preventDefault();
-        startInstantAnnotating(ev.target as HTMLElement, { x: ev.clientX, y: ev.clientY });
+        startInstantAnnotating(doc, index, ev.pointerId, ev.target as HTMLElement, {
+          x: ev.clientX,
+          y: ev.clientY,
+        });
       }
     }
 
@@ -676,6 +783,10 @@ export const useTextSelector = (
     ) {
       doubleClick.moved = true;
     }
+    const hold = imageHold.current;
+    if (hold && Math.hypot(ev.clientX - hold.x, ev.clientY - hold.y) > INSTANT_HOLD_MOVE_PX) {
+      cancelImageHold();
+    }
     // The listener lives on the book iframe's document, so ev.clientX/Y are in
     // the (very wide, multi-column) iframe viewport. Map to window coordinates
     // via the iframe element's on-screen rect, like the selection caret.
@@ -702,7 +813,11 @@ export const useTextSelector = (
         }
       }
       ev.preventDefault();
-      isInstantAnnotated.current = handleInstantAnnotationPointerMove(doc, index, ev);
+      // Sticky once a preview is drawn: a later move that can't resolve (the
+      // pointer has left the start page) must not re-arm the scroll-gesture
+      // check above, which would cancel the highlight mid-drag.
+      isInstantAnnotated.current =
+        handleInstantAnnotationPointerMove(doc, index, ev) || isInstantAnnotated.current;
       // Cross-page instant highlight: feed the finger corner into the same dwell
       // machine native selection uses, so the page turns and the highlight
       // continues across the boundary (the start is DOM-anchored in
@@ -774,6 +889,7 @@ export const useTextSelector = (
 
   const handlePointerCancel = (doc: Document, _index: number, _ev: PointerEvent) => {
     isPointerDown.current = false;
+    cancelImageHold();
     doc.documentElement.classList.remove(LINK_TOUCH_HOLD_CLASS);
     mouseDoubleClickRef.current = null;
     clearCrossDoc();
@@ -901,6 +1017,7 @@ export const useTextSelector = (
 
   const handlePointerUp = async (doc: Document, index: number, ev?: PointerEvent) => {
     isPointerDown.current = false;
+    cancelImageHold();
     doc.documentElement.classList.remove(LINK_TOUCH_HOLD_CLASS);
     endSelectionDrag();
     const mouseDoubleClick = mouseDoubleClickRef.current;
@@ -982,10 +1099,17 @@ export const useTextSelector = (
       // iOS selections go through the same path as desktop.
       if (isPointerInside) {
         isUpToPopup.current = true;
-        makeSelection(sel, index, true, false, trimPoint);
+        makeSelection(sel, index, true, false, trimPoint, !!trimPoint || isTouchWordSelection(sel));
       } else if (appService?.isAndroidApp) {
         isUpToPopup.current = false;
       }
+    } else if (ev?.pointerType === 'mouse' && isTextSelected.current) {
+      // The press cleared the selection and its selectionchange was deferred
+      // to this release. The click would dismiss the toolbar, but on a blank
+      // part of a PDF page pdf.js moves `.endOfContent` under the pointer as
+      // the selection collapses, and Chromium then sends no click (#6958).
+      handleDismissPopup();
+      isTextSelected.current = false;
     }
 
     if (osPlatform === 'android' && appService?.isAndroidApp) {
@@ -1026,7 +1150,7 @@ export const useTextSelector = (
       if (selectionPosition.current === null) {
         selectionPosition.current = view?.renderer?.containerPosition ?? null;
       }
-      makeSelection(sel, index, false);
+      makeSelection(sel, index, false, false, null, isTouchWordSelection(sel));
     } else if (isTextSelected.current) {
       handleDismissPopup();
       isTextSelected.current = false;
@@ -1063,6 +1187,8 @@ export const useTextSelector = (
     // Echo of our own programmatic selection writes (handle suppression or a
     // custom-handle drag) — not user input.
     if (programmaticSelectionRef.current) return;
+    // Every step counts, including ones deferred or skipped below.
+    const touchWordGesture = isTouchWordSelection(sel);
 
     // Available on iOS, Android and Desktop, fired when the selection is changed.
     // On Android native app, this is the primary way to detect text selection.
@@ -1125,7 +1251,7 @@ export const useTextSelector = (
         // section (#873-related Android regression).
         selectionPosition.current = view?.renderer?.containerPosition ?? null;
       }
-      makeSelection(sel, index, false);
+      makeSelection(sel, index, false, false, null, touchWordGesture);
     } else {
       // Selection cleared (e.g. clicking outside the selection).
       // Dismiss immediately on all platforms.
@@ -1168,24 +1294,21 @@ export const useTextSelector = (
   };
 
   const handleContextmenu = (event: Event) => {
-    if (appService?.isMobile) {
+    const isTouch =
+      !!appService?.isMobile ||
+      lastPointerType.current === 'touch' ||
+      lastPointerType.current === 'pen';
+    // Images get Readest's own menu, from a right-click or, on Android, a long
+    // press (#6574): the webview's differs per engine and offers "Copy image
+    // address" for a blob URL nobody can use (#6558).
+    if (openImageMenu(event as MouseEvent, isTouch)) event.preventDefault();
+    // The desktop webview's own menu (Back / Refresh / Print...) has no place in
+    // the reading area (#6668); the web build keeps the browser's for extensions.
+    if (appService?.isDesktopApp) event.preventDefault();
+    if (isTouch) {
       event.preventDefault();
       event.stopPropagation();
       return false;
-    } else if (lastPointerType.current === 'touch' || lastPointerType.current === 'pen') {
-      event.preventDefault();
-      event.stopPropagation();
-      return false;
-    }
-    // Images get Readest's own menu: the webview's differs per engine and
-    // offers "Copy image address" for a blob URL nobody can use (#6558).
-    const getImage = getContextMenuImage(event as MouseEvent);
-    if (getImage) {
-      event.preventDefault();
-      const { clientX, clientY } = event as MouseEvent;
-      const doc = (event.target as Node).ownerDocument!;
-      const { x, y } = toParentViewportPoint(doc, clientX, clientY);
-      eventDispatcher.dispatch('image-context-menu', { bookKey, getImage, x, y });
     }
     return;
   };
@@ -1221,7 +1344,9 @@ export const useTextSelector = (
     return () => {
       eventDispatcher.offSync('iframe-single-click', handleSingleClick);
       unsubAfterTurn();
+      instantGestureCleanup.current?.();
       if (instantHoldTimer.current) clearTimeout(instantHoldTimer.current);
+      cancelImageHold();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

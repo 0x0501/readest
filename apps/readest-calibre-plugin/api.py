@@ -19,6 +19,13 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
+try:
+    load_translations()
+except NameError:
+    # Running outside calibre's plugin loader (unit tests): no translations.
+    def _(text):
+        return text
+
 DEFAULT_API_BASE = 'https://web.readest.com/api'
 
 TIMEOUT = 30
@@ -255,7 +262,7 @@ class ReadestClient:
         return headers
 
     def _mint_access_token(self, session_cookie):
-        status, parsed, payload, _ = self._request(
+        status, parsed, payload, _headers = self._request(
             'GET',
             self.api_base + '/auth/token',
             {'Accept': 'application/json', 'Cookie': session_cookie},
@@ -274,17 +281,17 @@ class ReadestClient:
             body={'email': email, 'password': password},
         )
         if status != 200 or not isinstance(parsed, dict):
-            raise ReadestAPIError(self._error_message(parsed, payload, 'Login failed'), status)
+            raise ReadestAPIError(self._error_message(parsed, payload, _('Login failed')), status)
         cookie = self._session_cookie(headers)
         if not cookie:
-            raise ReadestAPIError('Sign-in returned no session', status)
+            raise ReadestAPIError(_('Sign-in returned no session'), status)
         self._store_tokens(self._mint_access_token(cookie), cookie)
         return parsed.get('user') or {}
 
     def refresh(self):
         cookie = (self.tokens or {}).get('session_cookie')
         if not cookie:
-            raise AuthRequiredError('Not logged in')
+            raise AuthRequiredError(_('Not logged in'))
         self._store_tokens(self._mint_access_token(cookie), cookie)
 
     def ensure_fresh_token(self):
@@ -292,17 +299,17 @@ class ReadestClient:
         # lasts a week, so there is no reason to cut it fine, and a token that
         # expires mid-upload fails a long request for nothing.
         if not self.tokens or not self.tokens.get('access_token'):
-            raise AuthRequiredError('Not logged in')
+            raise AuthRequiredError(_('Not logged in'))
         if (self.tokens.get('expires_at') or 0) < time.time() + 300:
             self.refresh()
 
     def get_user(self):
-        status, parsed, payload, _ = self._request(
+        status, parsed, payload, _headers = self._request(
             'GET', self.api_base + '/auth/get-session', self._cookie_headers()
         )
         user = parsed.get('user') if isinstance(parsed, dict) else None
         if status != 200 or not user:
-            raise AuthRequiredError(self._error_message(parsed, payload, 'Not logged in'), status)
+            raise AuthRequiredError(self._error_message(parsed, payload, _('Not logged in')), status)
         return user
 
     def sign_out(self):
@@ -325,15 +332,15 @@ class ReadestClient:
             'Authorization': 'Bearer ' + self.tokens['access_token'],
             'Accept': 'application/json',
         }
-        status, parsed, payload, _ = self._request(method, self.api_base + path, headers, body=body)
+        status, parsed, payload, _headers = self._request(method, self.api_base + path, headers, body=body)
         if status in (401, 403):
-            message = self._error_message(parsed, payload, 'Not authenticated')
+            message = self._error_message(parsed, payload, _('Not authenticated'))
             if 'quota' in message.lower():
                 raise QuotaExceededError(message, status)
             raise AuthRequiredError(message, status)
         if status != 200:
             raise ReadestAPIError(
-                self._error_message(parsed, payload, 'Request failed (%s)' % status), status
+                self._error_message(parsed, payload, _('Request failed (%s)') % status), status
             )
         return parsed
 
@@ -415,9 +422,9 @@ class ReadestClient:
             headers={'Content-Length': str(size)},
             method='PUT',
         )
-        status, payload, _ = self.transport(request, UPLOAD_TIMEOUT)
+        status, payload, _headers = self.transport(request, UPLOAD_TIMEOUT)
         if status not in (200, 201, 204):
-            message = 'Upload failed (%s)' % status
+            message = _('Upload failed (%s)') % status
             if payload:
                 # S3/R2 error responses are XML; surface the <Code> tag.
                 text = payload.decode('utf-8', 'replace')

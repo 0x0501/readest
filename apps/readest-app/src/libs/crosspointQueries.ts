@@ -247,3 +247,48 @@ export const updateBookLibraryProgress = (
         lt(schema.books.updatedAt, args.updatedAt),
       ),
     );
+
+export const linkedBookHash = async (db: Db, userId: string, document: string) => {
+  const [row] = await db
+    .select({ bookHash: schema.crosspointDocuments.bookHash })
+    .from(schema.crosspointDocuments)
+    .where(
+      and(
+        eq(schema.crosspointDocuments.userId, userId),
+        eq(schema.crosspointDocuments.document, document),
+      ),
+    )
+    .limit(1);
+  return row?.bookHash ?? null;
+};
+
+export const findLinkCandidates = (db: Db, userId: string, document: string, pattern: string) =>
+  db
+    .select({
+      book_hash: schema.books.bookHash,
+      title: schema.books.title,
+      source_title: schema.books.sourceTitle,
+      author: schema.books.author,
+      updated_at: schema.books.updatedAt,
+    })
+    .from(schema.books)
+    .where(
+      and(
+        eq(schema.books.userId, userId),
+        eq(schema.books.format, 'EPUB'),
+        isNull(schema.books.deletedAt),
+        or(
+          eq(schema.books.bookHash, document),
+          ilike(schema.books.sourceTitle, pattern),
+          ilike(schema.books.title, pattern),
+        ),
+      ),
+    );
+
+export const insertDocumentLink = (db: Db, userId: string, document: string, bookHash: string) =>
+  db
+    .insert(schema.crosspointDocuments)
+    .values({ userId, document, bookHash })
+    .onConflictDoNothing({
+      target: [schema.crosspointDocuments.userId, schema.crosspointDocuments.document],
+    });

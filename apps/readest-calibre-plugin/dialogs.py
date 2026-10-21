@@ -26,6 +26,12 @@ from calibre_plugins.readest.worker import (
 
 
 
+try:
+    load_translations()
+except NameError:
+    pass
+
+
 class LoginDialog(QDialog):
     """Email and password against Better Auth."""
 
@@ -34,7 +40,7 @@ class LoginDialog(QDialog):
         self.client = client
         self.user = None
 
-        self.setWindowTitle('Log in to Readest')
+        self.setWindowTitle(_('Log in to Readest'))
         layout = QVBoxLayout()
         self.setLayout(layout)
 
@@ -42,11 +48,11 @@ class LoginDialog(QDialog):
         self.email_edit = QLineEdit(self)
         self.password_edit = QLineEdit(self)
         self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        form.addRow('Email:', self.email_edit)
-        form.addRow('Password:', self.password_edit)
+        form.addRow(_('Email:'), self.email_edit)
+        form.addRow(_('Password:'), self.password_edit)
         layout.addLayout(form)
 
-        self.login_btn = QPushButton('Log in', self)
+        self.login_btn = QPushButton(_('Log in'), self)
         self.login_btn.clicked.connect(self.password_login)
         layout.addWidget(self.login_btn)
 
@@ -63,14 +69,14 @@ class LoginDialog(QDialog):
         email = self.email_edit.text().strip()
         password = self.password_edit.text()
         if not email or not password:
-            self.status_label.setText('Please enter both email and password.')
+            self.status_label.setText(_('Please enter both email and password.'))
             return
-        self.status_label.setText('Logging in…')
+        self.status_label.setText(_('Logging in…'))
         self.login_btn.setEnabled(False)
         try:
             self.user = self.client.sign_in_password(email, password)
         except ReadestAPIError as err:
-            self.status_label.setText('Login failed: %s' % err)
+            self.status_label.setText(_('Login failed: %s') % err)
             self.login_btn.setEnabled(True)
             return
         self.accept()
@@ -80,9 +86,12 @@ class _RunDialog(QDialog):
 
     worker_class = None
     title = ''
-    heading = ''
     labels = {}
     failure_title = ''
+
+    def heading(self, count):
+        """Heading line for a run over `count` books (translated plural)."""
+        return ''
 
     def __init__(self, parent, db, book_ids, client, include_custom_columns):
         QDialog.__init__(self, parent)
@@ -95,14 +104,14 @@ class _RunDialog(QDialog):
         self.setLayout(layout)
 
         count = len(book_ids)
-        layout.addWidget(QLabel(self.heading % (count, _plural(count))))
+        layout.addWidget(QLabel(self.heading(count)))
 
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setRange(0, count)
         layout.addWidget(self.progress_bar)
 
         self.table = QTableWidget(0, 3, self)
-        self.table.setHorizontalHeaderLabels(['Book', 'Status', 'Details'])
+        self.table.setHorizontalHeaderLabels([_('Book'), _('Status'), _('Details')])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setColumnWidth(0, 220)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -126,7 +135,7 @@ class _RunDialog(QDialog):
         self.progress_bar.setValue(done)
 
     def on_book_status(self, book_id, status, detail):
-        title = self.db.field_for('title', book_id) or 'Unknown'
+        title = self.db.field_for('title', book_id) or _('Unknown')
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.table.setItem(row, 0, QTableWidgetItem(title))
@@ -147,26 +156,34 @@ class _RunDialog(QDialog):
     def reject(self):
         if self.worker.isRunning():
             self.worker.cancel()
-            self.summary_label.setText('Canceling…')
+            self.summary_label.setText(_('Canceling…'))
             return
         QDialog.reject(self)
 
 
 class PushDialog(_RunDialog):
     worker_class = PushWorker
-    title = 'Push to Readest'
-    heading = 'Pushing %d %s to your Readest library…'
+    title = _('Push to Readest')
     labels = STATUS_LABELS
-    failure_title = 'Push to Readest failed'
+    failure_title = _('Push to Readest failed')
+
+    def heading(self, count):
+        return ngettext(
+            'Pushing %d book to your Readest library…',
+            'Pushing %d books to your Readest library…',
+            count,
+        ) % count
 
 
 class StatusDialog(_RunDialog):
     worker_class = StatusWorker
-    title = 'Readest status'
-    heading = 'Checking %d %s against your Readest library…'
+    title = _('Readest status')
     labels = CHECK_LABELS
-    failure_title = 'Readest status check failed'
+    failure_title = _('Readest status check failed')
 
-
-def _plural(count):
-    return 'book' if count == 1 else 'books'
+    def heading(self, count):
+        return ngettext(
+            'Checking %d book against your Readest library…',
+            'Checking %d books against your Readest library…',
+            count,
+        ) % count

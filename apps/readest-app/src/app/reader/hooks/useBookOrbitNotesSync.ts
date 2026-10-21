@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useEnv } from '@/context/EnvContext';
-import type { PositionResolver } from '@/services/bookorbit/annotationExchange';
+import type { ChapterResolver, PositionResolver } from '@/services/bookorbit/annotationExchange';
 import { BookOrbitClient } from '@/services/bookorbit/BookOrbitClient';
 import { BookOrbitSyncStore } from '@/services/bookorbit/BookOrbitSyncStore';
 import { isBookOrbitPassEnabled, runBookOrbitNotesPass } from '@/services/bookorbit/notesPass';
 import { SYNC_NOTES_INTERVAL_SEC } from '@/services/constants';
+import { findTocItemBS } from '@/services/nav';
 import { useBookDataStore } from '@/store/bookDataStore';
 import { useReaderStore } from '@/store/readerStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -13,7 +14,7 @@ import { BookNote, FIXED_LAYOUT_FORMATS } from '@/types/book';
 import { getIndexFromCfi } from '@/utils/cfi';
 import { eventDispatcher } from '@/utils/event';
 import { throttle } from '@/utils/throttle';
-import { XCFI, getCFIFromXPointer, getXPointerFromCFI } from '@/utils/xcfi';
+import { getCFIFromXPointer, getCFIFromXPointerRange, getXPointerFromCFI } from '@/utils/xcfi';
 import { useWindowActiveChanged } from './useWindowActiveChanged';
 
 /**
@@ -61,6 +62,7 @@ export const useBookOrbitNotesSync = (bookKey: string) => {
                 content.doc,
                 content.index || 0,
                 bookData.bookDoc ?? undefined,
+                bookData.book?.format,
               );
               enriched.push({
                 ...note,
@@ -81,6 +83,18 @@ export const useBookOrbitNotesSync = (bookKey: string) => {
     [bookKey, getBookData, getView],
   );
 
+  // Resolve a note's chapter label from the book's table of contents. The
+  // local note model stores no chapter, and BookOrbit files the annotation
+  // under the chapter that arrives on the wire, so it is resolved here.
+  const chapterForNote: ChapterResolver = useCallback(
+    (note: BookNote) => {
+      const bookDoc = getBookData(bookKey)?.bookDoc;
+      const toc = bookDoc?.toc ?? [];
+      return findTocItemBS(toc, note.cfi)?.label ?? null;
+    },
+    [bookKey, getBookData],
+  );
+
   const resolvePosition: PositionResolver = useCallback(
     async (pos0, pos1) => {
       const bookData = getBookData(bookKey);
@@ -89,12 +103,7 @@ export const useBookOrbitNotesSync = (bookKey: string) => {
       try {
         let cfi: string | undefined;
         if (pos1) {
-          const spineIndex = XCFI.extractSpineIndex(pos0);
-          const doc = await bookData.bookDoc.sections?.[spineIndex]?.createDocument();
-          if (doc) {
-            const converter = new XCFI(doc, spineIndex);
-            cfi = converter.xPointerToCFI(pos0, pos1);
-          }
+          cfi = await getCFIFromXPointerRange(pos0, pos1, bookData.bookDoc);
         } else {
           const contents = view?.renderer.getContents() ?? [];
           const primaryIndex = view?.renderer.primaryIndex;
@@ -191,6 +200,7 @@ export const useBookOrbitNotesSync = (bookKey: string) => {
         mergeNotes,
         resolvePosition,
         populateXPointers,
+        chapterForNote,
         syncNotes: bookorbit.syncNotes,
         syncBookStates: bookorbit.syncBookStates,
         now: () => Date.now(),
@@ -213,7 +223,17 @@ export const useBookOrbitNotesSync = (bookKey: string) => {
     } finally {
       passRunning.current = false;
     }
-  }, [bookKey, client, getBookData, getConfig, mergeNotes, resolvePosition, populateXPointers, _]);
+  }, [
+    bookKey,
+    client,
+    getBookData,
+    getConfig,
+    mergeNotes,
+    resolvePosition,
+    populateXPointers,
+    chapterForNote,
+    _,
+  ]);
 
   const runPassRef = useRef(runPass);
   useEffect(() => {

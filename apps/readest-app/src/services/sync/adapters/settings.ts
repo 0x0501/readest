@@ -54,6 +54,7 @@ export const SETTINGS_WHITELIST = [
   'dictionarySettings.webSearches',
   'dictionarySettings.fontScale',
   'dictionarySettings.autoPlayPronunciation',
+  'dictionarySettings.contextTranslatorId',
   // External integrations. Server URL + identifiers sync as plaintext;
   // the credential fields are listed in `encryptedFields` below so the
   // publish/pull middleware wraps them in cipher envelopes.
@@ -62,11 +63,13 @@ export const SETTINGS_WHITELIST = [
   'kosync.userkey',
   'kosync.password',
   'kosync.customHeaders',
+  'kosync.allowSelfSignedCert',
   'bookorbit.serverUrl',
   'bookorbit.username',
   'bookorbit.userkey',
   'bookorbit.password',
   'bookorbit.customHeaders',
+  'bookorbit.allowSelfSignedCert',
   'readwise.baseUrl',
   'readwise.accessToken',
   'hardcover.accessToken',
@@ -122,6 +125,7 @@ export const SETTINGS_DICTIONARY_FIELDS = [
   'dictionarySettings.webSearches',
   'dictionarySettings.fontScale',
   'dictionarySettings.autoPlayPronunciation',
+  'dictionarySettings.contextTranslatorId',
 ] as const;
 
 /**

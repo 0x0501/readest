@@ -1,0 +1,1 @@
+../../../docker/volumes/db/migrations/029_files_server_writes_only.sql
